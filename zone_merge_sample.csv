@@ -1,0 +1,11 @@
+# Do not alter the order. The zone_merge.py utility separates fields by commas so any empty field still requires a comma,,,,,,
+# User ID,REST API user login ID. Leave empty if not logging in. ,,,,,
+# Password,Password for above user ID. Ignored if not logging in.,,,,,
+# Address,IP address of switch. Ignored if not logging in.,,,,,
+# Security,none for HTTP," ""self"" for self signed HTTPS", or the certificate. Ignored if not logging in.,,,
+# Fabric,Either the user friendly name of the fabric (not the switch) or WWN of any switch in the fabric. Only one switch per fabric should be used. Keep in mind that the zone database is the same in all switches in the fabric.,,,,,
+# Configuration, Zone members of this zone configuration are added to the zone configuration specified for the base switch.,,,,,
+# Update, True or False. Zone updates are not sent to the switch when False. This is useful for merging the zone database only.,,,,,
+#User ID,Password,Address,Security,Fabric,Configuration,
+admin,password,xxx.xxx.xxx.xxx,none,Fabric_A,lab_zone_cfg,TRUE
+admin,password,xxx.xxx.xxx.xxx,none,Fabric_B,cid_zone_cfg,FALSE
