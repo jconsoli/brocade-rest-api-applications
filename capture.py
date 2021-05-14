@@ -43,16 +43,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.6     | 17 Apr 2021   | Added ability to access IODF path information via z/OS libraries.                 |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.7     | 14 May 2021   | Added automatic extensions.                                                       |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '17 Apr 2021'
+__date__ = '14 May 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.6'
+__version__ = '3.0.7'
 
 import argparse
 import sys
@@ -71,8 +73,8 @@ import brcddb.util.util as brcddb_util
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _WRITE = True  # Should always be True. Used for debug only. Prevents the output file from being written when False
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_IP = 'xx.x.xxx.xx'
-_DEBUG_OUTF = 'test/home.txt'
+_DEBUG_IP = 'xx.xx.xx.xx'
+_DEBUG_OUTF = 'test/home'
 _DEBUG_ID = 'admin'
 _DEBUG_PW = 'password'
 _DEBUG_SEC = 'self'
@@ -187,7 +189,7 @@ def parse_args():
     :rtype suppress_flag: bool
     """
     global _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_OUTF, _DEBUG_SEC, _DEBUG_SUPPRESS, _DEBUG_VERBOSE, _DEBUG_C
-    global _DEBUG_FID, _DEBUG_LOG, _DEBUG_NL
+    global _DEBUG_FID, _DEBUG_LOG, _DEBUG_NL, _DEBUG
 
     if _DEBUG:
         return _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_OUTF, _DEBUG_SEC, _DEBUG_SUPPRESS, _DEBUG_VERBOSE, _DEBUG_C, \
@@ -269,11 +271,13 @@ def pseudo_main():
 
     # Dump the database to a file
     if _WRITE:
-        brcdapi_log.log("Saving project to: " + outf, True)
+        if '.' not in outf:
+            outf += '.json'
+        brcdapi_log.log('Saving project to: ' + outf, True)
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
         brcddb_file.write_dump(plain_copy, outf)
-        brcdapi_log.log("Save complete", True)
+        brcdapi_log.log('Save complete', True)
 
     return proj_obj.r_exit_code()
 

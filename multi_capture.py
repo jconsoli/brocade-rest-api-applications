@@ -33,32 +33,34 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.4     | 17 Apr 2021   | Miscellaneous bug fixes.                                                          |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.5     | 14 May 2021   | Permitted input from Excel Workbook instead of just a CSV file.                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '17 Apr 2021'
+__date__ = '14 May 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.4'
+__version__ = '3.0.5'
 
 import argparse
 import datetime
 import os
 import subprocess
-
 import brcdapi.log as brcdapi_log
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcddb.util.file as brcddb_file
 import brcddb.brcddb_common as brcddb_common
+import brcddb.report.utils as report_utils
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_I = 'mtest.txt'
+_DEBUG_I = 'cid_multi_capture'
 _DEBUG_F = None
-_DEBUG_SFP = 'sfp_rules_r7.xlsx'
+_DEBUG_SFP = 'sfp_rules_r10.xlsx'
 _DEBUG_IOCP = 'test_iocp'
 _DEBUG_r = True
 _DEBUG_c = None
@@ -86,21 +88,22 @@ def parse_args():
                _DEBUG_NL
     buf = 'Capture all report data from multiple chassis and optionally generate a report.'
     parser = argparse.ArgumentParser(description=buf)
-    buf = 'Required. Input CSV file of switch login credentials. The file must be a CSV plain text file in the format: '
-    buf += 'User ID,Password,Address,Security. Security is either CA or self for HTTPS access and none for HTTP. If'
-    buf += ' Security is omitted, none (HTTP) is assumed'
+    buf = 'Required. Excel file of switch login credentials. See multi_capture_example.xlsx. ".xlsx" is automatically '\
+          'appended if no extension is specified.'
     parser.add_argument('-i', help=buf, required=True)
     buf = 'Optional. Folder name where captured data is to be placed. If not specified, a folder with the default name'\
-          ' _capture_yyyy_mmm_dd is created. The individual switch data is put in this folder with the switch name. '\
-          'Also created in this folder is a file named combined.json which is output of combine.py and report.xlsx.'
+          ' _capture_yyyy_mmm_dd_hh_mm_ss is created. The individual switch data is put in this folder with the switch'\
+          ' name. A file named combined.json, output of combine.py, and report.xlsx, output of report.py, is '\
+          'added to this folder.'
     parser.add_argument('-f', help=buf, required=False)
     buf = 'Optional. Name of the Excel Workbook with SFP thresholds. This is the same file used as input to '\
           'applications.maps_config. This is useful for checking SFPs against the new recommended MAPS rules before '\
-          'implementing them or filling in missing rules. Only used if -r is specified.'
+          'implementing them or filling in missing rules. Only used if -r is specified. If no extension is specified, '\
+          '".xlsx" is automatically appended.'
     parser.add_argument('-sfp', help=buf, required=False)
     buf = 'Optional. Name of folder with IOCP files. All files in this folder must be IOCP files (build I/O '\
           'configuration statements from HCD) and must begin with the CEC serial number followed by \'_\'. Leading 0s '\
-          'are not required. Example, for a CEC with serial number 12345: 12345_M90_iocp.txt'
+          'are not required. Example, for a CPC with serial number 12345: 12345_M90_iocp.txt'
     parser.add_argument('-iocp', help=buf, required=False)
     parser.add_argument('-r', help='Optional. Generates a report.', action='store_true', required=False)
     buf = '(Optional) Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. The ' \
@@ -152,8 +155,9 @@ def psuedo_main():
     if iocp is not None:
         addl_parms_report.extend(['-iocp', iocp])
     ml.append('Input file:    ' + in_file)
+    date_str = '_' + datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
     if folder is None:
-        folder = '_capture_' + datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+        folder = '_capture' + date_str
         ml.append('Output Folder: (Automatic) ' + folder)
     else:
         ml.append('Output Folder: ' + folder)
@@ -166,37 +170,26 @@ def psuedo_main():
     brcdapi_log.log(ml, True)
 
     # Read the file with login credentials and perform some basic validation
-    switch_list = list()
-    file_content = brcddb_file.read_file(in_file)
-    i = 0
-    for mod_line in file_content:
-        params = mod_line.replace(' ', '').split(',')
-        if len(params) == 3:
-            params.append('none')
-        if len(params) >= 4:
-            l = params[2].split('.')
-            params.append('capture_' + str(l[len(l) - 1]) + '_' + str(i))
-            switch_list.append(params)
-            i += 1
-        else:
-            i += 1
-            brcdapi_log.log('Missing parameters in input file:\nLine ' + str(i) + ': ' + mod_line, True)
+    switch_parms = list()
+    if '.' not in in_file:
+        in_file += '.xlsx'
+    if len(in_file) > len('.xlsx') and in_file[len(in_file)-len('.xlsx'):] == '.xlsx':
+        for d in report_utils.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=in_file)['content']:
+            switch_parms.append(['-id', d['user_id'], '-pw', d['pw'], '-ip', d['ip_addr'], '-s', d['security'],
+                                 '-f', folder + '/' + d['name']])
+    else:  # The old CSV way
+        file_content = brcddb_file.read_file(in_file)
+        for mod_line in file_content:
+            l = [buf.strip() for buf in mod_line.split(',')]
+            switch_parms.append(['-id', l[0], '-pw', l[1], '-ip', l[2], '-s', l[3], '-f', l[4]])
 
     # Create the folder
     os.mkdir(folder)
 
     # Kick off all the data captures
     pid_l = list()
-    for l in switch_list:
-        brcdapi_log.log('Starting: ' + l[4])
-        params = ['python.exe', 'capture.py', '-f', folder + '/' + l[4] + '.txt']
-        i = 0
-        for buf in ('-id', '-pw', '-ip', '-s'):
-            params.append(buf)
-            params.append(l[i])
-            i += 1
-        params.extend(addl_parms_capture)
-        params.extend(addl_parms_all)
+    for l in switch_parms:
+        params = ['python.exe', 'capture.py'] + l + addl_parms_capture + addl_parms_all
         if _DEBUG:
             brcdapi_log.log(' '.join(params), True)
         pid_l.append(subprocess.Popen(params))
@@ -204,12 +197,11 @@ def psuedo_main():
     # Below waits for all processes to complete before generating the report.
     pid_done = [p.wait() for p in pid_l]
     for i in range(0, len(pid_done)):
-        brcdapi_log.log('Completed: ' + switch_list[i][4] + '. Ending status: ' + str(pid_done[i]), True)
+        brcdapi_log.log('Completed switch capture at index ' + str(i) + '. Ending status: ' + str(pid_done[i]), True)
 
     # Combine the captured data
     brcdapi_log.log('Combining captured data. This may take several seconds', True)
-    param = ['python.exe', 'combine.py', '-i', folder, '-o', 'combined.json']
-    params.extend(addl_parms_all)
+    param = ['python.exe', 'combine.py', '-i', folder, '-o', 'combined.json'] + addl_parms_all
     if _DEBUG:
         brcdapi_log.log(' '.join(params), True)
     ec = subprocess.Popen(param).wait()
@@ -218,9 +210,10 @@ def psuedo_main():
     # Generate the report
     if report_flag and ec == brcddb_common.EXIT_STATUS_OK:
         brcdapi_log.log('Data collection complete. Generating report.', True)
-        param = ['python.exe', 'report.py', '-i', folder + '/combined.json', '-o', folder + '/report.xlsx']
-        param.extend(addl_parms_report)
-        params.extend(addl_parms_all)
+        param = ['python.exe',
+                 'report.py',
+                 '-i', folder + '/combined.json',
+                 '-o', folder + '/report' + date_str + '.xlsx'] + addl_parms_report + addl_parms_all
         if _DEBUG:
             brcdapi_log.log(' '.join(params), True)
         ec = subprocess.Popen(param).wait()

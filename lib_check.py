@@ -16,20 +16,18 @@
 # limitations under the License.
 """
 :mod:`lib_check.py` - Validates the Python development environment by checking the Pythong version and import path.
-Also Checks to ensure that all imported libraries reaquired the modules in brcdapi and brcddb are in the Python path.
+Also Checks to ensure that all imported libraries required the modules in brcdapi and brcddb are in the Python path.
 
 Intended as a tool to validate the supported version of Python and proper installation of libraries used for:
 
 * brcdapi
 * brcddb
-* api_direct
+* api_examples
 * applications
 
-* Inputs:
-    * None
+For a generic but more detailed library validation report, use lib_validate.py from:
 
-* Outputs:
-    * Writes a table with the module, import status, and version number to STD OUT
+https://github.com/jconsoli/Tools
 
 Version Control::
 
@@ -38,22 +36,25 @@ Version Control::
     +===========+===============+===================================================================================+
     | 3.0.0     | 19 Jul 2020   | Initial Launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.1.5     | 17 Apr 2021   | Latest updates.                                                                   |
+    | 3.1.7     | 14 May 2021   | Latest updates.                                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '17 Apr 2021'
+__date__ = '14 May 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.5'
+__version__ = '3.1.7'
 
 import sys
 import os
 import importlib
+try:
+    import platform
+except:
+    print('Could not import platform')
 
 _DOC_STRING = False  # Should always be False. Prohibits any importing. Only useful for building documentation
 
@@ -61,11 +62,20 @@ imports = (
     {'d': ''},
     {'d': 'Standard Python Libraries.'},
     {'d': ''},
+    {'l': 'abc', 'd': 'Required for most applications'},
     {'l': 'base64', 'd': 'Required by brcdbapi.pyfos_auth'},
+    {'l': 'contextlib', 'd': 'Required by any module using openpyxl (Excel Workbooks)'},
+    {'l': 'copy', 'd': 'Required for most applications'},
     {'l': 'time', 'd': 'Required by brcdbapi.pyfos_auth and brcdbapi.brcdb_rest'},
     {'l': 'errno', 'd': 'Required by brcdbapi.pyfos_auth'},
+    {'l': 'fnmatch', 'd': 'Required for most applications'},
     {'l': 'http.client', 'd': 'Required by brcdbapi.pyfos_auth and brcdbapi.brcdb_rest'},
+    {'l': 'itertools', 'd': 'Required by brcdbapi.pyfos_auth and brcdbapi.brcdb_rest'},
     {'l': 'json', 'd': 'Required by brcdbapi.pyfos_auth and brcdbapi.brcdb_rest'},
+    {'l': 'jdcal', 'd': 'Required by any module using openpyxl (Excel Workbooks)'},
+    {'l': 'et_xmlfile', 'd': 'Required by any module using openpyxl (Excel Workbooks)'},
+    {'l': 'os', 'd': 'Required for most applications'},
+    {'l': 'pathlib', 'd': 'Required for most applications'},
     {'l': 'ssl', 'd': 'Required by brcdapi.brcdapi_rest'},
     {'l': 'argparse', 'd': 'Required for most applications'},
     {'l': 'datetime', 'd': 'Required for brcdapi.log'},
@@ -77,6 +87,7 @@ imports = (
     {'l': 'collections', 'd': 'Required by brcdapi.switch and several brcddb.report modules.'},
     {'l': 'openpyxl', 'd': 'Required by report utilities for creating Excel Workbooks.'},
     {'l': 'paramiko', 'd': 'Only required by applications/switch_config.py.'},
+    {'l': 'warnings', 'd': 'Required for most applications'},
     {'d': ''},
     {'d': 'FOS API driver libraries from github/jconsoli - brcdapi.'},
     {'d': ''},
@@ -87,7 +98,7 @@ imports = (
     {'l': 'brcdapi.port', 'd': 'Required for reading and configuring ports.', 'r': '3.0.1'},
     {'l': 'brcdapi.switch', 'd': 'Required for reading and configuring switches.', 'r': '3.0.2'},
     {'l': 'brcdapi.util', 'd': 'Utilities supporting the FOS RESTConf API driver.', 'r': '3.0.2'},
-    {'l': 'brcdapi.zone', 'd': 'Required by scripts performing zoning operations.', 'r': '3.0.1'},
+    {'l': 'brcdapi.zone', 'd': 'Required by scripts performing zoning operations.', 'r': '3.0.2'},
     {'d': ''},
     {'d': 'FOS API database libraries from github/jconsoli - brcddb'},
     {'d': ''},
@@ -115,14 +126,14 @@ imports = (
     {'l': 'brcddb.api.interface', 'd': 'Required for all access to the API', 'r': '3.0.6'},
     {'l': 'brcddb.api.zone', 'd': 'Required for zoning applications', 'r': '3.0.1'},
     {'l': 'brcddb.util.copy', 'd': 'Required for most brcddb libraries', 'r': '3.0.3'},
-    {'l': 'brcddb.util.compare', 'd': 'Required for most brcddb libraries', 'r': '3.0.6'},
-    {'l': 'brcddb.util.file', 'd': 'Required for most brcddb libraries', 'r': '3.0.6'},
+    {'l': 'brcddb.util.compare', 'd': 'Required for most brcddb libraries', 'r': '3.0.7'},
+    {'l': 'brcddb.util.file', 'd': 'Required for most brcddb libraries', 'r': '3.0.7'},
     {'l': 'brcddb.util.iocp', 'd': 'Required for most brcddb libraries', 'r': '3.0.5'},
     {'l': 'brcddb.util.maps', 'd': 'Required for most brcddb libraries', 'r': '3.0.5'},
     {'l': 'brcddb.util.obj_convert', 'd': 'Required for search.py application', 'r': '3.0.3'},
     {'l': 'brcddb.util.search', 'd': 'Required for most brcddb libraries', 'r': '3.0.4'},
-    {'l': 'brcddb.util.util', 'd': 'Required for most brcddb libraries', 'r': '3.0.7'},
-    {'l': 'brcddb.report.bp', 'd': 'Required for generating Excel reports', 'r': '3.0.2'},
+    {'l': 'brcddb.util.util', 'd': 'Required for most brcddb libraries', 'r': '3.0.8'},
+    {'l': 'brcddb.report.bp', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
     {'l': 'brcddb.report.chassis', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
     {'l': 'brcddb.report.fabric', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
     {'l': 'brcddb.report.fonts', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
@@ -131,7 +142,7 @@ imports = (
     {'l': 'brcddb.report.login', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
     {'l': 'brcddb.report.port', 'd': 'Required for generating Excel reports', 'r': '3.0.5'},
     {'l': 'brcddb.report.switch', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
-    {'l': 'brcddb.report.utils', 'd': 'Required for generating Excel reports', 'r': '3.0.8'},
+    {'l': 'brcddb.report.utils', 'd': 'Required for generating Excel reports', 'r': '3.0.9'},
     {'l': 'brcddb.report.zone', 'd': 'Required for generating Excel reports', 'r': '3.0.6'},
     {'l': 'brcddb.app_data.alert_tables', 'd': 'Alert format tables. Required for zone and best practice analysis.',
      'r': '3.0.6'},
@@ -144,6 +155,26 @@ imports = (
     {'d': ''},
     {'l': 'brcdapi.sannav_auth', 'd': 'Required by all SANnav scripts', 'r': '1.0.0'},
 )
+
+def _get_os_and_lib_paths():
+    try:
+        operating_system = platform.system()
+    except:
+        operating_system = 'Unknown'
+    try:
+        rel = platform.release()
+    except:
+        rel = 'Unknown'
+    try:
+        ver = platform.version()
+    except:
+        ver = 'Unknown'
+    try:
+        pl = sys.path
+    except:
+        pl = ['Unknown']
+
+    return pl, operating_system, rel, ver
 
 
 def pseudo_main():
@@ -158,10 +189,18 @@ def pseudo_main():
     msg = '\n\nThis is a simple pass/fail test to validate that the necessary'
     msg += '\nlibraries to support the Brocade libraries to use with the FOS'
     msg += '\nAPI were installed properly.\n'
+    msg += '\nFor a generic but more detailed library validation report, use'
+    msg += '\nlib_validate.py from:\n\nhttps://github.com/jconsoli/Tools\n'
     print(msg)
 
+    # Display the operating system, version, and release
+    lib_paths, operating_system, rel, ver = _get_os_and_lib_paths()
+    print('OS:      ' + operating_system)
+    print('Release: ' + rel)
+    print('Version: ' + ver)
+
     # Display the lib path
-    print('\nlib path(s)\nPath:\n  * ' + '\n  * '.join(sys.path))
+    print('\nPython library path(s):\n  * ' + '\n  * '.join(lib_paths))
 
     summary_updates = list()
     summary_missing = list()

@@ -24,16 +24,18 @@ Version Control::
     +===========+===============+===================================================================================+
     | 1.0.0     | 17 Apr 2021   | Initial launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.1     | 14 May 2021   | Use Excel credentials file rather than a CSV file for input                       |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '17 Apr 2021'
+__date__ = '14 May 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 import argparse
 from os import listdir
@@ -50,10 +52,11 @@ import brcddb.api.interface as api_int
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcddb.api.zone as api_zone
 import brcdapi.pyfos_auth as pyfos_auth
+import brcddb.report.utils as report_utils
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'zone_merge_test.csv'
+_DEBUG = True   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
+_DEBUG_i = 'zone_merge_test'
 _DEBUG_p = None  # '_capture_2021_02_27/combined'
 _DEBUG_t = False
 _DEBUG_sup = False
@@ -79,6 +82,10 @@ _control_tables = {
         '/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True),
     },
 }
+
+_check_d = dict(user_id='id', pw='pw', ip_addr='ip', security='sec', fabric_name='fab_name', fid='fid',
+                fab_wwn='fab_wwn', cfg='cfg')  # Used in _condition_input()
+
 
 
 def _patch_zone_db(fab_d):
@@ -290,13 +297,11 @@ def _merge_zone_db(fab_d):
     # Get a list of fabric objects for the fabrics to merge
     fab_l = [fab_d['base']] + fab_d['fabrics']
     for fabric_d in fab_l:
-        switch_obj = proj_obj.r_switch_obj(fabric_d['fab'])
-        if switch_obj is not None:
-            fab_obj = switch_obj.r_fabric_obj()
-        else:  # See if it's a fabric name
-            fab_obj = brcddb_fabric.fab_obj_for_name(proj_obj, fabric_d['fab'])
+        switch_obj = proj_obj.r_switch_obj(fabric_d['fab_wwn'])
+        fab_obj = brcddb_fabric.fab_obj_for_name(proj_obj, fabric_d['fab_name']) if switch_obj is None else \
+            switch_obj.r_fabric_obj()
         if fab_obj is None:
-            rl.append('Could not find fabric ' + fabric_d['fab'])
+            rl.append('Could not find fabric ' + fabric_d['fab_name'] + '(' + fabric_d['fab_wwn'] + ')')
         else:
             fabric_d.update(dict(fab_obj=fab_obj))
             fid_l = brcddb_fabric.fab_fids(fab_d['base']['fab_obj'])
@@ -348,7 +353,7 @@ def parse_args():
     if _DEBUG:
         return _DEBUG_i, _DEBUG_p, _DEBUG_t, _DEBUG_d, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
     parser = argparse.ArgumentParser(description='Merges the zones from multiple fabrics')
-    buf = 'Required. Zone merge data file. See zone_merge_sample.csv for details.'
+    buf = 'Required. Zone merge data file. See zone_merge_sample.xlsx for details. ".xlsx" is automatically appended.'
     parser.add_argument('-i', help=buf, required=True)
     buf = 'Optional. Project file name from the output of combine.py, capture.py, or multi_capture.py Use this '\
           'instead of polling switches for zoning infromation. The extension ".json" is automatically appended.'
@@ -369,6 +374,16 @@ def parse_args():
     parser.add_argument('-nl', help=buf, action='store_true', required=False)
     args = parser.parse_args()
     return args.i, args.p, args.t, args.sup, args.d, args.log, args.nl
+
+
+def _condition_input(in_d):
+    rd = dict(
+        update=True if in_d.get('update') is not None and in_d['update'].lower() == 'yes' else False,
+        sec='none' if in_d.get('security') is None else 'none' if in_d['security'] == '' else in_d['security']
+    )
+    for k, v in _check_d.items():
+        rd.update({v: None if in_d.get(k) is not None and in_d.get(k) == '' else in_d.get(k)})
+    return rd
 
 
 def _get_input():
@@ -397,7 +412,9 @@ def _get_input():
     +-----------+-----------------------------------------------------------------------------------+
     | sec       | Security type or certificate                                                      |
     +-----------+-----------------------------------------------------------------------------------+
-    | fab       | Fabric name or WWN of a switch in the fabric                                      |
+    | fab_name  | Fabric name                                                                       |
+    +-----------+-----------------------------------------------------------------------------------+
+    | fab_wwn   | Fabric WWN                                                                        |
     +-----------+-----------------------------------------------------------------------------------+
     | cfg       | Zone configuration                                                                |
     +-----------+-----------------------------------------------------------------------------------+
@@ -428,44 +445,21 @@ def _get_input():
     rl.append('Login credential file: ' + str(c_file))
     rl.append('Project file:          ' + str(p_file))
     rl.append('Test:                  ' + str(t_flag))
+    if len(c_file) < len('.xlsx') or c_file[len(c_file)-len('.xlsx'):] != '.xlsx':
+        c_file += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
 
     # Parse the parameters file
-    file_content = brcddb_file.read_file(c_file)
-    for i in range(0, len(file_content)):
-        lc = [buf.strip() for buf in file_content[i].split(',')]
-        if len(lc) < 7:
-            rl.append('Input file ' + c_file + ' missing parameters at line ' + str(i+1))
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        else:
-            sub_d = dict(
-                id=None if lc[0] == '' else lc[0],
-                pw=None if lc[1] == '' else lc[1],
-                ip=None if lc[2] == '' else lc[2],
-                sec='none' if lc[3] == '' else lc[3],
-                fab=None if lc[4] == '' else lc[4],
-                cfg=None if lc[5] == '' else lc[5],
-                update=True if lc[6].lower() == 'true' else False
-            )
-            if i == 0:
-                fab_d.update(base=sub_d)
-            else:
-                fab_d['fabrics'].append(sub_d)
-
-            # Validate the input
-            if sub_d['id'] is None:
-                if p_file is None:
-                    rl.append('Error in line ' + str(i+1) + 'A project file, -p, or login credentials are required')
-                    ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-            elif sub_d['pw'] is None and sub_d['ip'] is None:
-                rl.append('A user ID was specified without a password and/or IP address at line ' + str(i+1))
-                ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-
+    switch_l = report_utils.parse_parameters(sheet_name='parameters', hdr_row=1, wb_name=c_file)['content']
+    if len(switch_l) > 0:
+        fab_d.update(base=_condition_input(switch_l.pop(0)))
+    for sub_d in switch_l:
+        fab_d['fabrics'].append(_condition_input(sub_d))
     if len(fab_d['fabrics']) == 0:
         rl.append('At least two fabrics must be defined in the input file, -i.')
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Get the data
-    if ec == brcddb_common.EXIT_STATUS_OK:
+    else:
         if p_file is not None:
             if len(p_file) < len('.json') or p_file[len(p_file)-len('.json'):] != '.json':
                 p_file += '.json'  # Add the .json extension if it wasn't specified on the command line

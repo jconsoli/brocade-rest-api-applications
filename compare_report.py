@@ -40,19 +40,20 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.1-8   | 17 Apr 2021   | Miscellaneous minor bug fixes and usability/report enhancements                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.9     | 14 May 2021   | Fixed missing member changes for aliases and zones.                               |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '17 Apr 2021'
+__date__ = '14 May 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.8'
+__version__ = '3.0.9'
 
 import argparse
-import brcddb.util.file as brcddb_file
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.brcddb_switch as brcddb_switch
 import brcddb.brcddb_chassis as brcddb_chassis
@@ -66,15 +67,12 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_bf = '_capture_2021_02_27/combined'
-_DEBUG_cf = '_capture_2021_04_09/combined'
+_DEBUG_bf = 'test_b/combined'
+_DEBUG_cf = 'test_c/combined'
 _DEBUG_r = 'test/test_report'
 _DEBUG_sup = False
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
-
-_DEBUG_RF = None  # JSON dump from previous write. Speeds up debug. Set to None for normal operation.
-_DEBUG_WF = None  # Name of the JSON dump file to write to. See notes with _DEBUG_RF
 
 _key_conv_tbl = dict()  # List of API keys converted to human readable format for report display
 _generic_table_add = (  # Key to add to _key_conv_tbl that are simple key/values in brcddb.app_data.report_tables
@@ -335,13 +333,16 @@ def _alias_add_to_content(obj, b_obj, c_obj, content):
         content.append(dict(merge=4, font='std', align='wrap', disp=('No changes')))
 
 
-def _zonecfg_add_to_content(obj, b_obj, c_obj, content):
+def _zoneobj_add_to_content(obj, b_obj, c_obj, content):
     """Same as _basic_add_to_content() but assumes the data are WWNs and converts them to aliases"""
     start = len(content)
     if obj is not None:
         for k, v in obj.items():
             buf = str(k)
             for mem_d in brcddb_util.convert_to_list(v.get('_members')):
+                _content_append(dict(font='std', align='wrap', disp=(buf, mem_d['b'], mem_d['c'], mem_d['r'])), content)
+                buf = ''
+            for mem_d in brcddb_util.convert_to_list(v.get('_pmembers')):
                 _content_append(dict(font='std', align='wrap', disp=(buf, mem_d['b'], mem_d['c'], mem_d['r'])), content)
                 buf = ''
     if len(content) == start:
@@ -379,14 +380,14 @@ def _null(obj, b_obj, c_obj, content):
 
 _action_table = dict(
     _fabric_objs=dict(
-        _alias_objs=dict(t='Aliases', f=_basic_add_to_content),
+        _alias_objs=dict(t='Aliases', f=_zoneobj_add_to_content),
         _eff_zone_objs=dict(t='Zones in effective zones configuration', f=_basic_add_to_content),
         _fdmi_node_objs=dict(t='FDMI Nodes', f=_alias_add_to_content),
         _fdmi_port_objs=dict(t='FDMI Ports', f=_alias_add_to_content),
         _login_objs=dict(t='Name server logins', f=_alias_add_to_content),
         _switch_keys=dict(t='Switches in fabric', f=_switch_add_to_content),
-        _zone_objs=dict(t='Zones', f=_basic_add_to_content),
-        _zonecfg_objs=dict(t='Zone configurations', f=_zonecfg_add_to_content),
+        _zone_objs=dict(t='Zones', f=_zoneobj_add_to_content),
+        _zonecfg_objs=dict(t='Zone configurations', f=_zoneobj_add_to_content),
     ),
     _chassis_objs=dict(
         _switch_keys=dict(t='Switches in fabric', f=_switch_add_to_content),
@@ -404,8 +405,8 @@ _action_table = dict(
 def _api_added_compares(obj, k, fk, content):
     """Recursively iterates through a list of changes from compare.compare() for API added content
 
-    :param obj: Added API content
-    :type obj: dict
+    :param obj: Added API content or list of API content objects
+    :type obj: dict, list, tuple
     :param k: Active key
     :type k: str
     :param fk: List of keys
@@ -805,13 +806,7 @@ def pseudo_main():
 
     # Compare the two projects
     brcdapi_log.log('Please wait. The comparison may take several seconds', True)
-    if _DEBUG_RF is not None:
-        compare_obj = brcddb_file.read_dump(_DEBUG_RF)
-        c = 100
-    else:
-        c, compare_obj = brcddb_compare.compare(b_proj_obj, c_proj_obj, None, _control_tables)
-        if _DEBUG_WF is not None:
-            brcddb_file.write_dump(compare_obj, _DEBUG_WF)
+    c, compare_obj = brcddb_compare.compare(b_proj_obj, c_proj_obj, None, _control_tables)
     _new_report(c, b_proj_obj, c_proj_obj, _project_scrub(compare_obj), rf)
     return brcddb_common.EXIT_STATUS_OK
 
@@ -821,10 +816,10 @@ def pseudo_main():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
+    exit(0)
 else:
     _ec = pseudo_main()
     brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), True)
-exit(_ec)
+    exit(_ec)
