@@ -36,17 +36,17 @@ Version Control::
     +===========+===============+===================================================================================+
     | 3.0.0     | 19 Jul 2020   | Initial Launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.1.7     | 14 May 2021   | Latest updates.                                                                   |
+    | 3.1.8     | 18 May 2021   | Latest updates.                                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '14 May 2021'
+__date__ = '18 May 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.7'
+__version__ = '3.1.8'
 
 import sys
 import os
@@ -132,7 +132,7 @@ imports = (
     {'l': 'brcddb.util.maps', 'd': 'Required for most brcddb libraries', 'r': '3.0.5'},
     {'l': 'brcddb.util.obj_convert', 'd': 'Required for search.py application', 'r': '3.0.3'},
     {'l': 'brcddb.util.search', 'd': 'Required for most brcddb libraries', 'r': '3.0.4'},
-    {'l': 'brcddb.util.util', 'd': 'Required for most brcddb libraries', 'r': '3.0.8'},
+    {'l': 'brcddb.util.util', 'd': 'Required for most brcddb libraries', 'r': '3.1.0'},
     {'l': 'brcddb.report.bp', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
     {'l': 'brcddb.report.chassis', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
     {'l': 'brcddb.report.fabric', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
