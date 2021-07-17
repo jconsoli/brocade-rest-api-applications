@@ -46,16 +46,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.4     | 14 Mar 2021   | Added ".txt" as acceptable input files as well.                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.5     | 17 Jul 2021   | Minor user interface enhancements.                                                |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '14 Mar 2021'
+__date__ = '17 Jul 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.4'
+__version__ = '3.0.5'
 
 import argparse
 import sys
@@ -89,17 +91,18 @@ def parse_args():
 
     buf = 'Combine the output of multiple JSON files from capture.py or this utility.'
     parser = argparse.ArgumentParser(description=buf)
-    buf = 'Directory of captured data files. Only files with ".json" or ".txt" extensions are read.'
+    buf = 'Required. Directory of captured data files. Only files with ".json" or ".txt" extensions are read.'
     parser.add_argument('-i', help=buf, required=True)
-    parser.add_argument('-o', help='Name of combined data capture file. Placed in the folder specified by -i',
-                        required=True)
-    buf = 'suppress all output to STD_IO except the exit code and argument parsing errors. Useful with batch '\
-          'processing where only the exit status code is desired. Messages are still printed to the log file.'
+    buf = 'Required. Name of combined data capture file. Placed in the folder specified by -i. The extension ".json" '\
+          'is automatically appended.'
+    parser.add_argument('-o', help=buf, required=True)
+    buf = 'Optional. Suppress all output to STD_IO except the exit code and argument parsing errors. Useful with '\
+          'batch processing where only the exit status code is desired. Messages are still printed to the log file.'
     parser.add_argument('-sup', help=buf, action='store_true', required=False)
-    buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log ' \
+    buf = 'Optional. Directory where log file is to be created. Default is to use the current directory. The log ' \
           'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
     parser.add_argument('-log', help=buf, required=False, )
-    buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
+    buf = 'Optional. No parameters. When set, a log file is not created. The default is to create a log file.'
     parser.add_argument('-nl', help=buf, action='store_true', required=False)
     args = parser.parse_args()
     return args.i, args.o, args.sup, args.log, args.nl
@@ -114,14 +117,14 @@ def combine_main():
     global _DEBUG
 
     # Get and validate user input
-    inf, outf, s_flag, log, nl = parse_args()
+    inf, in_outf, s_flag, log, nl = parse_args()
     if s_flag:
         brcdapi_log.set_suppress_all()
     if not nl:
         brcdapi_log.open_log(log)
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append('inf: ' + inf)
-    ml.append('outf: ' + outf)
+    ml.append('outf: ' + in_outf)
     brcdapi_log.log(ml, True)
 
     # Create project
@@ -130,6 +133,10 @@ def combine_main():
     projObj.s_description('Captured data from ' + inf)
 
     # Get a list of files - Filter out directories is just to protect the user. It shouldn't be necessary.
+    buf = in_outf.lower()
+    x = len(buf)
+    outf = in_outf if (x > len('.txt') and buf[x-len('.txt'):] == '.txt') or \
+                      (x > len('.json') and buf[x-len('.json'):] == '.json') else buf + '.json'
     files = brcddb_file.read_director(inf)
     if outf in files:
         brcdapi_log.log('Combined output file, ' + outf + ', already exists in: ' + inf + '. Processing halted', True)
