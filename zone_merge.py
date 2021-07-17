@@ -26,16 +26,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.1     | 14 May 2021   | Use Excel credentials file rather than a CSV file for input                       |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.2     | 17 Jul 2021   | Fixed error when specified project file does not exist.                           |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '14 May 2021'
+__date__ = '17 Jul 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 import argparse
 from os import listdir
@@ -55,7 +57,7 @@ import brcdapi.pyfos_auth as pyfos_auth
 import brcddb.report.utils as report_utils
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = True   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
+_DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
 _DEBUG_i = 'zone_merge_test'
 _DEBUG_p = None  # '_capture_2021_02_27/combined'
 _DEBUG_t = False
@@ -169,7 +171,7 @@ def _get_project(cf, pf, d_flag, s_flag, log, nl):
     ec = subprocess.Popen(param).wait()
     if ec != brcddb_common.EXIT_STATUS_OK:
         brcdapi_log.log('Data capture completed with errors.', True)
-        return ec
+        return None
 
     # Read the data back in as a project object
     brcdapi_log.log('Data capture complete. Now reading in the combined data.', True)
