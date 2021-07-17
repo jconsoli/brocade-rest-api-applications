@@ -1,5 +1,9 @@
 # brocade-rest-api-applications
 
+**Updates: 17 July 2021**
+
+* Help message improvements
+
 **applications**
 
 Contains modules used primarily for SAN automations tasks:
