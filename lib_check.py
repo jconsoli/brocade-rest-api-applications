@@ -36,17 +36,17 @@ Version Control::
     +===========+===============+===================================================================================+
     | 3.0.0     | 19 Jul 2020   | Initial Launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.1.8     | 18 May 2021   | Latest updates.                                                                   |
+    | 3.1.9     | 07 Aug 2021   | Latest updates.                                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '18 May 2021'
+__date__ = '07 Aug 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.8'
+__version__ = '3.1.9'
 
 import sys
 import os
@@ -102,17 +102,17 @@ imports = (
     {'l': 'brcdapi.log', 'd': 'Required for logging.', 'r': '3.0.5'},
     {'l': 'brcdapi.port', 'd': 'Required for reading and configuring ports.', 'r': '3.0.1'},
     {'l': 'brcdapi.switch', 'd': 'Required for reading and configuring switches.', 'r': '3.0.2'},
-    {'l': 'brcdapi.util', 'd': 'Utilities supporting the FOS RESTConf API driver.', 'r': '3.0.2'},
+    {'l': 'brcdapi.util', 'd': 'Utilities supporting the FOS RESTConf API driver.', 'r': '3.0.3'},
     {'l': 'brcdapi.zone', 'd': 'Required by scripts performing zoning operations.', 'r': '3.0.2'},
     {'d': ''},
     {'d': 'FOS API database libraries from github/jconsoli - brcddb'},
     {'d': ''},
-    {'l': 'brcddb.apps.report', 'd': 'Required for the report.py application', 'r': '3.0.7'},
-    {'l': 'brcddb.apps.zone', 'd': 'Required for the cli_zone.py application', 'r': '3.0.1'},
+    {'l': 'brcddb.apps.report', 'd': 'Required for the report.py application', 'r': '3.0.8'},
+    {'l': 'brcddb.apps.zone', 'd': 'Required for the cli_zone.py application', 'r': '3.0.2'},
     {'l': 'brcddb.brcddb_bp', 'd': 'Required for the report.py application', 'r': '3.0.5'},
     {'l': 'brcddb.brcddb_chassis', 'd': 'Required for most brcddb libraries', 'r': '3.0.5'},
     {'l': 'brcddb.brcddb_common', 'd': 'Required for most applications and brcddb libraries', 'r': '3.0.6'},
-    {'l': 'brcddb.brcddb_fabric', 'd': 'Required for most brcddb libraries', 'r': '3.0.8'},
+    {'l': 'brcddb.brcddb_fabric', 'd': 'Required for most brcddb libraries', 'r': '3.0.9'},
     {'l': 'brcddb.brcddb_login', 'd': 'Required for most applications', 'r': '3.0.2'},
     {'l': 'brcddb.brcddb_port', 'd': 'Required for most brcddb libraries', 'r': '3.0.5'},
     {'l': 'brcddb.brcddb_project', 'd': 'Required for most brcddb libraries', 'r': '3.0.6'},
@@ -147,8 +147,8 @@ imports = (
     {'l': 'brcddb.report.login', 'd': 'Required for generating Excel reports', 'r': '3.0.3'},
     {'l': 'brcddb.report.port', 'd': 'Required for generating Excel reports', 'r': '3.0.5'},
     {'l': 'brcddb.report.switch', 'd': 'Required for generating Excel reports', 'r': '3.0.4'},
-    {'l': 'brcddb.report.utils', 'd': 'Required for generating Excel reports', 'r': '3.0.9'},
-    {'l': 'brcddb.report.zone', 'd': 'Required for generating Excel reports', 'r': '3.0.7'},
+    {'l': 'brcddb.report.utils', 'd': 'Required for generating Excel reports', 'r': '3.1.0'},
+    {'l': 'brcddb.report.zone', 'd': 'Required for generating Excel reports', 'r': '3.0.8'},
     {'l': 'brcddb.app_data.alert_tables', 'd': 'Alert format tables. Required for zone and best practice analysis.',
      'r': '3.0.7'},
     {'l': 'brcddb.app_data.bp_tables', 'd': 'Needed for the report application to determine best practice violations',

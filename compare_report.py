@@ -42,16 +42,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.9     | 14 May 2021   | Fixed missing member changes for aliases and zones.                               |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.0     | 07 Aug 2021   | Fixed call to best_switch_name.                                                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '14 May 2021'
+__date__ = 'xx xxx 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.9'
+__version__ = '3.1.0'
 
 import argparse
 import brcddb.brcddb_fabric as brcddb_fabric
@@ -483,7 +485,7 @@ def _project_page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj):
     content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Switches Removed:')])
     for obj in [d for d in c_obj['_switch_objs'].values() if d['r'] == 'Removed']:
         content.append(dict(font='std', align='wrap',
-                            disp=brcddb_fabric.best_switch_name(b_proj_obj.r_switch_obj(obj.get('b')), True)))
+                            disp=brcddb_switch.best_switch_name(b_proj_obj.r_switch_obj(obj.get('b')), True)))
 
     # Add chassis changes
     content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Chassis Added:')])
@@ -496,7 +498,7 @@ def _project_page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj):
                             disp=brcddb_chassis.best_chassis_name(b_proj_obj.r_chassis_obj(obj.get('b')), True)))
 
     # Sheet name and title
-    sname = 'Project_Changes' + str(sheet_index)
+    sname = 'Project_Changes_' + str(sheet_index)
     report_utils.title_page(wb, None, sname, sheet_index, 'Project Changes', content, 80)
 
     return sheet_index+1, [dict(s=sname, d='Project Changes')]
@@ -622,10 +624,13 @@ _main_pages = dict(  # 's': sheet name. 't': sheet title. 'n': method to return 
 
 
 def _login_obj_name(obj, k, wwn):
-    try:
-        return obj.r_fabric_obj(k).r_alias_for_wwn(wwn)[0] + ' (' + wwn + ')'
-    except:
+    if obj is None or k is None or wwn is None:
         return wwn
+    fab_obj = obj.r_fabric_obj(k)
+    if fab_obj is None:
+        return wwn
+    alias_l = fab_obj.r_alias_for_wwn(wwn)
+    return alias_l[0] + ' (' + wwn + ')' if len(alias_l) > 0 else wwn
 
 
 def parse_args():
