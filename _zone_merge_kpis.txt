@@ -1,6 +1,0 @@
-brocade-fibrechannel-switch/fibrechannel-switch
-brocade-interface/fibrechannel
-# brocade-interface/fibrechannel-statistics
-brocade-zone/defined-configuration
-brocade-fibrechannel-configuration/zone-configuration
-brocade-fibrechannel-configuration/fabric
