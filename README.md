@@ -4,6 +4,27 @@
 
 * Help message improvements
 
+**7 Aug 2021 Updates**
+
+*brcddb*
+
+brcddb_fabric.py - Return fabric WWN in best_fab_name() if wwn=False but the fabric is not named.
+apps/report.py - Added WWN to the fabric name on the Table of Contents page
+apps/zone.py - Fixed bad call to api_int.get_batch()
+report/zone.py - Minor display issues cleaned up.
+
+*applications*
+
+compare_report.py - Fixed call to best_switch_name
+zone_restore.py - New
+zone_merge.py - Misc. fixes & removed fabric by name
+zon_merge_sample.xlsx - Improved instructions & removed fabric by name.
+lib_check.py - Updated with latest changes
+
+*brcdapi*
+
+util.py - Clean up mask_ip_addr()
+
 **applications**
 
 Contains modules used primarily for SAN automations tasks:
@@ -174,28 +195,3 @@ py zone_merge.py –i zone_merge_sample
 **zone_restore**
 
 Sets the zone database to that of a previously captured zone database. Typically used for restoring a zone database.
-
-**7 Aug 2021 Updates**
-
-*brcddb*
-
-brcddb_fabric.py - Return fabric WWN in best_fab_name() if wwn=False but the fabric is not named.
-apps/report.py - Added WWN to the fabric name on the Table of Contents page
-apps/zone.py - Fixed bad call to api_int.get_batch()
-report/zone.py - Minor display issues cleaned up.
-
-*applications*
-
-compare_report.py - Fixed call to best_switch_name
-zone_restore.py - New
-zone_merge.py - Misc. fixes & removed fabric by name
-zon_merge_sample.xlsx - Improved instructions & removed fabric by name.
-lib_check.py - Updated with latest changes
-
-*brcdapi*
-
-util.py - Clean up mask_ip_addr()
-
-
-
-
