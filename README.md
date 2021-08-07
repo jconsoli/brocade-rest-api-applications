@@ -167,7 +167,35 @@ py stats_g.py –i stats.json –r stats_report
 
 **zone_merge**
 
-Merges the zone databases from multiple fabrics. A test mode allows you to validate if the zone database could be merged without actually merging the zone database. Input is taken from a CSV file.
+Merges the zone databases from multiple fabrics. A test mode allows you to validate if the zone database could be merged without actually merging the zone database. Input is taken from an Excel file.
 
-py zone_merge.py –i zone_merge_sample.csv
+py zone_merge.py –i zone_merge_sample
+
+**zone_restore**
+
+Sets the zone database to that of a previously captured zone database. Typically used for restoring a zone database.
+
+**7 Aug 2021 Updates**
+
+*brcddb*
+
+brcddb_fabric.py - Return fabric WWN in best_fab_name() if wwn=False but the fabric is not named.
+apps/report.py - Added WWN to the fabric name on the Table of Contents page
+apps/zone.py - Fixed bad call to api_int.get_batch()
+report/zone.py - Minor display issues cleaned up.
+
+*applications*
+
+compare_report.py - Fixed call to best_switch_name
+zone_restore.py - New
+zone_merge.py - Misc. fixes & removed fabric by name
+zon_merge_sample.xlsx - Improved instructions & removed fabric by name.
+lib_check.py - Updated with latest changes
+
+*brcdapi*
+
+util.py - Clean up mask_ip_addr()
+
+
+
 
