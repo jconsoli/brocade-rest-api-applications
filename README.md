@@ -4,26 +4,15 @@
 
 * Help message improvements
 
-**7 Aug 2021 Updates**
+**Updates: 7 Aug 2021**
 
-*brcddb*
+The primary purpose of these updates was to add functionality to the zone merge utility and add a zone restore utility.
 
-brcddb_fabric.py - Return fabric WWN in best_fab_name() if wwn=False but the fabric is not named.
-apps/report.py - Added WWN to the fabric name on the Table of Contents page
-apps/zone.py - Fixed bad call to api_int.get_batch()
-report/zone.py - Minor display issues cleaned up.
-
-*applications*
-
-compare_report.py - Fixed call to best_switch_name
-zone_restore.py - New
-zone_merge.py - Misc. fixes & removed fabric by name
-zon_merge_sample.xlsx - Improved instructions & removed fabric by name.
-lib_check.py - Updated with latest changes
-
-*brcdapi*
-
-util.py - Clean up mask_ip_addr()
+* compare_report.py - Fixed call to best_switch_name
+* zone_restore.py - New
+* zone_merge.py - Misc. fixes & removed fabric by name
+* zon_merge_sample.xlsx - Improved instructions & removed fabric by name.
+* lib_check.py - Updated with latest changes
 
 **applications**
 
