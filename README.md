@@ -184,3 +184,7 @@ py zone_merge.py –i zone_merge_sample
 **zone_restore**
 
 Sets the zone database to that of a previously captured zone database. Typically used for restoring a zone database.
+
+**Updates**
+
+14 Aug 2021 - zone_merge.py, added ability to activate the merged zone configuration.
