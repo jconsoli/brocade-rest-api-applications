@@ -30,16 +30,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.3     | 07 Aug 2021   | Misc. fixes & removed fabric by name.                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.4     | 14 Aug 2021   | Fixed new zone configuration not getting activated.                               |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '07 Aug 2021'
+__date__ = '14 Aug 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 import argparse
 import sys
@@ -66,8 +68,8 @@ import brcddb.util.util as brcddb_util
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
 _DEBUG_i = 'zone_merge_test'
-_DEBUG_cfg = 'merged_zone_cfg'
-_DEBUG_a = False
+_DEBUG_cfg = 'combined_cfg'
+_DEBUG_a = True
 _DEBUG_t = False
 _DEBUG_scan = False
 _DEBUG_sup = False
@@ -138,11 +140,13 @@ def _scan_fabrics(proj_obj):
     return ec
 
 
-def _patch_zone_db(proj_obj):
+def _patch_zone_db(proj_obj, eff_cfg):
     """Replaces the zoning in the fabric(s).
 
     :param proj_obj: Project object
     :type proj_obj: brcddb.classes.project.ProjectObj
+    :param eff_cfg: Name of zone configuration to activate. None if no zone configuration to activate.
+    :type eff_cfg: str, None
     :return: List of error messages. Empty list if no errors found
     :rtype: list()
     """
@@ -179,6 +183,10 @@ def _patch_zone_db(proj_obj):
                 rl.append(pyfos_auth.formatted_error_msg(obj))
             else:
                 update_count += 1
+                if isinstance(eff_cfg, str):
+                    obj = api_zone.enable_zonecfg(session, base_fab_obj, fid, eff_cfg)
+                    if pyfos_auth.is_error(obj):
+                        rl.append(pyfos_auth.formatted_error_msg(obj))
         except:
             rl.append('Software fault in api_zone.replace_zoning()')
 
@@ -187,7 +195,7 @@ def _patch_zone_db(proj_obj):
         if pyfos_auth.is_error(obj):
             rl.append(pyfos_auth.formatted_error_msg(obj))
 
-        brcdapi_log.log(str(update_count) + ' switch updated.', True)
+        brcdapi_log.log(str(update_count) + ' switch(es) updated.', True)
 
     return rl
 
@@ -397,8 +405,6 @@ def _merge_zone_cfgs(change_d, base_fab_obj, add_fab_obj):
     rl = list()
     if change_d is None:
         return rl
-    base_fab_name = brcddb_fabric.best_fab_name(base_fab_obj, True)
-    add_fab_name = brcddb_fabric.best_fab_name(add_fab_obj, True)
 
     # Add what needs to be added or report differences
     for zonecfg, change_obj in change_d.items():
@@ -417,13 +423,15 @@ _merge_case['_zone_objs'] = _merge_zones
 _merge_case['_zonecfg_objs'] = _merge_zone_cfgs
 
 
-def _merge_zone_db(proj_obj, new_zone_cfg):
+def _merge_zone_db(proj_obj, new_zone_cfg, a_flag):
     """Merges the zones for the fabrics specified in fab_csv
 
     :param proj_obj: Project object
     :type proj_obj: brcddb.classes.project.ProjectObj
     :param new_zone_cfg: Name of zone configuration to add
     :type new_zone_cfg: str, None
+    :param a_flag: If True, make new_zone_cfg the effective zone configuration
+    :type a_flag: bool
     :return rl: Error message list. If empty, no errors encountered
     :rtype rl: list
     """
@@ -447,7 +455,8 @@ def _merge_zone_db(proj_obj, new_zone_cfg):
                                   brcddb_fabric.best_fab_name(fab_obj, wwn=True))
                     else:
                         mem_l = zonecfg_obj.r_members()
-                new_zonecfg_obj = fab_obj.s_add_zonecfg(new_zone_cfg, mem_l)
+                if isinstance(new_zone_cfg, str):
+                    new_zonecfg_obj = fab_obj.s_add_zonecfg(new_zone_cfg, mem_l)
             base_fab_obj = fab_obj
             brcddb_util.add_to_obj(proj_obj, 'zone_merge/base_fab_obj', base_fab_obj)
         else:
@@ -472,6 +481,11 @@ def _merge_zone_db(proj_obj, new_zone_cfg):
         add_zonecfg_obj = fab_obj.r_zonecfg_obj(zd.get('cfg'))
         if add_zonecfg_obj is not None:
             new_zonecfg_obj.s_add_member(add_zonecfg_obj.r_members())
+
+    # If the new zone configuration is to be enabled, set it as the effective zone configuration
+    if a_flag:
+        base_fab_obj.s_del_eff_zonecfg()
+        base_fab_obj.s_add_eff_zonecfg(new_zonecfg_obj.r_members())
 
     return rl
 
@@ -582,22 +596,25 @@ def _get_input():
         c_file += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
 
     # Parse the input file
+    ml = list()
     switch_l = report_utils.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=c_file)['content']
     if not scan_flag and len(switch_l) < 2:
-        brcdapi_log.log(
-            'At least two fabrics must be defined in the input file. ' + str(len(switch_l)) + ' were defined.',
-            True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR, sl, pl, cfg_name, a_flag, t_flag, addl_parms
-    for i in range(0, len(switch_l)):
-        sub_d = switch_l[i]
-        buf = sub_d.get('project_file')
-        if buf is None:
-            sl.append(_condition_input(sub_d))
-        else:
-            pl.append(sub_d)
-            if not brcddb_util.is_wwn(sub_d.get('fab_wwn'), full_check=True):
-                ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-                brcdapi_log.log('project_file specified in row ' + str(i+1) + ' but fab_wwn is not a valid WWN', True)
+        ml.append(str(len(switch_l)) + ' fabrics defined. At least two are required.')
+    if a_flag and not isinstance(cfg_name, str):
+        ml.append('Configuration activate flag, -a, specified without a valid zone configuration name, -cfg')
+    if len(ml) == 0:
+        for i in range(0, len(switch_l)):
+            sub_d = switch_l[i]
+            buf = sub_d.get('project_file')
+            if buf is None:
+                sl.append(_condition_input(sub_d))
+            else:
+                pl.append(sub_d)
+                if not brcddb_util.is_wwn(sub_d.get('fab_wwn'), full_check=True):
+                    ml.append('fab_wwn is not a valid WWN in row ' + str(i+1))
+    if len(ml) > 0:
+        brcdapi_log.log(ml, True)
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec, sl, pl, cfg_name, a_flag, t_flag, scan_flag, addl_parms
 
@@ -624,7 +641,7 @@ def psuedo_main():
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Merge the zones logically
-    ml = _merge_zone_db(proj_obj, cfg_name)
+    ml = _merge_zone_db(proj_obj, cfg_name, a_flag)
     if len(ml) > 0:
         ec = brcddb_common.EXIT_STATUS_ERROR
         ml.insert(0, 'Merge test failed:')
@@ -632,7 +649,7 @@ def psuedo_main():
     else:  # Make the changes
         ml.append('Zone merge test succeeded')
         if not t_flag:
-            tl = _patch_zone_db(proj_obj)
+            tl = _patch_zone_db(proj_obj, cfg_name if a_flag else None)
             if len(tl) > 0:
                 ec = brcddb_common.EXIT_STATUS_ERROR
             else:
