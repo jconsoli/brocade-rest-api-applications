@@ -14,6 +14,18 @@ The primary purpose of these updates was to add functionality to the zone merge 
 * zon_merge_sample.xlsx - Improved instructions & removed fabric by name.
 * lib_check.py - Updated with latest changes
 
+**14 Aug 2021 Updates**
+
+* zone_merge.py, added ability to activate the merged zone configuration.
+* report.py, added zone by target page
+
+**Updates: 21 Aug 2021**
+
+Added the ability to generate CLI zone commands in the zone merge utility.
+
+* zone_merge.py - Added -cli flag to generate CLI zoming commands
+* lib_check.py - Updated with latest changes
+
 **applications**
 
 Contains modules used primarily for SAN automations tasks:
@@ -184,8 +196,3 @@ py zone_merge.py –i zone_merge_sample
 **zone_restore**
 
 Sets the zone database to that of a previously captured zone database. Typically used for restoring a zone database.
-
-**14 Aug 2021 Updates**
-
-* zone_merge.py, added ability to activate the merged zone configuration.
-* report.py, added zone by target page
