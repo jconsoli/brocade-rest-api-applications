@@ -26,6 +26,12 @@ Added the ability to generate CLI zone commands in the zone merge utility.
 * zone_merge.py - Added -cli flag to generate CLI zoming commands
 * lib_check.py - Updated with latest changes
 
+**Updates 14 Nov 2021**
+
+* Deprecated pyfos_auth - previously only used in name only.
+* search - Greatly simplified search methods but it is now for programmers only as it accepts JSON as input.
+* Imporved several help and feedback messages.
+
 **applications**
 
 Contains modules used primarily for SAN automations tasks:
