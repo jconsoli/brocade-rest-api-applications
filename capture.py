@@ -45,16 +45,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.7     | 14 May 2021   | Added automatic extensions.                                                       |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.8     | 14 Nov 2021   | Deprecated pyfos_auth                                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '14 May 2021'
+__date__ = '14 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.7'
+__version__ = '3.0.8'
 
 import argparse
 import sys
@@ -66,15 +68,15 @@ import brcdapi.brcdapi_rest as brcdapi_rest
 import brcddb.util.copy as brcddb_copy
 import brcddb.util.file as brcddb_file
 import brcddb.api.interface as api_int
-import brcdapi.pyfos_auth as pyfos_auth
+import brcdapi.fos_auth as brcdapi_auth
 import brcddb.brcddb_common as brcddb_common
 import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _WRITE = True  # Should always be True. Used for debug only. Prevents the output file from being written when False
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_IP = 'xx.xx.xx.xx'
-_DEBUG_OUTF = 'test/home'
+_DEBUG_IP = '10.xxx.x.xxx'
+_DEBUG_OUTF = 'test/x118'
 _DEBUG_ID = 'admin'
 _DEBUG_PW = 'password'
 _DEBUG_SEC = 'self'
@@ -148,19 +150,15 @@ _report_kpi_l = (
 def _kpi_list(session, c_file):
     """Returns the list of KPIs to capture
 
-    :param session: Session object returned from brcdapi.pyfos_auth.login()
+    :param session: Session object returned from brcdapi.brcdapi_auth.login()
     :type session: dict
     :param c_file: Name of file with KPIs to read
     :type c_file: str, None
     :return: List of KPIs
     :rtype: list
     """
-    if c_file is None:
-        kpi_l = _report_kpi_l
-    elif c_file == '*':
-        kpi_l = brcddb_util.convert_to_list(session.get('supported_uris'))
-    else:
-        kpi_l = brcddb_file.read_file(c_file)
+    kpi_l = _report_kpi_l if c_file is None else brcddb_util.convert_to_list(session.get('supported_uris')) if \
+        c_file == '*' else brcddb_file.read_file(c_file)
     rl = list()
     for kpi in kpi_l:
         if kpi in brcdapi_util.uri_map:
@@ -253,7 +251,7 @@ def pseudo_main():
 
     # Login
     session = api_int.login(user_id, pw, ip, sec, proj_obj)
-    if pyfos_auth.is_error(session):
+    if brcdapi_auth.is_error(session):
         return brcddb_common.EXIT_STATUS_API_ERROR
 
     # Collect the data
@@ -266,8 +264,8 @@ def pseudo_main():
 
     # Logout
     obj = brcdapi_rest.logout(session)
-    if pyfos_auth.is_error(obj):
-        brcdapi_log.log(pyfos_auth.formatted_error_msg(obj), True)
+    if brcdapi_auth.is_error(obj):
+        brcdapi_log.log(brcdapi_auth.formatted_error_msg(obj), True)
 
     # Dump the database to a file
     if _WRITE:

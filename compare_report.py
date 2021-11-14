@@ -44,16 +44,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.0     | 07 Aug 2021   | Fixed call to best_switch_name.                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.1     | 14 Nov 2021   | Fixed __date__                                                                    |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = 'xx xxx 2021'
+__date__ = '14 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.0'
+__version__ = '3.1.1'
 
 import argparse
 import brcddb.brcddb_fabric as brcddb_fabric
@@ -524,6 +526,8 @@ def _page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj, page):
     :return tbl_contents: Table of contents for the fabrics
     :rtype. tbl_contents: list
     """
+    global _main_pages
+
     # Set up the table of contents and sheet headers
     tbl_contents = list()
     if not isinstance(c_obj, dict):
@@ -697,7 +701,7 @@ def _project_scrub(c_obj):
 def _new_report(c, b_proj_obj, c_proj_obj, c_obj, r_name):
     """Generates an Excel comparison report
 
-    :param c: Total number of changes
+    :param c: Total number of changes. Typically the number of changes returned from brcddb.util.compare.compare()
     :type c: int
     :param b_proj_obj: Project object for base (project we are comparing against). Typically the older project.
     :type b_proj_obj: brcddb.classes.project.ProjectObj
@@ -708,6 +712,8 @@ def _new_report(c, b_proj_obj, c_proj_obj, c_obj, r_name):
     :param r_name: Name of Excel workbook file
     :type r_name: str
     """
+    global _main_pages
+
     # Set up the workbook
     sheet_index = 0
     wb = report_utils.new_report()
@@ -756,7 +762,7 @@ def pseudo_main():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _generic_table_add, _key_conv_tbl
+    global _generic_table_add, _key_conv_tbl, _control_tables
 
     # Get and validate the user inputs.
     bf, cf, rf, s_flag, log, nl = parse_args()

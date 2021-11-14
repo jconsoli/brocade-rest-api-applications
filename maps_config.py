@@ -34,18 +34,20 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.2     | 13 Feb 2021   | Added # -*- coding: utf-8 -*-                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.3     | 14 Nov 2021   | Deprecated pyfos_auth                                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '13 Feb 2021'
+__date__ = '14 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import argparse
-import brcdapi.pyfos_auth as pyfos_auth
+import brcdapi.fos_auth as brcdapi_auth
 import brcdapi.log as brcdapi_log
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcddb.report.utils as report_utils
@@ -55,7 +57,7 @@ import brcddb.brcddb_common as brcddb_common
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
 _MAX_RULE_BATCH = 20  # Maximum number of MAPS rules to create in one API call. This is far more conservative than req.
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_IP = '10.8.105.10'
+_DEBUG_IP = '10.x.xxx.xx'
 _DEBUG_ID = 'admin'
 _DEBUG_PW = 'password'
 _DEBUG_SEC = 'self'  # 'none'
@@ -72,10 +74,11 @@ _DEBUG_NL = False
 _sfp_groups = list()  # List of SFP groups read from the switch
 _sfp_monitoring_system = list()  # I shoe horned this in after the fact to be able to clone a policy without new rules
 
+
 def _get_groups(session, fid):
     """Get the defined groups
 
-    :param session: Session object returned from brcdapi.pyfos_auth.login()
+    :param session: Session object returned from brcdapi.brcdapi_auth.login()
     :type session: dict
     :param fid: Fabric ID of the logical switch whose MAPS policy we want to modify. None if not VF enabled
     :type fid: None, int
@@ -83,7 +86,7 @@ def _get_groups(session, fid):
     :rtype: list
     """
     group_obj = api_int.get_rest(session, 'brocade-maps/group', None, fid)
-    if pyfos_auth.is_error(group_obj):
+    if brcdapi_auth.is_error(group_obj):
         brcdapi_log.log('Failed to get MAPS groups.', True)  # api_int.get_rest() logs detailed error message
         return None
     # obj.get('name') should never be None. This is just extra caution
@@ -93,7 +96,7 @@ def _get_groups(session, fid):
 def _get_policy(session, fid, policy=None):
     """Get the specified MAPS policy. If None, return the active MAPS policy
 
-    :param session: Session object returned from brcdapi.pyfos_auth.login()
+    :param session: Session object returned from brcdapi.brcdapi_auth.login()
     :type session: dict
     :param fid: Fabric ID of the logical switch whose MAPS policy we want to modify. None if not VF enabled
     :type fid: None, int
@@ -104,7 +107,7 @@ def _get_policy(session, fid, policy=None):
     """
     # Get the policies
     obj = api_int.get_rest(session, 'brocade-maps/maps-policy', None, fid)
-    if pyfos_auth.is_error(obj):
+    if brcdapi_auth.is_error(obj):
         brcdapi_log.log('Failed to get MAPS policies.', True)  # api_int.get_rest() logs detailed error message
         return brcddb_common.EXIT_STATUS_API_ERROR, None
 
@@ -121,7 +124,7 @@ def _get_policy(session, fid, policy=None):
 def _create_new_rules(session, fid, new_sfp_rules):
     """Create all new SFP rules
 
-    :param session: Session object returned from brcdapi.pyfos_auth.login()
+    :param session: Session object returned from brcdapi.brcdapi_auth.login()
     :type session: dict
     :param fid: Fabric ID of the logical switch whose MAPS policy we want to modify. None if not VF enabled
     :type fid: None, str
@@ -138,7 +141,7 @@ def _create_new_rules(session, fid, new_sfp_rules):
         x = i + _MAX_RULE_BATCH if i + _MAX_RULE_BATCH <= num_rules else num_rules
         new_rules = new_sfp_rules[i:x]
         obj = brcdapi_rest.send_request(session, 'brocade-maps/rule', 'POST', dict(rule=new_rules), fid)
-        if pyfos_auth.is_error(obj):
+        if brcdapi_auth.is_error(obj):
             # If the rule already exists, you cannot use POST or PATCH to write over it and PUT is not supported. I'm
             # assuming you could DELETE then POST and I could also check to see if the rule is changing but this simple
             # example on how to modify a MAPS policy is already getting to complicated so I just post warnings.
@@ -153,7 +156,7 @@ def _create_new_rules(session, fid, new_sfp_rules):
                     else:
                         er_l.append(d)
             if len(er_l) > 0:
-                brcdapi_log.log('Failed to create rules. API response:' + pyfos_auth.formatted_error_msg(er_obj), True)
+                brcdapi_log.log('Failed to create rules. API response:' + brcdapi_auth.formatted_error_msg(er_obj), True)
                 return sum_new_rules  # If we get here, something is really wrong so just bail out
         # rule.get('name') should never be None in the line below. I'm just extra cautious
         sum_new_rules.extend([rule.get('name') for rule in new_rules if rule.get('name') is not None])
@@ -164,7 +167,7 @@ def _create_new_rules(session, fid, new_sfp_rules):
 def _rules_to_keep(session, fid, maps_policy):
     """Get the current MAPS rules 'brocade-maps/rule' from specified policy and remove all the SFP rules.
 
-    :param session: Session object returned from brcdapi.pyfos_auth.login()
+    :param session: Session object returned from brcdapi.brcdapi_auth.login()
     :type session: dict
     :param fid: Fabric ID of the logical switch whose MAPS policy we want to modify. None if not VF enabled
     :type fid: None, str
@@ -177,7 +180,7 @@ def _rules_to_keep(session, fid, maps_policy):
 
     # Get all the MAPS rules
     obj = api_int.get_rest(session, 'brocade-maps/rule', None, fid)
-    if pyfos_auth.is_error(obj):
+    if brcdapi_auth.is_error(obj):
         brcdapi_log.log('Failed to get MAPS rules.', True)  # api_int.get_rest() logs detailed error message
         return None
 
@@ -192,7 +195,7 @@ def _rules_to_keep(session, fid, maps_policy):
 def _create_new_policy(session, fid, policy, rule_list, enable_flag=False):
     """Create a new MAPS policy.
 
-    :param session: Session object returned from brcdapi.pyfos_auth.login()
+    :param session: Session object returned from brcdapi.brcdapi_auth.login()
     :type session: dict
     :param fid: Fabric ID of the logical switch whose MAPS policy we want to modify. None if not VF enabled
     :type fid: None, str
@@ -213,8 +216,8 @@ def _create_new_policy(session, fid, policy, rule_list, enable_flag=False):
 
     # Now send the new MAPS policy to the switch
     obj = brcdapi_rest.send_request(session, 'brocade-maps/maps-policy', 'POST', {'maps-policy': new_content}, fid)
-    if pyfos_auth.is_error(obj):
-        brcdapi_log.log('Failed to set MAPS policy. API response:\n' + pyfos_auth.formatted_error_msg(obj), True)
+    if brcdapi_auth.is_error(obj):
+        brcdapi_log.log('Failed to set MAPS policy. API response:\n' + brcdapi_auth.formatted_error_msg(obj), True)
         brcdapi_log.log('This typically occurs when the policy already exists.', True)
         return brcddb_common.EXIT_STATUS_API_ERROR
     return brcddb_common.EXIT_STATUS_OK
@@ -223,7 +226,7 @@ def _create_new_policy(session, fid, policy, rule_list, enable_flag=False):
 def _modify_maps(session, fid, new_sfp_rules, new_policy, old_policy, enable_flag=False):
     """Calls the methods to create new rules, new policy, and activate the new policy.
 
-    :param session: Session object returned from brcdapi.pyfos_auth.login()
+    :param session: Session object returned from brcdapi.brcdapi_auth.login()
     :type session: dict
     :param fid: Fabric ID of the logical switch whose MAPS policy we want to modify. None if not VF enabled
     :type fid: None, str
@@ -345,7 +348,7 @@ def pseudo_main():
 
     # Login
     session = api_int.login(user_id, pw, ip, sec)
-    if pyfos_auth.is_error(session):  # api_int.login() logs detailed error message
+    if brcdapi_auth.is_error(session):  # api_int.login() logs detailed error message
         return brcddb_common.EXIT_STATUS_API_ERROR
 
     # try/except used during development to ensure logout due to programming errors.
@@ -365,8 +368,8 @@ def pseudo_main():
         brcdapi_log.log('Programming error encountered', True)
 
     obj = brcdapi_rest.logout(session)
-    if pyfos_auth.is_error(obj):
-        brcdapi_log.log('Logout failed. API response:\n' + pyfos_auth.formatted_error_msg(obj), True)
+    if brcdapi_auth.is_error(obj):
+        brcdapi_log.log('Logout failed. API response:\n' + brcdapi_auth.formatted_error_msg(obj), True)
         ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     return ec

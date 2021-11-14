@@ -35,16 +35,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.5     | 14 May 2021   | Permitted input from Excel Workbook instead of just a CSV file.                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.6     | 14 Nov 2021   | Do not pass -d to report.py. Better help message for -r option.                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '14 May 2021'
+__date__ = '14 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.5'
+__version__ = '3.0.6'
 
 import argparse
 import datetime
@@ -58,16 +60,16 @@ import brcddb.report.utils as report_utils
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_I = 'cid_multi_capture'
-_DEBUG_F = None
-_DEBUG_SFP = 'sfp_rules_r10.xlsx'
-_DEBUG_IOCP = 'test_iocp'
+_DEBUG_i = 'cid_multi_capture'
+_DEBUG_f = None
+_DEBUG_sfp = 'sfp_rules_r10.xlsx'
+_DEBUG_iocp = 'test_iocp'
 _DEBUG_r = True
 _DEBUG_c = None
-_DEBUG_SUP = False  # If true, all logging to STD_OUT is suppressed
-_DEBUG_VERBOSE = False
-_DEBUG_LOG = '_logs'
-_DEBUG_NL = False
+_DEBUG_sup = False  # If true, all logging to STD_OUT is suppressed
+_DEBUG_d = True
+_DEBUG_log = '_logs'
+_DEBUG_nl = False
 
 
 def parse_args():
@@ -80,12 +82,12 @@ def parse_args():
     :return r: Name of report, if specified.
     :rtype r: str, None
     """
-    global _DEBUG_I, _DEBUG_F, _DEBUG_SFP, _DEBUG_IOCP, _DEBUG_r, _DEBUG_c, _DEBUG_SUP, _DEBUG_VERBOSE, _DEBUG_LOG, \
-        _DEBUG_NL
+    global _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_sup, _DEBUG_d, _DEBUG_log, \
+        _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_I, _DEBUG_F, _DEBUG_SFP, _DEBUG_IOCP, _DEBUG_r, _DEBUG_c, _DEBUG_SUP, _DEBUG_VERBOSE, _DEBUG_LOG,\
-               _DEBUG_NL
+        return _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_sup, _DEBUG_d, _DEBUG_log,\
+               _DEBUG_nl
     buf = 'Capture all report data from multiple chassis and optionally generate a report.'
     parser = argparse.ArgumentParser(description=buf)
     buf = 'Required. Excel file of switch login credentials. See multi_capture_example.xlsx. ".xlsx" is automatically '\
@@ -105,7 +107,9 @@ def parse_args():
           'configuration statements from HCD) and must begin with the CEC serial number followed by \'_\'. Leading 0s '\
           'are not required. Example, for a CPC with serial number 12345: 12345_M90_iocp.txt'
     parser.add_argument('-iocp', help=buf, required=False)
-    parser.add_argument('-r', help='Optional. Generates a report.', action='store_true', required=False)
+    buf = '(Optional). No parameters. When specified, generates a report. See -f option for location. The name of the '\
+          'report is "report_yyyy_mm_dd_hh_mm_ss.xlsx"'
+    parser.add_argument('-r', help=buf, action='store_true', required=False)
     buf = '(Optional) Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. The ' \
           'default is to capture all KPIs required for the report.'
     parser.add_argument('-c', help=buf, required=False,)
@@ -175,8 +179,7 @@ def psuedo_main():
         in_file += '.xlsx'
     if len(in_file) > len('.xlsx') and in_file[len(in_file)-len('.xlsx'):] == '.xlsx':
         for d in report_utils.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=in_file)['content']:
-            switch_parms.append(['-id', d['user_id'], '-pw', d['pw'], '-ip', d['ip_addr'], '-s', d['security'],
-                                 '-f', folder + '/' + d['name']])
+            switch_parms.append(['-id', d['user_id'], '-pw', d['pw'], '-ip', d['ip_addr'], '-s', d['security']])
     else:  # The old CSV way
         file_content = brcddb_file.read_file(in_file)
         for mod_line in file_content:
@@ -187,12 +190,14 @@ def psuedo_main():
     os.mkdir(folder)
 
     # Kick off all the data captures
-    pid_l = list()
+    i, pid_l = 0, list()
     for l in switch_parms:
-        params = ['python.exe', 'capture.py'] + l + addl_parms_capture + addl_parms_all
+        params = ['python.exe', 'capture.py', '-f', folder + '/switch_' + str(i)] + l + addl_parms_capture + \
+                 addl_parms_all
         if _DEBUG:
             brcdapi_log.log(' '.join(params), True)
         pid_l.append(subprocess.Popen(params))
+        i += 1
 
     # Below waits for all processes to complete before generating the report.
     pid_done = [p.wait() for p in pid_l]
@@ -213,7 +218,8 @@ def psuedo_main():
         param = ['python.exe',
                  'report.py',
                  '-i', folder + '/combined.json',
-                 '-o', folder + '/report' + date_str + '.xlsx'] + addl_parms_report + addl_parms_all
+                 '-o', folder + '/report' + date_str + '.xlsx'] + addl_parms_report +\
+                [buf for buf in addl_parms_all if buf != '-d']
         if _DEBUG:
             brcdapi_log.log(' '.join(params), True)
         ec = subprocess.Popen(param).wait()

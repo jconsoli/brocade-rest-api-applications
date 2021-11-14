@@ -33,9 +33,9 @@ sleep = poll cycle time - (poll finish time - poll start time)
 epoch time of the server where the script is run is used for the formula above. The accuracy of the poll cycle will
 depend on several factors, most notably networking delays and CPU activity. The time stamp of the data comes from the
 time stamp returned with the switch response.Keep in mind that most data centers use a time clock server which is often
-UTC. As of this writting,time-generated returned with the port statistics was the time on the switch whent the request
+UTC. As of this writing, time-generated returned with the port statistics was the time on the switch when the request
 was made, not when the statistics were captured by FOS. For Gen6 & Gen7, FOS polls the port statistics every 2 seconds
-so the accuacy of the timestamp is within 2 seconds.
+so the accuracy of the timestamp is within 2 seconds.
 
 Only fibre channel port statistics are collected at this time. A JSON dump of the counters (only differences of
 cumulative counters are stored, which are most of the counters) in a plain text file. Use stats_g.py to convert to an
@@ -60,16 +60,19 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.3     | 13 Feb 2021   | Added # -*- coding: utf-8 -*-                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.4     | 14 Nov 2021   | Changed _MIN_POLL_TIME to 2.1 and added collection of brocade-interface. This was |
+    |           |               | primarily to capture average-receive-frame-size and average-transmit-frame-size.  |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '13 Feb 2021'
+__date__ = '14 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.3'
+__version__ = '3.0.4'
 
 import sys
 import os
@@ -89,22 +92,28 @@ import brcdapi.util as brcdapi_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False
-_DEBUG_IP = '10.8.105.10'
+_DEBUG_IP = 'xx.xx.xx.xx'
 _DEBUG_ID = 'admin'
 _DEBUG_PW = 'password'
 _DEBUG_SEC = 'self'  # 'none'
 _DEBUG_FID = 2
 _DEBUG_SUPPRESS = False
-_DEBUG_VERBOSE = True
+_DEBUG_VERBOSE = False
 _DEBUG_POLL_TIME = None
 _DEBUG_M = 4
-_DEBUG_O = 'cid_test/home_fid_2.txt'
+_DEBUG_O = 'test/stats.json'
 _DEBUG_LOG = '_logs'
 _DEBUG_NL = False
-
-_MIN_POLL = 5.1  # Minimum time in seconds to sleep between poll cycles.
+"""_MIN_POLL is the minimum time in seconds the command line will accept. It is actually the time to sleep between each
+request for statistical data. Additional comments regarding the poll cycles are in the Overview section in the module
+header. Picking a sleep time that results in a poll that guarantees the poll cycle of FOS is impossible. This is why
+0.1 is added. Keep in mind that if you poll a switch twice within the same internal switch poll cycle, all the
+statistical counters will be the same as the previous poll but the time stamp will be different."""
+_MIN_POLL = 2.1  # See comments above
 _EXCEPTION_MSG = 'This normally occurs when data collection is terminated with Control-C keyboard interrupt or a '\
     'network error occured. All data collected up to this point will be saved.'
+_DEFAULT_POLL_INTERVAL = 10  # Default poll interval, -p
+_DEFAULT_MAX_SAMPLE = 100  # Default number of samples, -m
 _proj_obj = None  # Project object (brcddb.classes.project.ProjectObj)
 _session = None  # Session object returned from brcdapi.pyfos_auth.login()
 _out_f = None  # Name of output file for plain text copy of _proj_obj
@@ -117,7 +126,7 @@ _uris = (
     # may also want to know other information such as the name of the switch a port is in, alias of attached login,
     # zone the logins are in,
     'brocade-fibrechannel-switch/fibrechannel-switch',  # Switch name, DID, etc...
-    'brocade-interface/fibrechannel',  # Contains useful information about the port
+    'brocade-interface/fibrechannel',  # Base port information
     # 'media-rdp',  # SFP data
 )
 _uris_2 = (  # Execute if there is a fabric principal
@@ -128,7 +137,6 @@ _uris_2 = (  # Execute if there is a fabric principal
     'brocade-zone/effective-configuration',
     'brocade-fdmi/hba',  # FDMI node data
     'brocade-fdmi/port',  # FDMI port data
-    'brocade-interface/fibrechannel',  # General port information
 )
 
 
@@ -136,6 +144,7 @@ def _wrap_up(exit_code):
     """Write out the collected data in JSON to a plain text file.
 
     :param exit_code: Initial exit code
+    :type exit_code: int
     """
     global _proj_obj, _session, _out_f, _switch_obj, _base_switch_obj
 
@@ -145,7 +154,7 @@ def _wrap_up(exit_code):
             obj = brcdapi_rest.logout(_session)
             if pyfos_auth.is_error(obj):
                 brcdapi_log.log(pyfos_auth.formatted_error_msg(obj), True)
-        except:
+        except:  # Bare because I'm not debugging other libraries or FOS API errors.
             brcdapi_log.log('Logout failure. ' + _EXCEPTION_MSG, True)
         _session = None
 
@@ -155,7 +164,7 @@ def _wrap_up(exit_code):
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(_proj_obj, plain_copy)
         brcddb_file.write_dump(plain_copy, _out_f)
-    except:
+    except:  # This shouldn't be bare, but what?
         pass
     return ec
 
@@ -186,6 +195,7 @@ def parse_args():
     """
     global _DEBUG, _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_SEC, _DEBUG_FID, _DEBUG_SUPPRESS
     global _DEBUG_POLL_TIME, _DEBUG_M, _DEBUG_O, _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
+
     if _DEBUG:
         return _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_SEC, _DEBUG_FID, _DEBUG_SUPPRESS, _DEBUG_POLL_TIME, _DEBUG_M, \
                _DEBUG_O, _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
@@ -196,18 +206,18 @@ def parse_args():
     parser.add_argument('-pw', help='Required. Password', required=True)
     buf = '(Optional) \'CA\' or \'self\' for HTTPS mode. Default is HTTP'
     parser.add_argument('-s', help=buf, required=False,)
-    buf = 'Required. Name of output file where raw data is to be stored. This is a plane text file.'
+    buf = 'Required. Name of output file where raw data is to be stored. ".json" extension is automatically appended.'
     parser.add_argument('-o', help=buf, required=True)
     buf = '(Optional) Virtual Fabric ID (1 - 128) of switch to read statistics from. Default is 128'
     parser.add_argument('-fid', help=buf, type=int, required=False)
     buf = '(Optional) No arguments. Suppress all library generated output to STD_IO except the exit code. Useful with'\
           ' batch processing'
     parser.add_argument('-sup', help=buf, action='store_true', required=False)
-    buf = '(Optional) Polling interval in seconds. Default is 10. A minimum of ' + str(_MIN_POLL) + ' seconds ' \
-                                                                                                    'is introduced.'
-    parser.add_argument('-p', help=buf, type=int, required=False)
-    buf = '(Optional) Maximum number of samples to collect. If not specified, samples are collected until a ' \
-          'Control-C keyboard interrupt is received.'
+    buf = '(Optional) Polling interval in seconds. Default is '\
+          + str(_DEFAULT_POLL_INTERVAL) + '. The minimum is ' + str(_MIN_POLL) + ' seconds.'
+    parser.add_argument('-p', help=buf, type=float, required=False)
+    buf = '(Optional) Samples are collected until this maximum is reached or a Control-C keyboard interrupt is '\
+          'received. Default: ' + str(_DEFAULT_MAX_SAMPLE)
     parser.add_argument('-m', help=buf, type=int, required=False)
     buf = '(Optional) No arguments. Enable debug logging'
     parser.add_argument('-d', help=buf, action='store_true', required=False)
@@ -269,7 +279,8 @@ def pseudo_main():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _DEBUG, _proj_obj, _session, _out_f, _switch_obj, _base_switch_obj, _uris, _uris_2, __version__
+    global _DEBUG, _DEFAULT_POLL_INTERVAL, _DEFAULT_MAX_SAMPLE, _proj_obj, _session, _out_f, _switch_obj, _base_switch_obj
+    global __version__, _uris, _uris_2
 
     signal.signal(signal.SIGINT, _signal_handler)
 
@@ -289,17 +300,20 @@ def pseudo_main():
     ml.append('User ID:       ' + user_id)
     ml.append('FID:           ' + str(fid))
     if max_p is None:
-        max_p = 10000
+        max_p = _DEFAULT_MAX_SAMPLE
         ml.append('Samples:       ' + str(max_p) + default_text)
     else:
         ml.append('Samples:       ' + str(max_p))
     if pct is None:
-        pct = 10
+        pct = _DEFAULT_POLL_INTERVAL
         ml.append('Poll Interval: ' + str(pct) + default_text)
     else:
         ml.append('Poll Interval: ' + str(pct) + ' (defaulting to ' + str(_MIN_POLL) + ')' if pct < _MIN_POLL else '')
     ml.append('Output File:   ' + _out_f)
     brcdapi_log.log(ml, True)
+    x = len('.json')
+    if len(_out_f) < x or _out_f[len(_out_f)-x] != '.json':
+        _out_f += '.json'
 
     # Create project
     _proj_obj = brcddb_project.new('Port_Stats', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -340,23 +354,34 @@ def pseudo_main():
         for p in last_stats.get('fibrechannel-statistics'):
             _base_switch_obj.r_port_obj(p.get('name')).s_new_key('fibrechannel-statistics', p)
 
-        # Now start collecting the port statistics
+        # Now start collecting the port and interface statistics
         for i in range(0, max_p):
             x = pct - (time.time() - last_time)
             time.sleep(_MIN_POLL if x < _MIN_POLL else x)
             switch_obj = _proj_obj.s_add_switch(base_switch_wwn + '-' + str(i))
             last_time = time.time()
+            obj = brcddb_int.get_rest(_session, 'brocade-interface/fibrechannel', switch_obj, fid)
+            if not pyfos_auth.is_error(obj):
+                for p in obj.get('fibrechannel'):
+                    switch_obj.s_add_port(p.get('name')).s_new_key('fibrechannel', p)
+                obj = brcddb_int.get_rest(_session, stats_buf, switch_obj, fid)
+            if pyfos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
+                brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
+                                True)
+                _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
+                return brcddb_common.EXIT_STATUS_ERROR
             obj = brcddb_int.get_rest(_session, stats_buf, switch_obj, fid)
             if pyfos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
                                 True)
                 _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
                 return brcddb_common.EXIT_STATUS_ERROR
-            else:
-                for p in _stats_diff(last_stats, obj).get('fibrechannel-statistics'):
-                    switch_obj.s_add_port(p.get('name')).s_new_key('fibrechannel-statistics', p)
-                _switch_obj.append(switch_obj)
-                last_stats = obj
+
+            for p in _stats_diff(last_stats, obj).get('fibrechannel-statistics'):
+                switch_obj.s_add_port(p.get('name')).s_new_key('fibrechannel-statistics', p)
+            _switch_obj.append(switch_obj)
+            last_stats = obj
+
         return _wrap_up(brcddb_common.EXIT_STATUS_OK)
 
     except:

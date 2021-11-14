@@ -26,31 +26,32 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.1     | 13 Feb 2021   | Added # -*- coding: utf-8 -*-                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.2     | 14 Nov 2021   | Deprecated pyfos_auth                                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '13 Feb 2021'
+__date__ = '14 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 import argparse
 import sys
-import os
 import datetime
 
 import brcddb.api.interface as api_int
 import brcddb.brcddb_project as brcddb_project
 import brcdapi.log as brcdapi_log
 import brcdapi.brcdapi_rest as brcdapi_rest
-import brcdapi.pyfos_auth as pyfos_auth
+import brcdapi.fos_auth as brcdapi_auth
 import brcddb.brcddb_common as brcddb_common
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, AND _DEBUG_OUTF instead of passed arguments
-_DEBUG_IP = '10.8.105.10'
+_DEBUG_IP = 'xx.x.xxx.xx'
 _DEBUG_ID = 'admin'
 _DEBUG_PW = 'password'
 _DEBUG_SEC = 'self'  # None
@@ -105,7 +106,7 @@ def parse_args():
 def clear_stats(session, switch_obj):
     """Clear all statistical counters associated with a switch
 
-    :param session: Session object returned from brcdapi.pyfos_auth.login()
+    :param session: Session object returned from brcdapi.brcdapi_auth.login()
     :type session: dict
     :param switch_obj: Switch object
     :type switch_obj: brcddb.classes.SwitchObj
@@ -128,8 +129,8 @@ def clear_stats(session, switch_obj):
                 d.update({'reset-statistics': 1})
                 pl.append(d)
             obj = brcdapi_rest.send_request(session, 'brocade-interface/fibrechannel-statistics', 'PATCH', content, fid)
-            if pyfos_auth.is_error(obj):
-                brcdapi_log.log(pyfos_auth.obj_error_detail(obj), True)
+            if brcdapi_auth.is_error(obj):
+                brcdapi_log.log(brcdapi_auth.obj_error_detail(obj), True)
                 ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
@@ -170,8 +171,8 @@ def psuedo_main():
 
     # Login
     session = api_int.login(user_id, pw, ip, sec, proj_obj)
-    if pyfos_auth.is_error(session):
-        brcdapi_log.log(pyfos_auth.formatted_error_msg(session), True)
+    if brcdapi_auth.is_error(session):
+        brcdapi_log.log(brcdapi_auth.formatted_error_msg(session), True)
         return brcddb_common.EXIT_STATUS_ERROR
 
     # Capture data - stats are cleared on a per port basis so this is needed to determine what the ports are.
@@ -186,14 +187,14 @@ def psuedo_main():
             if fid_list is None or fid in fid_list:
                 temp_ec = clear_stats(session, switch_obj)
                 ec = temp_ec if ec != brcddb_common.EXIT_STATUS_OK else ec
-    except:
+    except:  # Bare because I don't care what happened. I just want to logout.
         brcdapi_log.exception('Programming error encountered', True)
         ec = brcddb_common.EXIT_STATUS_ERROR
 
     # Logout
     obj = brcdapi_rest.logout(session)
-    if pyfos_auth.is_error(obj):
-        brcdapi_log.log(pyfos_auth.formatted_error_msg(obj), True)
+    if brcdapi_auth.is_error(obj):
+        brcdapi_log.log(brcdapi_auth.formatted_error_msg(obj), True)
         return brcddb_common.EXIT_STATUS_ERROR
 
     return ec

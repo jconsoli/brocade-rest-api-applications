@@ -37,16 +37,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.3     | 13 Feb 2021   | Added # -*- coding: utf-8 -*-                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.4     | 14 Nov 2021   | Added interface statistics (buffer usage)                                         |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '13 Feb 2021'
+__date__ = '14 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.3'
+__version__ = '3.0.4'
 
 import sys
 import argparse
@@ -71,18 +73,28 @@ import brcddb.report.graph as report_graph
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False
-_DEBUG_SUPPRESS = False
-_DEBUG_REPORT = 'cid_test/test_report_r4'
-_DEBUG_I = 'cid_test/9_jan_115_fid_2.txt'
-_DEBUG_GP = None  # '8/11,in-frame-rate,out-frame-rate;8/13,in-frame-rate,out-frame-rate'
-_DEBUG_GS = None  # 'in-frame-rate,top-5;out-frame-rate,top-5'
-_DEBUG_GT = None
-_DEBUG_LOG = '_logs'
-_DEBUG_NL = False
+_DEBUG_sup = False
+_DEBUG_r = 'test/test_report'
+_DEBUG_i = 'test/test_out'
+_DEBUG_gp = None  # '8/11,in-frame-rate,out-frame-rate;8/13,in-frame-rate,out-frame-rate'
+_DEBUG_gs = None  # 'in-frame-rate,top-5;out-frame-rate,top-5'
+_DEBUG_gt = None
+_DEBUG_log = '_logs'
+_DEBUG_nl = False
 
 _invalid_parm_ref = 'Invalid display parameter: '
 _invalid_port_ref = 'Invalid port reference: '
 _sheet_map = dict()  # key: port number, value: openpyxl sheet
+_port_stats = (
+                  'fibrechannel/average-transmit-frame-size',
+                  'fibrechannel/average-receive-frame-size',
+                  'fibrechannel/average-transmit-buffer-usage',
+                  'fibrechannel/average-receive-buffer-usage'
+                  # 'fibrechannel/current-buffer-usage',
+                  # 'fibrechannel/recommended-buffers',
+                  # 'fibrechannel/chip-buffers-available',
+              ) \
+              + rt.Port.port_stats1_tbl
 
 
 # Case methods for _get_ports(). See _port_match
@@ -211,7 +223,7 @@ def _add_ports(wb, tc_page, t_content, start_i, switch_obj):
     :type switch_obj: brcddb.classes.switch.SwitchObj
     :rtype: None
     """
-    global _sheet_map
+    global _sheet_map, _port_stats
 
     sheet_index = start_i
     proj_obj = switch_obj.r_project_obj()
@@ -225,8 +237,8 @@ def _add_ports(wb, tc_page, t_content, start_i, switch_obj):
         sname = port_num.replace('/', '_')
         brcdapi_log.log('Processing port: ' + port_num, True)
         port_list = [obj.r_port_obj(port_num) for obj in switch_obj_l]
-        sheet = report_port.port_page(wb, tc_page, sname, sheet_index, 'Port: ' + port_num, port_list,
-                                      rt.Port.port_stats1_tbl, rt.Port.port_display_tbl, False)
+        sheet = report_port.port_page(wb, tc_page, sname, sheet_index, 'Port: ' + port_num, port_list, _port_stats,
+                                      rt.Port.port_display_tbl, False)
         _sheet_map.update({port_num: sheet})
 
         # Add the port page to the table of contents
@@ -236,7 +248,7 @@ def _add_ports(wb, tc_page, t_content, start_i, switch_obj):
         v = port_obj.r_get('fibrechannel/operational-status')
         try:
             buf = brcddb_common.port_conversion_tbl['fibrechannel/operational-status'][v]
-        except:
+        except KeyError:
             buf = 'Unknown'
         t_content.append(dict(new_row=False, font='std', align='wrap', disp=buf))
         t_content.append(dict(font='std', align='wrap', disp=brcddb_port.port_best_desc(port_obj)))
@@ -314,7 +326,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
                 try:
                     stat_ref = stat if rt.Port.port_display_tbl['fibrechannel-statistics/' + stat]['d'] is None else \
                         rt.Port.port_display_tbl['fibrechannel-statistics/' + stat]['d']
-                except:
+                except (ValueError, TypeError) as e:
                     stat_ref = stat
                 cell = report_utils.cell_match_val(sheet, stat_ref, None, 2, 1)
                 if cell is None:
@@ -354,7 +366,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
             y_name = stat.split('/').pop()
             try:
                 col_ref = y_name if rt.Port.port_display_tbl[stat]['d'] is None else rt.Port.port_display_tbl[stat]['d']
-            except:
+            except (ValueError, TypeError) as e:
                 col_ref = y_name
 
             # Find all the time stamps, reference sheets, and columns
@@ -375,7 +387,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
                 if len(tl) == 0:
                     try:
                         x = switch_obj_l[0].r_port_obj(port).r_get('fibrechannel-statistics/time-generated')
-                    except:
+                    except (ValueError, TypeError) as e:
                         x = None
                     if x == None:
                         ml.append('Invalid sample for port ' + port + '. Skipping')
@@ -631,10 +643,10 @@ def parse_args():
     :return report_name: Name of Excel report.
     :rtype report_name: str
     """
-    global _DEBUG, _DEBUG_SUPPRESS, _DEBUG_REPORT, _DEBUG_I, _DEBUG_GP, _DEBUG_GS, _DEBUG_GT, _DEBUG_LOG, _DEBUG_NL
+    global _DEBUG, _DEBUG_sup, _DEBUG_r, _DEBUG_i, _DEBUG_gp, _DEBUG_gs, _DEBUG_gt, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_SUPPRESS, _DEBUG_REPORT, _DEBUG_I, _DEBUG_GP, _DEBUG_GS, _DEBUG_GT, _DEBUG_LOG, _DEBUG_NL
+        return _DEBUG_sup, _DEBUG_r, _DEBUG_i, _DEBUG_gp, _DEBUG_gs, _DEBUG_gt, _DEBUG_log, _DEBUG_nl
 
     buf = 'Create Excel Workbook from statistics gathered with stats_c.py. WARNING: Graphing parameters are not ' \
           'yet implemented. This module will only create the Excel Workbook with tables. You will then need to ' \
@@ -643,7 +655,8 @@ def parse_args():
     buf = 'Suppress all library generated output to STD_IO except the exit code. Useful with batch processing'
     parser.add_argument('-sup', help=buf, action='store_true', required=False)
     parser.add_argument('-r', help='Required. Report name. ".xlsx" is automatically appended.', required=True)
-    buf = 'Required. Name of data input file. This must be the output file, -o, from stats_c.py'
+    buf = 'Required. Name of data input file. This must be the output file, -o, from stats_c.py. ".json" is '\
+          'automatically appended'
     parser.add_argument('-i', help=buf, required=True)
     buf = 'Optional. Creates a worksheet with a graph of one or more statistical counters for a port. Useful for ' \
           'analyzing performance for a specific port. Parameters that follow are the port number followed by any of '\
@@ -685,8 +698,6 @@ def pseudo_main():
         brcdapi_log.set_suppress_all()
     if not nl:
         brcdapi_log.open_log(log)
-    if len(report) < len('.xlsx') or report[len(report)-len('.xlsx'):] != '.xlsx':
-        report += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append(os.path.basename(__file__) + ' version: ' + __version__)
     ml.append('Suppress:   ' + str(s_flag))
@@ -696,6 +707,11 @@ def pseudo_main():
     ml.append('Stat graph: ' + str(stats_graph_in))
     ml.append('Graph type: ' + str(graph_type))
     brcdapi_log.log(ml, True)
+    x = len('.json')  # Which is also the same as len('.xlsx')
+    if len(in_f) < x or in_f[len(in_f)-x] != '.json':
+        in_f += '.json'
+    if len(report) < x or report[len(report)-x:] != '.xlsx':
+        report += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
 
     # Read in the previously collected data
     obj = brcddb_file.read_dump(in_f)
@@ -710,10 +726,12 @@ def pseudo_main():
 
     # Build the cross-reference tables.
     brcddb_util.build_login_port_map(proj_obj)  # Correlates name server logins with ports
-    brcddb_fabric.zone_analysis(base_switch_obj.r_fabric_obj())  # Determines what zones each login participates in
+    fab_obj = base_switch_obj.r_fabric_obj()
+    if fab_obj is not None:
+        brcddb_fabric.zone_analysis(base_switch_obj.r_fabric_obj())  # Determines what zones each login participates in
 
     graph_list, msg_list = _graphs(base_switch_obj, single_port_graph_in, stats_graph_in, graph_type)
-    return _write_report( base_switch_obj, report, graph_list, msg_list)
+    return _write_report(base_switch_obj, report, graph_list, msg_list)
 
 
 ##################################################################

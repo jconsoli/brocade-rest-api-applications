@@ -45,16 +45,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.5     | 14 Aug 2021   | Added zone by target.                                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.6     | 14 Nov 2021   | Improved user feedback messaging                                                  |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '14 Aug 2021'
+__date__ = '14 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.5'
+__version__ = '3.0.6'
 
 import argparse
 import brcddb.brcddb_project as brcddb_project
@@ -70,11 +72,11 @@ import brcddb.util.iocp as brcddb_iocp
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = '08132021/combined'
-_DEBUG_o = 'test/test_report'
+_DEBUG_i = '_capture_2021_11_14_13_40_05/combined.json'
+_DEBUG_o = '_capture_2021_11_14_13_40_05/test_report.xlsx'
 _DEBUG_sup = False
-_DEBUG_sfp = 'sfp_rules_r10_45_Tx_32G_SWL'
-_DEBUG_iocp = None
+_DEBUG_sfp = 'sfp_rules_r10.xlsx'
+_DEBUG_iocp = None  # 'SQA_Mainframe/iocp'
 _DEBUG_cr = None  # 'chassis,switch'
 _DEBUG_ca = None  # 'port_rnid'  # 'all'
 _DEBUG_log = '_logs'
@@ -177,7 +179,13 @@ def psuedo_main():
     brcdapi_log.log(ml, True)
 
     # Get the project object
-    proj_obj = brcddb_project.read_from(inf if '.' in inf else inf + '.json')
+    if len(inf) < len('.json') or inf[len(inf)-len('.json'):].lower() != '.json':
+        inf += '.json'
+    try:
+        proj_obj = brcddb_project.read_from(inf)
+    except FileNotFoundError:
+        brcdapi_log.log('Input file, ' + inf + ', not found', True)
+        return brcddb_common.EXIT_STATUS_ERROR
     if proj_obj is None:
         return brcddb_common.EXIT_STATUS_ERROR
 
