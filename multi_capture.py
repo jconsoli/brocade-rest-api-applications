@@ -37,16 +37,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.6     | 14 Nov 2021   | Do not pass -d to report.py. Better help message for -r option.                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.7     | 16 Nov 2021   | Automatically append ".json to output file names. Fixed missing SFP rules         |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '14 Nov 2021'
+__date__ = '16 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.6'
+__version__ = '3.0.7'
 
 import argparse
 import datetime
@@ -60,12 +62,12 @@ import brcddb.report.utils as report_utils
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'cid_multi_capture'
+_DEBUG_i = 'multi_capture_all_test'
 _DEBUG_f = None
-_DEBUG_sfp = 'sfp_rules_r10.xlsx'
-_DEBUG_iocp = 'test_iocp'
+_DEBUG_sfp = 'sfp_rules_r10'
+_DEBUG_iocp = None  # 'test_iocp'
 _DEBUG_r = True
-_DEBUG_c = None
+_DEBUG_c = '*'
 _DEBUG_sup = False  # If true, all logging to STD_OUT is suppressed
 _DEBUG_d = True
 _DEBUG_log = '_logs'
@@ -133,9 +135,7 @@ def psuedo_main():
     """
     global _DEBUG
 
-    addl_parms_all = list()
-    addl_parms_capture = list()
-    addl_parms_report = list()
+    addl_parms_all, addl_parms_capture, addl_parms_report = list(), list(), list()
 
     # Get and parse the input data
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
@@ -146,7 +146,6 @@ def psuedo_main():
     if vd:
         brcdapi_rest.verbose_debug = True
         addl_parms_capture.append('-d')
-        addl_parms_report.append('-d')
     if s_flag:
         brcdapi_log.set_suppress_all()
         addl_parms_all.append('-sup')
@@ -175,29 +174,31 @@ def psuedo_main():
 
     # Read the file with login credentials and perform some basic validation
     switch_parms = list()
-    if '.' not in in_file:
-        in_file += '.xlsx'
-    if len(in_file) > len('.xlsx') and in_file[len(in_file)-len('.xlsx'):] == '.xlsx':
-        for d in report_utils.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=in_file)['content']:
-            switch_parms.append(['-id', d['user_id'], '-pw', d['pw'], '-ip', d['ip_addr'], '-s', d['security']])
-    else:  # The old CSV way
-        file_content = brcddb_file.read_file(in_file)
-        for mod_line in file_content:
-            l = [buf.strip() for buf in mod_line.split(',')]
-            switch_parms.append(['-id', l[0], '-pw', l[1], '-ip', l[2], '-s', l[3], '-f', l[4]])
+    x = len('.xlsx')  # Same as '.json'
+    sfp = sfp + '.xlsx' if sfp is not None and (len(sfp) < x or sfp[len(sfp)-x:].lower() != '.xlsx') else sfp
+    if sfp is not None:
+        addl_parms_report.extend(['-sfp', sfp])
+    file = in_file + '.xlsx' if len(in_file) < x or in_file[len(in_file)-x:].lower() != '.xlsx' else in_file
+    for d in report_utils.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=file)['content']:
+        buf = d['name'].split('/').pop().split('\\').pop()  # Get just the file name
+        buf = buf + '.json' if len(buf) < x or buf[len(buf)-x:].lower() != '.json' else buf
+        switch_parms.append(['-id', d['user_id'], '-pw', d['pw'], '-ip', d['ip_addr'], '-s', d['security'],
+                             '-f', folder + '/' + buf])
 
     # Create the folder
-    os.mkdir(folder)
+    try:
+        os.mkdir(folder)
+    except FileExistsError:
+        brcdapi_log.log('Folder ' + folder + ' already exists.', True)
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Kick off all the data captures
-    i, pid_l = 0, list()
+    pid_l = list()
     for l in switch_parms:
-        params = ['python.exe', 'capture.py', '-f', folder + '/switch_' + str(i)] + l + addl_parms_capture + \
-                 addl_parms_all
+        params = ['python.exe', 'capture.py'] + l + addl_parms_capture + addl_parms_all
         if _DEBUG:
             brcdapi_log.log(' '.join(params), True)
         pid_l.append(subprocess.Popen(params))
-        i += 1
 
     # Below waits for all processes to complete before generating the report.
     pid_done = [p.wait() for p in pid_l]
@@ -206,23 +207,21 @@ def psuedo_main():
 
     # Combine the captured data
     brcdapi_log.log('Combining captured data. This may take several seconds', True)
-    param = ['python.exe', 'combine.py', '-i', folder, '-o', 'combined.json'] + addl_parms_all
+    params = ['python.exe', 'combine.py', '-i', folder, '-o', 'combined.json'] + addl_parms_all
     if _DEBUG:
-        brcdapi_log.log(' '.join(params), True)
-    ec = subprocess.Popen(param).wait()
+        brcdapi_log.log('DEBUG: ' + ' '.join(params), True)
+    ec = subprocess.Popen(params).wait()
     brcdapi_log.log('Combine completed with status: ' + str(ec), True)
 
     # Generate the report
     if report_flag and ec == brcddb_common.EXIT_STATUS_OK:
         brcdapi_log.log('Data collection complete. Generating report.', True)
-        param = ['python.exe',
-                 'report.py',
-                 '-i', folder + '/combined.json',
-                 '-o', folder + '/report' + date_str + '.xlsx'] + addl_parms_report +\
-                [buf for buf in addl_parms_all if buf != '-d']
+        buf = folder + '/report_' + date_str + '.xlsx'
+        params = ['python.exe', 'report.py', '-i', folder + '/combined.json', '-o', buf]
+        params.extend(addl_parms_report + addl_parms_all)
         if _DEBUG:
-            brcdapi_log.log(' '.join(params), True)
-        ec = subprocess.Popen(param).wait()
+            brcdapi_log.log('DEBUG: ' + ' '.join(params), True)
+        ec = subprocess.Popen(params).wait()
 
     return ec
 

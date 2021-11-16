@@ -39,15 +39,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.2     | 13 Feb 2021   | Added # -*- coding: utf-8 -*-                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.3     | 16 Nov 2021   | Fixed call to brcdapi.port.enable_ports()                                         |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '13 Feb 2021'
+__date__ = '16 Nov 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import argparse
 import sys
@@ -59,6 +61,7 @@ import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.pyfos_auth as pyfos_auth
 import brcdapi.port as brcdapi_port
 import brcdapi.fos_cli as brcdapi_cli
+import brcdapi.util as brcdapi_util
 import brcddb.brcddb_common as brcddb_common
 import brcddb.report.utils as report_utils
 import brcddb.util.util as brcddb_util
@@ -69,17 +72,17 @@ import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_IP = 'xx.x.xxx.xx'
-_DEBUG_ID = 'admin'
-_DEBUG_PW = 'password'
-_DEBUG_SEC = 'self'
-_DEBUG_FILE = 'test/G720_FICON_test_r0'
-_DEBUG_FORCE = False
-_DEBUG_SUPPRESS = False
-_DEBUG_ECHO = True
-_DEBUG_VERBOSE = False
-_DEBUG_LOG = '_logs'
-_DEBUG_NL = False
+_DEBUG_ip = 'xx.xxx.x.170'
+_DEBUG_id = 'admin'
+_DEBUG_pw = 'password!'
+_DEBUG_sec = None  # 'self'
+_DEBUG_i = 'test/Switch_7B_Configuration'
+_DEBUG_force = False
+_DEBUG_sup = False
+_DEBUG_echo = True
+_DEBUG_d = False
+_DEBUG_log = '_logs'
+_DEBUG_nl = False
 
 
 _basic_capture_kpi_l = [
@@ -407,7 +410,7 @@ def _enable_ports(session, fid, port_l, echo):
     :type echo: bool
     """
     if len(port_l) > 0:
-        obj = brcdapi_port.enable_port(session, fid, True, port_l, echo)
+        obj = brcdapi_port.enable_port(session, fid, port_l, echo)
         if pyfos_auth.is_error(obj):
             brcdapi_log.log(['Failed to enable ports on FID ' + str(fid), pyfos_auth.formatted_error_msg(obj)], True)
             return brcddb_common.EXIT_STATUS_API_ERROR
@@ -553,12 +556,12 @@ def parse_args():
     :return s_flag: Suppress flag
     :rtype s_flag: bool
     """
-    global _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_SEC, _DEBUG_FILE, _DEBUG_FORCE, _DEBUG_SUPPRESS, _DEBUG_ECHO,\
-        _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
+    global _DEBUG, _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_i, _DEBUG_force, _DEBUG_sup, _DEBUG_echo,\
+        _DEBUG_d, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_SEC, _DEBUG_FILE, _DEBUG_FORCE, _DEBUG_SUPPRESS, _DEBUG_ECHO,\
-               _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
+        return _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_i, _DEBUG_force, _DEBUG_sup, _DEBUG_echo,\
+               _DEBUG_d, _DEBUG_log, _DEBUG_nl
     buf = 'Reads a X6-8_Slot_48_FICON_Config Excel Workbook and configures each switch accordingly. Use ficon_zone.py '\
           'to configure the zoning. If the IP address, -ip, is specified, the script will attempt to login and make '\
           'the changes. Otherwise, only CLI commands are generated.'
@@ -597,7 +600,7 @@ def pseudo_main():
 
     # Get and validate command line input.
     ec = brcddb_common.EXIT_STATUS_OK
-    ml = list()
+    ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ip, user_id, pw, sec, file, force, s_flag, echo, vd, log, nl = parse_args()
     if vd:
         brcdapi_rest.verbose_debug = True
@@ -607,18 +610,19 @@ def pseudo_main():
         brcdapi_log.open_log(log)
     if sec is None:
         sec = 'none'
-    if len(file) < len('.xlsx') or file[len(file)-len('.xlsx'):] != '.xlsx':
+    if len(file) < len('.xlsx') or file[len(file)-len('.xlsx'):].lower() != '.xlsx':
         file += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
     if ip is not None:
         if user_id is None:
-            ml.append('  -user_id')
-        if pw is None:
-            ml.append('  -pw')
-        if len(ml) > 0:
-            ml.insert(0, 'The following parameters are required when an IP address is specified:')
+            ml.append('Missing user ID, -id')
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    if _DEBUG:
-        ml.insert(0, 'WARNING!!! Debug is enabled')
+        if pw is None:
+            ml.append('Missing password, -pw')
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    ml.append('File:       ' + file)
+    ml.append('IP address: ' + brcdapi_util.mask_ip_addr(ip) if isinstance(ip, str) else str(ip))
+    ml.append('ID:         ' + str(user_id))
+    ml.append('sec:        ' + sec)
     if len(ml) > 0:
         brcdapi_log.log(ml, True)
     if ec != brcddb_common.EXIT_STATUS_OK:
@@ -629,6 +633,7 @@ def pseudo_main():
     switch_d_list = [switch_d for switch_d in report_utils.parse_switch_file(file).values()]
     proj_obj = None
     session = None
+
     try:
         for switch_d in switch_d_list:
             switch_d.update(dict(err_msgs=list()))
@@ -659,7 +664,7 @@ def pseudo_main():
 
                 ec = _configure_switch(user_id, pw, session, proj_obj, switch_d, force, echo)
 
-    except:
+    except:  # Bare except because I don't care what went wrong, I just want to fall through to execute the logout
         switch_d['err_msgs'].append('Programming error encountered.')
         brcdapi_log.log(switch_d['err_msgs'][len(switch_d['err_msgs']) - 1], True)
         ec = brcddb_common.EXIT_STATUS_ERROR
