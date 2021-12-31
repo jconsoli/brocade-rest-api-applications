@@ -1,0 +1,62 @@
+# Finds 16G capable SFPs whose serial number begins with HAF618 and prints results
+# to the console
+#
+# IMPORTANT NOTES:
+#
+# This file is intended for use with the search.py application. All comments and blank
+# lines are removed but otherwise this file must conform to JSON formatting rules. Run
+# search.py -eh for detailed use of these data structures
+
+[
+    # Start with all port objects.
+    {
+        "object": "PortObj"
+    },
+    {
+        "test": {
+            "l": [
+                {
+                    "k": "media-rdp/part-number",
+                    "t": "wild",
+                    "v": "57-0000088*"  # P/N for all 16G SWL SFPs
+                },
+                {
+                    "k": "media-rdp/serial-number",
+                    "t": "wild",
+                    "v": "HAF618*"
+                }
+            ],
+            "logic": "and"
+        }
+    },
+    {
+        "print": {
+            "title": "\n16G SFPs with serial numbers begining with HAF618.\n",
+            "disp": [
+                "Switch:  $switch",  # Switch WWN
+                "Port:    $port",  # The port number
+                "Address: $addr",
+                "Status:  $status",
+                "SFP P/N: $sfp_pn",
+                "SFP S/N: $sfp_sn\n"
+            ],
+            "replace": [
+                {"t": "$switch", "r": "_switch"},  # Switch WWN
+                {"t": "$port", "r": "_obj_key"},  # The port number
+                {"t": "$addr", "r": "fibrechannel/fcid-hex"},
+                {"t": "$status", "r": "fibrechannel/operational-status"},
+                {"t": "$sfp_pn", "r": "media-rdp/part-number"},
+                {"t": "$sfp_sn", "r": "media-rdp/serial-number"}
+            ],
+            "total": "Total: "
+        }
+    },
+    {
+        "print": {
+            "title": "\nDisable all these ports\n",
+            "disp": "portdisable $port",  # disp may be a str or list of str
+            "replace": {"t": "$port", "r": "_obj_key"},  # replace may be a dict or list or dict
+            "total": "\nTotal: "
+        }
+    }
+]
