@@ -24,20 +24,22 @@ Version Control::
     +===========+===============+===================================================================================+
     | 1.0.0     | 07 Aug 2021   | Initial launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.1     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '07 Aug 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 import argparse
 import brcdapi.log as brcdapi_log
-import brcdapi.pyfos_auth as pyfos_auth
+import brcdapi.fos_auth as fos_auth
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.util as brcdapi_util
 import brcddb.brcddb_project as brcddb_project
@@ -45,6 +47,7 @@ import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
+import brcddb.util.file as brcddb_file
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
@@ -251,7 +254,7 @@ def _get_input():
     return ec, ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, a_flag, scan_flag, addl_parms
 
 
-def psuedo_main():
+def pseudo_main():
     """Basically the main(). Did it this way so it can easily be used as a standalone module or called from another.
 
     :return: Exit code. See exit codes in brcddb.brcddb_common
@@ -266,7 +269,7 @@ def psuedo_main():
         return ec
 
     # Read the project file
-    proj_obj = brcddb_project.read_from(cfile if '.' in cfile else cfile + '.json')
+    proj_obj = brcddb_project.read_from(brcddb_file.full_file_name(cfile, '.json'))
     if proj_obj is None:
         return brcddb_common.EXIT_STATUS_ERROR
     fab_obj = None
@@ -281,26 +284,26 @@ def psuedo_main():
 
     # Login
     session = api_int.login(user_id, pw, ip, sec, proj_obj)
-    if pyfos_auth.is_error(session):
-        brcdapi_log.log(pyfos_auth.formatted_error_msg(session), True)
+    if fos_auth.is_error(session):
+        brcdapi_log.log(fos_auth.formatted_error_msg(session), True)
         return brcddb_common.EXIT_STATUS_ERROR
 
     # Make the zoning change
     try:
         brcdapi_log.log('Sending zone updates to FID ' + str(fid), True)
         obj = api_zone.replace_zoning(session, fab_obj, fid)
-        if pyfos_auth.is_error(obj):
-            brcdapi_log.log(pyfos_auth.formatted_error_msg(obj), True)
+        if fos_auth.is_error(obj):
+            brcdapi_log.log(fos_auth.formatted_error_msg(obj), True)
         else:
             brcdapi_log.log('Zone restore completed successfully.', True)
 
-    except:
-        brcdapi_log.log('Software error.', True)
+    except BaseException as e:
+        brcdapi_log.log(['', 'Software error.', 'Exception: ' + str(e)], True)
 
     # Logout
     obj = brcdapi_rest.logout(session)
-    if pyfos_auth.is_error(obj):
-        brcdapi_log.log(pyfos_auth.formatted_error_msg(obj), True)
+    if fos_auth.is_error(obj):
+        brcdapi_log.log(fos_auth.formatted_error_msg(obj), True)
 
     return ec
 
@@ -310,11 +313,10 @@ def psuedo_main():
 #                    Main Entry Point
 #
 ###################################################################
-
 if _DOC_STRING:
-    brcdapi_log.close_log('_DOC_STRING is True. No processing', True)
+    print('_DOC_STRING is True. No processing')
     exit(brcddb_common.EXIT_STATUS_OK)
-else:
-    _ec = psuedo_main()
-    brcdapi_log.close_log(str(_ec), True)
-    exit(_ec)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
+exit(_ec)

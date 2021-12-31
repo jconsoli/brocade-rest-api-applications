@@ -63,16 +63,18 @@ Version Control::
     | 3.0.4     | 14 Nov 2021   | Changed _MIN_POLL_TIME to 2.1 and added collection of brocade-interface. This was |
     |           |               | primarily to capture average-receive-frame-size and average-transmit-frame-size.  |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.5     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '14 Nov 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.4'
+__version__ = '3.0.5'
 
 import sys
 import os
@@ -92,18 +94,18 @@ import brcdapi.util as brcdapi_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False
-_DEBUG_IP = 'xx.xx.xx.xx'
-_DEBUG_ID = 'admin'
-_DEBUG_PW = 'password'
-_DEBUG_SEC = 'self'  # 'none'
-_DEBUG_FID = 2
-_DEBUG_SUPPRESS = False
-_DEBUG_VERBOSE = False
-_DEBUG_POLL_TIME = None
-_DEBUG_M = 4
-_DEBUG_O = 'test/stats.json'
-_DEBUG_LOG = '_logs'
-_DEBUG_NL = False
+_DEBUG_ip = 'xx.xx.xx.xx'
+_DEBUG_id = 'admin'
+_DEBUG_pw = 'password'
+_DEBUG_sec = 'self'  # 'none'
+_DEBUG_fid = 2
+_DEBUG_sup = False
+_DEBUG_d = False
+_DEBUG_p = None
+_DEBUG_m = 4
+_DEBUG_o = 'test/stats.json'
+_DEBUG_log = '_logs'
+_DEBUG_nl = False
 """_MIN_POLL is the minimum time in seconds the command line will accept. It is actually the time to sleep between each
 request for statistical data. Additional comments regarding the poll cycles are in the Overview section in the module
 header. Picking a sleep time that results in a poll that guarantees the poll cycle of FOS is impossible. This is why
@@ -154,8 +156,8 @@ def _wrap_up(exit_code):
             obj = brcdapi_rest.logout(_session)
             if pyfos_auth.is_error(obj):
                 brcdapi_log.log(pyfos_auth.formatted_error_msg(obj), True)
-        except:  # Bare because I'm not debugging other libraries or FOS API errors.
-            brcdapi_log.log('Logout failure. ' + _EXCEPTION_MSG, True)
+        except BaseException as e:
+            brcdapi_log.log(['Logout failure. ' + _EXCEPTION_MSG, 'Exception: ' + str(e)], True)
         _session = None
 
     try:
@@ -164,8 +166,8 @@ def _wrap_up(exit_code):
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(_proj_obj, plain_copy)
         brcddb_file.write_dump(plain_copy, _out_f)
-    except:  # This shouldn't be bare, but what?
-        pass
+    except BaseException as e:
+        brcdapi_log.log('Unknown exception: ' + str(e), True)
     return ec
 
 
@@ -173,7 +175,7 @@ def _signal_handler(sig, frame):
     os._exit(_wrap_up())  # Yes, I should call subprocess.Popen() to clean up, but this is easy.
 
 
-def parse_args():
+def _get_input():
     """Parses the module load command line
 
     :return ip_addr: IP address
@@ -184,50 +186,72 @@ def parse_args():
     :rtype pw: str
     :return http_sec: Type of HTTP security
     :rtype http_sec: str
-    :return suppress_flag: True - suppress all print to STD_OUT
-    :rtype suppress_flag: bool
     :return fid: Fabric ID in chassis specified by -ip where the zoning information is to copied to.
     :rtype fid: int
     :return suppress_flag: True - suppress all print to STD_OUT
     :rtype suppress_flag: bool
-    :return report_name: Name of Excel report. Must include the appendix '.xlsx'
-    :rtype report_name: str
+    :return suppress_flag: True - suppress all print to STD_OUT
+    :rtype suppress_flag: bool
+    :return poll_time: Polling interval in seconds
+    :return poll_time: int, None
+    :return max_samples: Maximum number of samples to collect
+    :rtype max_samples: int, None
+    :return file:  Name of output file where raw data is to be stored
+    :rtype file: str
     """
-    global _DEBUG, _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_SEC, _DEBUG_FID, _DEBUG_SUPPRESS
-    global _DEBUG_POLL_TIME, _DEBUG_M, _DEBUG_O, _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
+    global _DEBUG, _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_fid, _DEBUG_sup
+    global _DEBUG_p, _DEBUG_m, _DEBUG_o, _DEBUG_d, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_SEC, _DEBUG_FID, _DEBUG_SUPPRESS, _DEBUG_POLL_TIME, _DEBUG_M, \
-               _DEBUG_O, _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
-    buf = 'Collect port statistics at a specified poll interval. Use Control-C to stop data collection and write report'
-    parser = argparse.ArgumentParser(description=buf)
-    parser.add_argument('-ip', help='Required. IP address', required=True)
-    parser.add_argument('-id', help='Required. User ID', required=True)
-    parser.add_argument('-pw', help='Required. Password', required=True)
-    buf = '(Optional) \'CA\' or \'self\' for HTTPS mode. Default is HTTP'
-    parser.add_argument('-s', help=buf, required=False,)
-    buf = 'Required. Name of output file where raw data is to be stored. ".json" extension is automatically appended.'
-    parser.add_argument('-o', help=buf, required=True)
-    buf = '(Optional) Virtual Fabric ID (1 - 128) of switch to read statistics from. Default is 128'
-    parser.add_argument('-fid', help=buf, type=int, required=False)
-    buf = '(Optional) No arguments. Suppress all library generated output to STD_IO except the exit code. Useful with'\
-          ' batch processing'
-    parser.add_argument('-sup', help=buf, action='store_true', required=False)
-    buf = '(Optional) Polling interval in seconds. Default is '\
-          + str(_DEFAULT_POLL_INTERVAL) + '. The minimum is ' + str(_MIN_POLL) + ' seconds.'
-    parser.add_argument('-p', help=buf, type=float, required=False)
-    buf = '(Optional) Samples are collected until this maximum is reached or a Control-C keyboard interrupt is '\
-          'received. Default: ' + str(_DEFAULT_MAX_SAMPLE)
-    parser.add_argument('-m', help=buf, type=int, required=False)
-    buf = '(Optional) No arguments. Enable debug logging'
-    parser.add_argument('-d', help=buf, action='store_true', required=False)
-    buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
-          'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-    parser.add_argument('-log', help=buf, required=False,)
-    buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-    parser.add_argument('-nl', help=buf, action='store_true', required=False)
-    args = parser.parse_args()
-    return args.ip, args.id, args.pw, args.s, args.fid, args.sup, args.p, args.m, args.o, args.d, args.log, args.nl
+        args_ip, args_id, args_pw, args_sec, args_fid, args_sup, args_p, args_m, args_o, args_d, args_log, args_nl =\
+            _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_fid, _DEBUG_sup, _DEBUG_p, _DEBUG_m, _DEBUG_o, \
+            _DEBUG_d, _DEBUG_log, _DEBUG_nl
+    else:
+        buf = 'Collect port statistics at a specified poll interval. Use Control-C to stop data collection and write ' \
+              'report'
+        parser = argparse.ArgumentParser(description=buf)
+        parser.add_argument('-ip', help='Required. IP address', required=True)
+        parser.add_argument('-id', help='Required. User ID', required=True)
+        parser.add_argument('-pw', help='Required. Password', required=True)
+        buf = '(Optional) \'CA\' or \'self\' for HTTPS mode. Default is HTTP'
+        parser.add_argument('-s', help=buf, required=False,)
+        buf = 'Required. Name of output file where raw data is to be stored. ".json" extension is automatically '\
+              'appended.'
+        parser.add_argument('-o', help=buf, required=True)
+        buf = '(Optional) Virtual Fabric ID (1 - 128) of switch to read statistics from. Default is 128'
+        parser.add_argument('-fid', help=buf, type=int, required=False)
+        buf = '(Optional) No arguments. Suppress all library generated output to STD_IO except the exit code. Useful '\
+              'with batch processing'
+        parser.add_argument('-sup', help=buf, action='store_true', required=False)
+        buf = '(Optional) Polling interval in seconds. Default is '\
+              + str(_DEFAULT_POLL_INTERVAL) + '. The minimum is ' + str(_MIN_POLL) + ' seconds.'
+        parser.add_argument('-p', help=buf, type=float, required=False)
+        buf = '(Optional) Samples are collected until this maximum is reached or a Control-C keyboard interrupt is '\
+              'received. Default: ' + str(_DEFAULT_MAX_SAMPLE)
+        parser.add_argument('-m', help=buf, type=int, required=False)
+        buf = '(Optional) No arguments. Enable debug logging'
+        parser.add_argument('-d', help=buf, action='store_true', required=False)
+        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
+              'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
+        parser.add_argument('-log', help=buf, required=False,)
+        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
+        parser.add_argument('-nl', help=buf, action='store_true', required=False)
+        args = parser.parse_args()
+        args_ip, args_id, args_pw, args_sec, args_fid, args_sup, args_p, args_m, args_o, args_d, args_log, args_nl =\
+            args.ip, args.id, args.pw, args.sec, args.fid, args.sup, args.p, args.m, args.o, args.d, args.log, args.nl
+
+    # Condition input
+    sec = 'none' if args_sec is None else args_sec
+
+    # Set up the log file & debug mode
+    if not args.nl:
+        brcdapi_log.open_log(args.log)
+    if args.d:
+        brcdapi_rest.verbose_debug = True
+    if args.sup:
+        brcdapi_log.set_suppress_all()
+
+    return args_ip, args_id, args_pw, sec, args_fid, args_p, args_m, brcddb_file.full_file_name(args_o, '.json')
 
 
 def _stats_diff(old_obj, new_obj):
@@ -279,21 +303,14 @@ def pseudo_main():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _DEBUG, _DEFAULT_POLL_INTERVAL, _DEFAULT_MAX_SAMPLE, _proj_obj, _session, _out_f, _switch_obj, _base_switch_obj
-    global __version__, _uris, _uris_2
+    global _DEBUG, _DEFAULT_POLL_INTERVAL, _DEFAULT_MAX_SAMPLE, _proj_obj, _session, _out_f, _switch_obj
+    global _base_switch_obj, __version__, _uris, _uris_2
 
     signal.signal(signal.SIGINT, _signal_handler)
 
     # Get user input
-    ip, user_id, pw, sec, fid, s_flag, pct, max_p, _out_f, vd, log, nl = parse_args()
-    if not nl:
-        brcdapi_log.open_log(log)
-    if vd:
-        brcdapi_rest.verbose_debug = True
-    if s_flag:
-        brcdapi_log.set_suppress_all()
+    ip, user_id, pw, sec, fid, pct, max_p, _out_f = _get_input()
     default_text = ' (default)'
-    sec = 'none' if sec is None else sec
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append(os.path.basename(__file__) + ' version: ' + __version__)
     ml.append('IP Address:    ' + brcdapi_util.mask_ip_addr(ip))
@@ -311,9 +328,6 @@ def pseudo_main():
         ml.append('Poll Interval: ' + str(pct) + ' (defaulting to ' + str(_MIN_POLL) + ')' if pct < _MIN_POLL else '')
     ml.append('Output File:   ' + _out_f)
     brcdapi_log.log(ml, True)
-    x = len('.json')
-    if len(_out_f) < x or _out_f[len(_out_f)-x] != '.json':
-        _out_f += '.json'
 
     # Create project
     _proj_obj = brcddb_project.new('Port_Stats', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -384,8 +398,8 @@ def pseudo_main():
 
         return _wrap_up(brcddb_common.EXIT_STATUS_OK)
 
-    except:
-        brcdapi_log.log('Error capturing statistics. ' + _EXCEPTION_MSG, True)
+    except BaseException as e:
+        brcdapi_log.log(['Error capturing statistics. ' + _EXCEPTION_MSG, 'Exception: ' + str(e)], True)
         return _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
 
 
@@ -394,10 +408,10 @@ def pseudo_main():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-else:
-    _ec = pseudo_main()
-    brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), True)
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec))
 exit(_ec)

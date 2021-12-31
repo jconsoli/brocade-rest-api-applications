@@ -46,16 +46,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.1     | 14 Nov 2021   | Fixed __date__                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.2     | 31 Dec 2021   | Removed old unused code.                                                          |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '14 Nov 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.1'
+__version__ = '3.1.2'
 
 import argparse
 import brcddb.brcddb_fabric as brcddb_fabric
@@ -68,6 +70,7 @@ import brcddb.brcddb_common as brcddb_common
 import brcddb.report.utils as report_utils
 import brcddb.app_data.report_tables as brcddb_rt
 import brcddb.util.util as brcddb_util
+import brcddb.util.file as brcddb_file
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
@@ -246,11 +249,11 @@ def _format_disp(fk, obj):
         try:
             b = str(brcddb_common.port_conversion_tbl[tfk[3]][int(b)])
             c = str(brcddb_common.port_conversion_tbl[tfk[3]][int(c)])
-        except:
+        except (ValueError, KeyError):
             try:
                 b = str(brcddb_common.port_conversion_tbl[tfk[3]][b])
                 c = str(brcddb_common.port_conversion_tbl[tfk[3]][c])
-            except:
+            except KeyError:
                 b = obj.get('b')
                 c = obj.get('c')
     elif len(tfk) > 2 and tfk[0] == 'brocade-fibrechannel-switch' and tfk[1] == 'fibrechannel-switch':
@@ -258,7 +261,7 @@ def _format_disp(fk, obj):
         try:
             b = str(brcddb_common.switch_conversion_tbl[key][int(b)])
             c = str(brcddb_common.switch_conversion_tbl[key][int(c)])
-        except:
+        except (ValueError, KeyError):
             b = obj.get('b')
             c = obj.get('c')
         if key in _key_conv_tbl:
@@ -316,7 +319,7 @@ def _basic_add_to_content(obj, b_obj, c_obj, content):
         for k, v in obj.items():
             _content_append(dict(font='std', align='wrap', disp=('', v.get('b'), v.get('c'), v.get('r'))), content)
     if len(content) == start:
-        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes')))
+        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
 
 
 def _alias_add_to_content(obj, b_obj, c_obj, content):
@@ -334,7 +337,7 @@ def _alias_add_to_content(obj, b_obj, c_obj, content):
                 c_buf = alias[0] + ' (' + c_buf + ')'
             _content_append(dict(font='std', align='wrap', disp=('', b_buf, c_buf, v.get('r'))), content)
     if len(content) == start:
-        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes')))
+        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
 
 
 def _zoneobj_add_to_content(obj, b_obj, c_obj, content):
@@ -350,7 +353,7 @@ def _zoneobj_add_to_content(obj, b_obj, c_obj, content):
                 _content_append(dict(font='std', align='wrap', disp=(buf, mem_d['b'], mem_d['c'], mem_d['r'])), content)
                 buf = ''
     if len(content) == start:
-        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes')))
+        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
 
 
 def _switch_add_to_content(obj, b_obj, c_obj, content):
@@ -361,7 +364,7 @@ def _switch_add_to_content(obj, b_obj, c_obj, content):
         c_buf = brcddb_switch.best_switch_name(c_obj.r_project_obj().r_switch_obj(change_obj.get('c')), True)
         _content_append(dict(font='std', align='wrap', disp=('', b_buf, c_buf, change_obj.get('r'))), content)
     if len(content) == start:
-        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes')))
+        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
 
 
 def _fabric_add_to_content(obj, b_obj, c_obj, content):
@@ -374,7 +377,7 @@ def _fabric_add_to_content(obj, b_obj, c_obj, content):
             c_buf = brcddb_fabric.best_fab_name(proj_obj.r_fabric_obj(v.get('c')), True)
             _content_append(dict(font='std', align='wrap', disp=('', b_buf, c_buf, v.get('r'))), content)
     if len(content) == start:
-        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes')))
+        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
 
 
 def _null(obj, b_obj, c_obj, content):
@@ -568,12 +571,11 @@ def _page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj, page):
 
 # After the fact, I realized I needed to sort the display output. The next 2 methods sort and filter the output
 def _sort_switch(content):
-    rl = list()
-    re = list()
+    re, rl = list(), list()
     for obj in content:
         try:
             key = obj.get('disp')[0]
-        except:
+        except (TypeError, IndexError):
             key = ''
         if not key.startswith('brocade-maps/group/members'):
             if key.startswith('Port '):
@@ -582,9 +584,9 @@ def _sort_switch(content):
                 rl.append(obj)
 
     rl.append(dict())
-    rl.append(dict(merge=4, font='hdr_2', align='wrap', disp=('Ports')))
+    rl.append(dict(merge=4, font='hdr_2', align='wrap', disp=('Ports',)))
     if len(re) == 0:
-        rl.append(dict(merge=4, font='std', align='wrap', disp=('No changes')))
+        rl.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
     else:
         rl.extend(re)
     return rl
@@ -770,14 +772,9 @@ def pseudo_main():
         brcdapi_log.set_suppress_all()
     if not nl:
         brcdapi_log.open_log(log)
-    if len(rf) < len('.xlsx') or rf[len(rf)-len('.xlsx'):] != '.xlsx':
-        rf += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
-    if len(bf) < len('.json') or bf[len(bf)-len('.json'):] != '.json':
-        if bf[len(bf)-len('.txt'):] != '.txt':  # Sometimes it's dumped to a .txt file for easier editing
-            bf += '.json'
-    if len(cf) < len('.json') or cf[len(cf)-len('.json'):] != '.json':
-        if cf[len(cf)-len('.txt'):] != '.txt':  # Sometimes it's dumped to a .txt file for easier editing
-            cf += '.json'
+    rf = brcddb_file.full_file_name(rf, '.xlsx')
+    bf = brcddb_file.full_file_name(bf, '.json')
+    cf = brcddb_file.full_file_name(cf, '.json')
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append(':START: Compare Report:')
     ml.append('    Base file:    ' + bf)
@@ -830,7 +827,7 @@ def pseudo_main():
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
     exit(0)
-else:
-    _ec = pseudo_main()
-    brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), True)
-    exit(_ec)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec))
+exit(_ec)

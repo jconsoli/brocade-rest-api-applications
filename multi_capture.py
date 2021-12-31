@@ -39,16 +39,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.7     | 16 Nov 2021   | Automatically append ".json to output file names. Fixed missing SFP rules         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.8     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '16 Nov 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.7'
+__version__ = '3.0.8'
 
 import argparse
 import datetime
@@ -174,15 +176,15 @@ def psuedo_main():
 
     # Read the file with login credentials and perform some basic validation
     switch_parms = list()
-    x = len('.xlsx')  # Same as '.json'
-    sfp = sfp + '.xlsx' if sfp is not None and (len(sfp) < x or sfp[len(sfp)-x:].lower() != '.xlsx') else sfp
     if sfp is not None:
         addl_parms_report.extend(['-sfp', sfp])
-    file = in_file + '.xlsx' if len(in_file) < x or in_file[len(in_file)-x:].lower() != '.xlsx' else in_file
+    file = brcddb_file.full_file_name(in_file, '.xlsx')
     for d in report_utils.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=file)['content']:
-        buf = d['name'].split('/').pop().split('\\').pop()  # Get just the file name
-        buf = buf + '.json' if len(buf) < x or buf[len(buf)-x:].lower() != '.json' else buf
-        switch_parms.append(['-id', d['user_id'], '-pw', d['pw'], '-ip', d['ip_addr'], '-s', d['security'],
+        buf = brcddb_file.full_file_name(d['name'].split('/').pop().split('\\').pop(), '.json')  # Just the file name
+        switch_parms.append(['-id', d['user_id'],
+                             '-pw', d['pw'],
+                             '-ip', d['ip_addr'],
+                             '-s', d['security'],
                              '-f', folder + '/' + buf])
 
     # Create the folder
@@ -194,8 +196,8 @@ def psuedo_main():
 
     # Kick off all the data captures
     pid_l = list()
-    for l in switch_parms:
-        params = ['python.exe', 'capture.py'] + l + addl_parms_capture + addl_parms_all
+    for temp_l in switch_parms:
+        params = ['python.exe', 'capture.py'] + temp_l + addl_parms_capture + addl_parms_all
         if _DEBUG:
             brcdapi_log.log(' '.join(params), True)
         pid_l.append(subprocess.Popen(params))
@@ -232,10 +234,10 @@ def psuedo_main():
 ###################################################################
 
 
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-else:
-    _ec = psuedo_main()
-    brcdapi_log.close_log(str(_ec), True)
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = psuedo_main()
+brcdapi_log.close_log('Processing complete. Exit code: ' + str(_ec))
 exit(_ec)

@@ -73,15 +73,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.2     | 13 Feb 2021   | Added # -*- coding: utf-8 -*-                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.3     | 31 Dec 2021   | Make all exception clauses explicit.                                              |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '13 Feb 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.2'
+__version__ = '3.0.3'
 
 import argparse
 import brcdapi.log as brcdapi_log
@@ -94,19 +96,19 @@ import brcddb.util.file as brcddb_file
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False
-_DEBUG_IP = '10.8.105.10'
-_DEBUG_ID = 'admin'
-_DEBUG_PW = 'password'
-_DEBUG_SEC = 'none'
-_DEBUG_CLI = 'zone_20.txt'
-_DEBUG_FID = 20
-_DEBUG_T = False
-_DEBUG_F = True
-_DEBUG_B = False
-_DEBUG_SUPPRESS = False
-_DEBUG_VERBOSE = True
-_DEBUG_LOG = '_logs'
-_DEBUG_NL = False
+_DEBUG_ip = 'xx.xxx.x.xxx'
+_DEBUG_id = 'admin'
+_DEBUG_pw = 'Password'
+_DEBUG_sec = 'none'
+_DEBUG_cli = 'test/zone_test_1.txt'
+_DEBUG_fid = 1
+_DEBUG_t = False
+_DEBUG_f = True
+_DEBUG_b = True
+_DEBUG_sup = False
+_DEBUG_d = False
+_DEBUG_log = '_logs'
+_DEBUG_nl = False
 
 
 def parse_args():
@@ -115,12 +117,12 @@ def parse_args():
     :return: file
     :rtype: str
     """
-    global _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_SEC, _DEBUG_CLI, _DEBUG_FID, _DEBUG_T, _DEBUG_F, _DEBUG_SUPPRESS,\
-        _DEBUG_VERBOSE, _DEBUG_B, _DEBUG_LOG, _DEBUG_NL
+    global _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_cli, _DEBUG_fid, _DEBUG_t, _DEBUG_f, _DEBUG_sup,\
+        _DEBUG_d, _DEBUG_b, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_SEC, _DEBUG_CLI, _DEBUG_FID, _DEBUG_T, _DEBUG_F,\
-               _DEBUG_B, _DEBUG_SUPPRESS, _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
+        return _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_cli, _DEBUG_fid, _DEBUG_t, _DEBUG_f,\
+               _DEBUG_b, _DEBUG_sup, _DEBUG_d, _DEBUG_log, _DEBUG_nl
 
     else:
         parser = argparse.ArgumentParser(description='Convert CLI zoning commands to API calls or brcddb object file.')
@@ -167,8 +169,8 @@ def _format_fault(obj, line_num, file_content):
     """
     try:
         buf = str(file_content[line_num])
-    except:
-        buf = 'General error. Not related to a specific line in the input file.'
+    except BaseException as e:
+        buf = 'Unknown exception: ' + str(e)
     msg_l = [
         '',
         'Line:    ' + str(line_num + 1),
@@ -222,16 +224,25 @@ def pseudo_main():
     brcdapi_log.log(ml, True)
 
     # Read in the CLI file, condition the input strings and send it
-    file_contents = brcddb_file.read_file(cli_file)
-    content.update({'changes': brcddb_util.parse_cli(file_contents)})
+    ml = list()
+    try:
+        file_contents = brcddb_file.read_file(cli_file)
+    except FileNotFoundError:
+        ml.extend(['', 'File ' + cli_file + ' not found. Did you remember the file extension?'])
+    except PermissionError:
+        ml.extend(['', 'You do not have permission to read ' + cli_file])
+    if len(ml) > 0:
+        brcdapi_log.log(ml, True)
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    content.update(dict(changes=brcddb_util.parse_cli(file_contents)))
+    if t_flag:
+        content.update(dict(test=True))
     response = brcddb_zone.send_zoning(content)
 
     # General information
     ec = brcddb_common.EXIT_STATUS_OK
-    total_changes = 0
-    total_failures = 0
-    total_io = 0
-    i = 0
+    total_changes = total_failures = total_io = i = 0
     for obj in response:
         if isinstance(obj, dict):  # obj is None for blank or commented our lines in the input
             if obj.get('changed'):
@@ -260,10 +271,10 @@ def pseudo_main():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-else:
-    _ec = pseudo_main()
-    brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), True)
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec))
 exit(_ec)

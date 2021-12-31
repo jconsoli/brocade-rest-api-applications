@@ -34,16 +34,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.5     | 21 Aug 2021   | Added ability to generate CLI for zone changes                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.6     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '21 Aug 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.5'
+__version__ = '1.0.6'
 
 import argparse
 import sys
@@ -53,7 +55,7 @@ from os.path import isfile
 import subprocess
 import collections
 import brcdapi.log as brcdapi_log
-import brcdapi.pyfos_auth as pyfos_auth
+import brcdapi.fos_auth as fos_auth
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.util as brcdapi_util
 import brcddb.brcddb_project as brcddb_project
@@ -186,29 +188,29 @@ def _patch_zone_db(proj_obj, eff_cfg):
 
         # Login
         session = api_int.login(id, pw, ip_addr, sec, proj_obj)
-        if pyfos_auth.is_error(session):
-            rl.append(pyfos_auth.formatted_error_msg(session))
+        if fos_auth.is_error(session):
+            rl.append(fos_auth.formatted_error_msg(session))
             return rl
 
         # Send the changes to the switch
         brcdapi_log.log('Sending zone updates to ' + brcddb_fabric.best_fab_name(fab_obj, wwn=True), True)
         try:
             obj = api_zone.replace_zoning(session, base_fab_obj, fid)
-            if pyfos_auth.is_error(obj):
-                rl.append(pyfos_auth.formatted_error_msg(obj))
+            if fos_auth.is_error(obj):
+                rl.append(fos_auth.formatted_error_msg(obj))
             else:
                 update_count += 1
                 if isinstance(eff_cfg, str):
-                    obj = api_zone.enable_zonecfg(session, base_fab_obj, fid, eff_cfg)
-                    if pyfos_auth.is_error(obj):
-                        rl.append(pyfos_auth.formatted_error_msg(obj))
+                    obj = api_zone.enable_zonecfg(session, None, fid, eff_cfg)
+                    if fos_auth.is_error(obj):
+                        rl.append(fos_auth.formatted_error_msg(obj))
         except:
             rl.append('Software fault in api_zone.replace_zoning()')
 
         # Logout
         obj = brcdapi_rest.logout(session)
-        if pyfos_auth.is_error(obj):
-            rl.append(pyfos_auth.formatted_error_msg(obj))
+        if fos_auth.is_error(obj):
+            rl.append(fos_auth.formatted_error_msg(obj))
 
         brcdapi_log.log(str(update_count) + ' switch(es) updated.', True)
 
@@ -263,8 +265,7 @@ def _get_project(sl, pl, addl_parms):
         ip_addr = sub_d['ip']
         file_name = work_folder + '/switch_' + ip_addr.split('.').pop() + '_' + str(len(pid_l))
         sub_d.update(dict(file=file_name))
-        if len(file_name) < len('.json') or file_name[len(file_name)-len('.json'):].lower() != '.json':
-            file_name += '.json'
+        file_name = brcddb_file.full_file_name(file_name, '.json')
         d = captured_d.get(ip_addr)
         if d is None:
             sub_d_l = list()
@@ -325,9 +326,7 @@ def _get_project(sl, pl, addl_parms):
     if len(pl) > 0:
         brcdapi_log.log('Reading project files', True)
     for sub_d in pl:
-        file_name = sub_d['project_file']
-        if len(file_name) < len('.json') or file_name[len(file_name)-len('.json'):].lower() != '.json':
-            file_name += '.json'
+        file_name = brcddb_file.full_file_name(sub_d['project_file'], '.json')
         obj = brcddb_file.read_dump(file_name)
         brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
         for fab_obj in [proj_obj.r_fabric_obj(k) for k in obj['_fabric_objs'].keys()]:
@@ -615,8 +614,7 @@ def _get_input():
     ml.append('CLI flag, -cli:        ' + str(cli_flag))
     ml.append('Test:                  ' + str(t_flag))
     brcdapi_log.log(ml, True)
-    if len(c_file) < len('.xlsx') or c_file[len(c_file)-len('.xlsx'):] != '.xlsx':
-        c_file += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
+    c_file = brcddb_file.full_file_name(c_file, '.xlsx')
 
     # Parse the input file
     ml = list()
@@ -640,7 +638,7 @@ def _get_input():
     return ec, sl, pl, cfg_name, a_flag, t_flag, scan_flag, cli_flag, addl_parms
 
 
-def psuedo_main():
+def pseudo_main():
     """Basically the main(). Did it this way so it can easily be used as a standalone module or called from another.
 
     :return: Exit code. See exit codes in brcddb.brcddb_common
@@ -693,11 +691,10 @@ def psuedo_main():
 #                    Main Entry Point
 #
 ###################################################################
-
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
-    brcdapi_log.close_log('_DOC_STRING is True. No processing', True)
-else:
-    _ec = psuedo_main()
-    brcdapi_log.close_log(str(_ec), True)
+    print('_DOC_STRING is True. No processing')
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
 exit(_ec)

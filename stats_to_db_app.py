@@ -38,15 +38,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.1     | 28 Feb 2021   | Build cross-references before generating port descriptions.                       |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.2     | 31 Dec 2021   | Updated comments. No functional changes.                                          |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '28 Feb 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 import datetime
 import argparse
@@ -61,11 +63,11 @@ import brcddb.brcddb_port as brcddb_port
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of command line input
-_DEBUG_INF = 'test_csv.txt'
-_DEBUG_FID = None
-_DEBUG_VERBOSE = False  # When True, all content and responses are formatted and printed (pprint).
-_DEBUG_LOG = '_logs'
-_DEBUG_NL = False
+_DEBUG_i = 'test_csv.txt'
+_DEBUG_fid = None
+_DEBUG_d = False  # When True, all content and responses are formatted and printed (pprint).
+_DEBUG_log = '_logs'
+_DEBUG_nl = False
 
 _kpi_l = (
     # 'brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface._get_chassis()
@@ -208,12 +210,12 @@ def parse_args():
     """Parses the module load command line
 
     :return: ip, id, pw, file
-    :rtype: (str, str, str, str)
+    :rtype: (str, str, str, str
     """
-    global _DEBUG_INF, _DEBUG_FID, _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
+    global _DEBUG_i, _DEBUG_fid, _DEBUG_d, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_INF, _DEBUG_FID, _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
+        return _DEBUG_i, _DEBUG_fid, _DEBUG_d, _DEBUG_log, _DEBUG_nl
 
     buf = 'This is intended as a programming example only but the method _db_add() could be easily modified to ' \
           'use as a stand-alone module to launch periodically to capture statistics and add them to a custom ' \
@@ -287,11 +289,10 @@ def pseudo_main():
 #                    Main Entry Point
 #
 ###################################################################
-
-_ec = 0
 if _DOC_STRING:
-    print('_DOC_STRING set. No processing')
-else:
-    _ec = pseudo_main()
-    brcdapi_log.close_log('Processing Complete. Exit code: ' + str(_ec), True)
+    print('_DOC_STRING is True. No processing')
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
 exit(_ec)

@@ -41,15 +41,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.3     | 16 Nov 2021   | Fixed call to brcdapi.port.enable_ports()                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.4     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '16 Nov 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 import argparse
 import sys
@@ -65,6 +67,7 @@ import brcdapi.util as brcdapi_util
 import brcddb.brcddb_common as brcddb_common
 import brcddb.report.utils as report_utils
 import brcddb.util.util as brcddb_util
+import brcddb.util.file as brcddb_file
 import brcddb.api.interface as api_int
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_port as brcddb_port
@@ -72,11 +75,11 @@ import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = 'xx.xxx.x.170'
+_DEBUG_ip = 'xx.xxx.x.xxx'
 _DEBUG_id = 'admin'
-_DEBUG_pw = 'password!'
+_DEBUG_pw = 'Password'
 _DEBUG_sec = None  # 'self'
-_DEBUG_i = 'test/Switch_7B_Configuration'
+_DEBUG_i = 'test/switch_1'
 _DEBUG_force = False
 _DEBUG_sup = False
 _DEBUG_echo = True
@@ -610,8 +613,7 @@ def pseudo_main():
         brcdapi_log.open_log(log)
     if sec is None:
         sec = 'none'
-    if len(file) < len('.xlsx') or file[len(file)-len('.xlsx'):].lower() != '.xlsx':
-        file += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
+    file = brcddb_file.full_file_name(file, '.xlsx')
     if ip is not None:
         if user_id is None:
             ml.append('Missing user ID, -id')
@@ -639,15 +641,16 @@ def pseudo_main():
             switch_d.update(dict(err_msgs=list()))
 
             # Create the bind commands
-            _bind_commands(switch_d)
-            cli_l = switch_d['bind_commands'].copy()
-            i = 0
-            while i < len(cli_l):
-                cli_l.insert(i, '')
-                i += 16
-            cli_l.insert(0, '\n# Bind commands for FID ' + str(switch_d['fid']))
-            cli_l.append('\n# End bind commands for FID ' + str(switch_d['fid']))
-            brcdapi_log.log(cli_l, True)
+            if switch_d['bind']:
+                _bind_commands(switch_d)
+                cli_l = switch_d['bind_commands'].copy()
+                i = 0
+                while i < len(cli_l):
+                    cli_l.insert(i, '')
+                    i += 16
+                cli_l.insert(0, '\n# Bind commands for FID ' + str(switch_d['fid']))
+                cli_l.append('\n# End bind commands for FID ' + str(switch_d['fid']))
+                brcdapi_log.log(cli_l, True)
 
             # Create the logical switch
             if ip is not None and switch_d['switch_flag']:
@@ -664,8 +667,8 @@ def pseudo_main():
 
                 ec = _configure_switch(user_id, pw, session, proj_obj, switch_d, force, echo)
 
-    except:  # Bare except because I don't care what went wrong, I just want to fall through to execute the logout
-        switch_d['err_msgs'].append('Programming error encountered.')
+    except BaseException as e:
+        switch_d['err_msgs'].append('Programming error encountered. Exception: ' + str(e))
         brcdapi_log.log(switch_d['err_msgs'][len(switch_d['err_msgs']) - 1], True)
         ec = brcddb_common.EXIT_STATUS_ERROR
 
@@ -686,10 +689,10 @@ def pseudo_main():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-else:
-    _ec = pseudo_main()
-    brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), True)
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
 exit(_ec)

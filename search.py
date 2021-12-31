@@ -38,22 +38,26 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.3     | 14 Nov 2021   | Perform search from a JSON                                                        |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.4     | 31 Dec 2021   | Finished report and print types.                                                  |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '14 Nov 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.3'
+__version__ = '3.0.4'
 
 import argparse
 import json
 import brcddb.brcddb_project as brcddb_project
 import brcdapi.log as brcdapi_log
 import brcddb.brcddb_common as brcddb_common
+import brcddb.classes.util as brcddb_class_util
+import brcddb.util.util as brcddb_util
 import brcddb.util.file as brcddb_file
 import brcddb.util.search as brcddb_search
 import brcddb.util.obj_convert as brcddb_conv
@@ -67,14 +71,13 @@ import brcddb.report.zone as report_zone
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use the values below instead of reading from the command line
-_DEBUG_i = 'test/test_capture'
-_DEBUG_f = 's/slow_logins'
+_DEBUG_i = '_capture_2021_11_16_11_27_27/combined'
+_DEBUG_f = 's/test'
 _DEBUG_eh = False
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
+_DEBUG_v = False
 
-_inf = 'vz_sac/vz_sac_capture.json'
-_outf = 'vz_sac/vz_slow_login.xlsx'      # This where the results will be written
 _wb = None                               # Object for the Excel workbook used for example output
 _report_name = None  # Name of report
 _working_obj_l = list()
@@ -87,14 +90,16 @@ _eh = (
     '',
     'The filter file is a list of actions in the form of dictionaries as follows:',
     '',
-    'def_report  dict  Defines the output report as follows',
+    'def_report  dict  Optional. Defines the output report as follows',
     '',
     '    name  str   Name of the Excel workbook. ".xlsx" is automatically',
     '                appended.',
     '',
     '    xxxx  list  Where "xxxx" is a user defined report display format. The',
     '                value is a list of object keys to display. This list is passed',
-    '                directly to the report page methods in brcddb.report',
+    '                directly to the report page methods in brcddb.report. This',
+    '                is only relevant to report pages that accept a that a display',
+    '                table which are: chassis, switch, port, and login.'
     '',
     'object      str   The search.py utility maintains a list of brcddb objects to',
     '                  operate on. It is preloaded with the project object defined',
@@ -102,12 +107,30 @@ _eh = (
     '                  this option by specifying one of the simple object types in',
     '                  brcddb.classes.util.simple_class_type',
     '',
-    'report      dict  Instructs search.py to insert a worksheet into the workbook',
+    'print       dict  Optional. Instructs search.py to print the results to the.',
+    '                  console as follows:',
+    '',
+    '    title   str   Optional. Printed before printing any results.',
+    '',
+    '    disp    str   Optional. What to display for each object. See "replace"',
+    '',
+    '    replace list  Optional. List of dictionaries. Each dictionary is as',
+    '                  follows:',
+    '                  t    The text in disp to be replaced with the value in "r"',
+    '                  r    The key to a value in the working object list that',
+    '                       the text in "t" is replaced with.',
+    '',
+    '    total   str   Optional. Prints this text to the console followed by the',
+    '                  number of matches found.',
+    '',
+    'report      dict  Optional. "def_report" must be defined if using this option.',
+    '                  Instructs search.py to insert a worksheet into the workbook',
     '                  as follows:',
     '',
     '    disp    str   Optional. Must be one of the predefined display options,',
     '                  see "xxxx" in "def_report". If omitted, the default display',
-    '                  for the object type is used.',
+    '                  for the object type is used. See',
+    '                  brcddb.app_data.report_tables',
     '',
     '    index   int   Optional. Sheet index where the worksheet is to be inserted.',
     '                  If omitted, the default is 0.',
@@ -116,7 +139,10 @@ _eh = (
     '',
     '    title   str   Optional. Title to be inserted at the top of the worksheet',
     '',
-    '    type  str   The type of report (worksheet) to generate as follows:',
+    '    type  str   The type of report (worksheet) to generate. Typically,',
+    '                searching only makes sense when searching for ports or logins',
+    '                so only "port" or "login" makes sense but the coding for all'
+    '                report types was easy so all are available. Valid types are:',
     '',
     '        alias    brcddb.report.zone.alias_page()',
     '',
@@ -141,17 +167,39 @@ _eh = (
     '',
 )
 
-_port_disp_tbl = (
-    # '_PORT_COMMENTS',
-    '_SWITCH_NAME',
-    '_PORT_NUMBER',
-    'fibrechannel/fcid-hex',
-    'fibrechannel/operational-status',
-    '_BEST_DESC',
-    '_search/speed',
-    '_search/remote_sfp_max_speed',
-    '_search/sfp_max_speed',
-)
+
+##################################################################
+#
+# Case actions for _print_act().
+#
+###################################################################
+def _print_title(obj):
+    buf = obj.get('title')
+    if buf is not None:
+        brcdapi_log.log(buf, True)
+
+
+def _print_disp(obj):
+    global _working_obj_l
+
+    disp = brcddb_util.convert_to_list(obj.get('disp'))
+    to_print_l = list()
+    for b_obj in _working_obj_l:
+        for buf in disp:
+            for d in brcddb_util.convert_to_list(obj.get('replace')):
+                buf = buf.replace(d['t'], str(b_obj.r_get(d['r'])))
+            to_print_l.append(buf)
+    if len(to_print_l) > 0:
+        brcdapi_log.log(to_print_l, True)
+
+
+def _print_total(obj):
+    global _working_obj_l
+
+    brcdapi_log.log(obj['total'] + str(len(_working_obj_l)), True)
+
+
+_print_action_tbl = dict(title=_print_title, disp=_print_disp, total=_print_total)
 
 
 def _has_sheet_name(obj, buf):
@@ -166,7 +214,6 @@ def _has_sheet_name(obj, buf):
     """
     sheet_name = obj.get('name')
     if isinstance(sheet_name, str):
-        brcdapi_log.log('Creating ' + buf + ': ' + sheet_name, True)
         return True
     if sheet_name is None:
         brcdapi_log.log('"name" missing in "report".', True)
@@ -180,49 +227,173 @@ def _has_sheet_name(obj, buf):
 # Case actions for _report_act(). See obj in _has_sheet_name() for input description
 #
 ###################################################################
+def _validate_obj_type(obj_l, obj_type):
+    type_l = brcddb_util.remove_duplicates([brcddb_class_util.get_simple_class_type(obj) for obj in obj_l])
+    if (len(type_l) == 1 and type_l[0] == obj_type) or len(type_l) == 0:
+        return True
+    brcdapi_log.log('Invalid report object type. Expected: ' + obj_type + '. Received: ' + ', '.join(type_l), True)
+    return False
+
+
 def _report_alias_act(obj, disp):
-    # brcddb.report.zone.alias_page()
-    print("_report_act_alias")
+    global _wb, _working_obj_l
+
+    if not _validate_obj_type(_working_obj_l, 'FabricObj'):
+        brcdapi_log.log('Invalid object type for "alias"', True)
+        return
+
+    i = 0
+    base_sheet_title = str(obj.get('title'))
+    for fab_obj in _working_obj_l:
+        if i == 0:
+            sheet_name = obj['name']
+            sheet_title = base_sheet_title
+        else:
+            sheet_name = obj['name'] + '_' + str(i)
+            sheet_title = base_sheet_title + ' (' + str(i) + ')'
+        brcdapi_log.log('Creating ' + sheet_name, True)
+        report_zone.alias_page(fab_obj, None, _wb, sheet_name, obj.get('index'), sheet_title)
+        i += 1
 
 
 def _report_chassis_act(obj, disp):
-    report_chassis.chassis_page()
-    print("_report_chassis_act")
+    global _wb, _working_obj_l
+
+    if not _validate_obj_type(_working_obj_l, 'ChassisObj'):
+        brcdapi_log.log('Invalid object type for "chassis"', True)
+        return
+
+    i = 0
+    base_sheet_title = str(obj.get('title'))
+    for chassis_obj in _working_obj_l:
+        if i == 0:
+            sheet_name = obj['name']
+            sheet_title = base_sheet_title
+        else:
+            sheet_name = obj['name'] if i == 0 else obj['name'] + '_' + str(i)
+            sheet_title = base_sheet_title + ' (' + str(i) + ')'
+        brcdapi_log.log('Creating ' + sheet_name, True)
+        report_chassis.chassis_page(_wb, None, sheet_name, obj.get('index'), sheet_title, chassis_obj, disp)
+        i += 1
 
 
 def _report_fabric_act(obj, disp):
-    report_fabric.fabric_page()
-    print("_report_fabric_act")
+    global _wb, _working_obj_l
+
+    if not _validate_obj_type(_working_obj_l, 'FabricObj'):
+        brcdapi_log.log('Invalid object type for "fabric"', True)
+        return
+
+    i = 0
+    base_sheet_title = str(obj.get('title'))
+    for fab_obj in _working_obj_l:
+        if i == 0:
+            sheet_name = obj['name']
+            sheet_title = base_sheet_title
+        else:
+            sheet_name = obj['name'] + '_' + str(i)
+            sheet_title = base_sheet_title + ' (' + str(i) + ')'
+        brcdapi_log.log('Creating ' + sheet_name, True)
+        report_fabric.fabric_page(_wb, None, obj.get('index'), sheet_name, sheet_title, fab_obj)
+        i += 1
 
 
 def _report_login_act(obj, disp):
-    report_login.login_page()
-    print('_report_login_act')
+    global _wb, _working_obj_l
+
+    if not _validate_obj_type(_working_obj_l, 'LoginObj'):
+        brcdapi_log.log('Invalid object type for "login"', True)
+        return
+
+    brcdapi_log.log('Creating ' + obj['name'], True)
+    report_login.login_page(_wb, None, obj['name'], obj.get('index'), obj.get('title'), _working_obj_l,
+                            in_display=obj.get('disp'), in_login_display_tbl=None, s=True)
 
 
 def _report_ntarget_act(obj, disp):
-    report_zone.non_target_zone_page()
-    print('_report_ntarget_act')
+    global _wb, _working_obj_l
+
+    if not _validate_obj_type(_working_obj_l, 'FabricObj'):
+        brcdapi_log.log('Invalid object type for "ntarget"', True)
+        return
+
+    i = 0
+    base_sheet_title = str(obj.get('title'))
+    for fab_obj in _working_obj_l:
+        if i == 0:
+            sheet_name = obj['name']
+            sheet_title = base_sheet_title
+        else:
+            sheet_name = obj['name'] + '_' + str(i)
+            sheet_title = base_sheet_title + ' (' + str(i) + ')'
+        brcdapi_log.log('Creating ' + sheet_name, True)
+        report_zone.non_target_zone_page(fab_obj, None, _wb, sheet_name, obj.get('index'), sheet_title)
+        i += 1
 
 
 def _report_port_act(obj, disp):
-    global _wb, _working_obj_l, _report_display
-    report_port.port_page(_wb, None, obj.get('name'), obj.get('index'), obj.get('title'), _working_obj_l, disp)
+    global _wb, _working_obj_l
+
+    if not _validate_obj_type(_working_obj_l, 'PortObj'):
+        brcdapi_log.log('Invalid object type for "port"', True)
+        return
+
+    brcdapi_log.log('Creating ' + obj['name'], True)
+    report_port.port_page(_wb, None, obj['name'], obj.get('index'), obj.get('title'),
+                          brcddb_util.sort_ports(_working_obj_l), disp)
 
 
 def _report_switch_act(obj, disp):
-    report_switch.switch_page()
-    print('_report_switch_act')
+    global _wb, _working_obj_l
+
+    if not _validate_obj_type(_working_obj_l, 'SwitchObj'):
+        brcdapi_log.log('Invalid object type for "switch"', True)
+        return
+
+    brcdapi_log.log('Creating ' + obj['name'], True)
+    report_switch.switch_page(_wb, None, obj['name'], obj.get('index'), obj.get('title'), _working_obj_l)
 
 
 def _report_target_act(obj, disp):
-    report_zone.zone.target_zone_page()
-    print('_report_target_act')
+    global _wb, _working_obj_l
+
+    if not _validate_obj_type(_working_obj_l, 'FabricObj'):
+        brcdapi_log.log('Invalid object type for "target"', True)
+        return
+
+    i = 0
+    base_sheet_title = str(obj.get('title'))
+    for fab_obj in _working_obj_l:
+        if i == 0:
+            sheet_name = obj['name']
+            sheet_title = base_sheet_title
+        else:
+            sheet_name = obj['name'] + '_' + str(i)
+            sheet_title = base_sheet_title + ' (' + str(i) + ')'
+        brcdapi_log.log('Creating ' + sheet_name, True)
+        report_zone.target_zone_page(fab_obj, None, _wb, sheet_name, obj.get('index'), sheet_title)
+        i += 1
 
 
 def _report_zone_act(obj, disp):
-    report_zone.zone_page()
-    print('_report_zone_act')
+    global _wb, _working_obj_l
+
+    if not _validate_obj_type(_working_obj_l, 'FabricObj'):
+        brcdapi_log.log('Invalid object type for "zone"', True)
+        return
+
+    i = 0
+    base_sheet_title = str(obj.get('title'))
+    for fab_obj in _working_obj_l:
+        if i == 0:
+            sheet_name = obj['name']
+            sheet_title = base_sheet_title
+        else:
+            sheet_name = obj['name'] + '_' + str(i)
+            sheet_title = base_sheet_title + ' (' + str(i) + ')'
+        brcdapi_log.log('Creating ' + sheet_name, True)
+        report_zone.zone_page(fab_obj, None, _wb, sheet_name, obj.get('index'), sheet_title)
+        i += 1
 
 
 _report_action_d = dict(
@@ -247,12 +418,11 @@ def _def_report_act(obj):
     global _wb, _report_name, _report_display
 
     if not _has_sheet_name(obj, 'workbook'):
-        return  # Appropriate error message is returned in _has_sheet_name
+        return  # Appropriate error message is logged in _has_sheet_name
     _wb = report_utils.new_report()
+    _report_name = brcddb_file.full_file_name(obj.get('name'), '.xlsx')
     for k, v in obj.items():
-        if k == 'name':
-            _report_name = v + '.xlsx' if len(v) < len('.xlsx') or v[len(v)-len('.xlsx'):].lower() != '.xlsx' else v
-        else:
+        if k != 'name':
             _report_display.update({k: v})
 
 
@@ -284,18 +454,22 @@ def _report_act(obj):
                 brcdapi_log.log(buf, True)
 
     if _has_sheet_name(obj, 'worksheet'):
-        try:
-            _report_action_d[obj.get('type')](obj, report_disp)
-        except (TypeError) as e:
-            brcdapi_log.log('Invalid "type",' + str(obj.get('type')) + ' in "report" action', True)
-
+        obj_type = obj.get('type')
+        if obj_type is not None and obj_type in _report_action_d:
+            _report_action_d[obj_type](obj, report_disp)
+        else:
+            brcdapi_log.log('Invalid "type", "' + str(obj.get('type')) + '" in "report" action', True)
 
 
 def _test_act(obj):
     global _working_obj_l
 
     _working_obj_l = brcddb_search.match_test(_working_obj_l, obj)
-    return
+
+
+def _print_act(obj):
+    for k in ('title', 'disp', 'total'):  # A poor man's ordered dictionary
+        _print_action_tbl[k](obj)
 
 
 _action_d = dict(
@@ -303,11 +477,12 @@ _action_d = dict(
     object=_object_act,
     report=_report_act,
     test=_test_act,
+    print=_print_act,
 )
 
 
 def _read_file(file):
-    """Reads in a JSON formated file
+    """Reads in a JSON formatted file
 
     :param file: Name of file to read
     :type file: str
@@ -334,23 +509,27 @@ def _get_input():
     :return filter_obj: Filter file contents converted to standard Python type
     :rtype filter_obj: dict, list
     """
-    global _DEBUG, _DEBUG_i, _DEBUG_f, _DEBUG_eh, _DEBUG_log, _DEBUG_nl
+    global _DEBUG, _DEBUG_i, _DEBUG_f, _DEBUG_eh, _DEBUG_v, _DEBUG_log, _DEBUG_nl
 
     proj_obj, filter_obj, ml, ec = None, None, list(), brcddb_common.EXIT_STATUS_OK
 
     if _DEBUG:
-        proj_file, filter_file, eh, log_file, log_nl = _DEBUG_i, _DEBUG_f, _DEBUG_eh, _DEBUG_log, _DEBUG_nl
+        proj_file, filter_file, eh, v_flag, log_file, log_nl = \
+            _DEBUG_i, _DEBUG_f, _DEBUG_eh, _DEBUG_v, _DEBUG_log, _DEBUG_nl
         ml.append('WARNING!!! Debug is enabled')
     else:
         parser = argparse.ArgumentParser(description='Convert supportshow output to equivalent capture output.')
         parser.add_argument('-i', help='Required. Name of project file. ".json" is automatically appended',
                             required=False)
-        buf = 'Required. Name of filter file. ".txt" is automatically appended. Invoke with the -eh option for '\
-              'additional help'
+        buf = 'Required. Name of filter file. If the file extension is not ".json", a file extension of ".txt" is '\
+              'assumed. Invoke with the -eh option for additional help'
         parser.add_argument('-f', help=buf, required=False)
         buf = 'Optional. No parameters. When specified, extended help for the filter file, -f, is displayed and '\
               'processing is terminated.'
         parser.add_argument('-eh', help=buf, action='store_true', required=False)
+        buf = 'Optional. No parameters. When specified, attempts to read and convert the filter file, -f, only. No '\
+              'other processing is performed.'
+        parser.add_argument('-v', help=buf, action='store_true', required=False)
         buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The ' \
               'log file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
         parser.add_argument('-log', help=buf, required=False,)
@@ -358,7 +537,7 @@ def _get_input():
         parser.add_argument('-nl', help=buf, action='store_true', required=False)
         args = parser.parse_args()
 
-        proj_file, filter_file, eh, log_file, log_nl = args.i, args.f, args.eh, args.log, args.nl
+        proj_file, filter_file, eh, v_flag, log_file, log_nl = args.i, args.f, args.eh, args.v, args.log, args.nl
 
     if not log_nl:
         brcdapi_log.open_log(log_file)
@@ -366,7 +545,7 @@ def _get_input():
         ml.extend(_eh)
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     else:
-        if not isinstance(proj_file, str):
+        if not v_flag and not isinstance(proj_file, str):
             ml.append('Missing project file, -i')
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
         if not isinstance(filter_file, str):
@@ -374,29 +553,11 @@ def _get_input():
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     if ec == brcddb_common.EXIT_STATUS_OK:
-        # Add extension to the file names
-        buf = proj_file.lower()
-        x = len(buf)
-        proj_file = proj_file if x > len('.json') and buf[x-len('.json'):] == '.json' else proj_file + '.json'
-        buf = filter_file.lower()
-        x = len(buf)
-        filter_file = filter_file if x > len('.txt') and buf[x-len('.txt'):] == '.txt' else filter_file + '.txt'
-        ml.append('Project, -i:     ' + str(proj_file))
-        ml.append('filter file, -f: ' + str(filter_file))
-
-        # Read in the project file
-        try:
-            proj_obj = brcddb_project.read_from(proj_file)
-        except FileNotFoundError:
-            ml.append('Project file, ' + proj_file + ', not found')
-            ec = brcddb_common.EXIT_STATUS_ERROR
-        if proj_obj is None:
-            ec = brcddb_common.EXIT_STATUS_ERROR
-        else:
-            brcddb_project.build_xref(proj_obj)
-            brcddb_project.add_custom_search_terms(proj_obj)
 
         # Read in the filter file
+        x = len('.json')
+        if len(filter_file) <= x or filter_file[len(filter_file)-x:].lower() != '.json':
+            filter_file = brcddb_file.full_file_name(filter_file, '.txt')
         try:
             filter_obj = json.loads(''.join(brcddb_file.read_file(filter_file, remove_blank=True, rc=True)))
         except FileNotFoundError:
@@ -405,6 +566,29 @@ def _get_input():
         except ValueError:
             ml.append('Improperly formatted JSON in ' + filter_file)
             ec = brcddb_common.EXIT_STATUS_ERROR
+        if v_flag:
+            if ec == brcddb_common.EXIT_STATUS_OK:
+                ml.append('Successfully read ' + filter_file)
+            ml.append('Validating filter file only. No other processing performed.')
+            ec = brcddb_common.EXIT_STATUS_ERROR
+
+        else:
+            # User feedback
+            proj_file = brcddb_file.full_file_name(proj_file, '.json')
+            ml.append('Project, -i:     ' + str(proj_file))
+            ml.append('filter file, -f: ' + str(filter_file))
+
+            # Read in the project file
+            try:
+                proj_obj = brcddb_project.read_from(proj_file)
+            except FileNotFoundError:
+                ml.append('Project file, ' + proj_file + ', not found')
+                proj_obj = None
+            if proj_obj is None:
+                ec = brcddb_common.EXIT_STATUS_ERROR
+            else:
+                brcddb_project.build_xref(proj_obj)
+                brcddb_project.add_custom_search_terms(proj_obj)
 
     if len(ml) > 0:
         brcdapi_log.log(ml, True)
@@ -441,10 +625,10 @@ def psuedo_main():
 ###################################################################
 
 
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     brcdapi_log.close_log('_DOC_STRING is True. No processing', True)
+    exit(brcddb_common.EXIT_STATUS_OK)
 else:
     _ec = psuedo_main()
-    brcdapi_log.close_log(str(_ec), True)
-exit(_ec)
+    brcdapi_log.close_log(['', str(_ec)])
+    exit(_ec)

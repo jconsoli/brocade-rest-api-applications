@@ -48,16 +48,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.5     | 17 Jul 2021   | Minor user interface enhancements.                                                |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.6     | 31 Dec 2021   | Removed unused code.                                                              |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '17 Jul 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.5'
+__version__ = '3.0.6'
 
 import argparse
 import sys
@@ -71,8 +73,8 @@ import brcddb.brcddb_common as brcddb_common
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_INF = 'test'
-_DEBUG_OUTF = 'combined.json'
+_DEBUG_INF = '_capture_2021_07_22_12_31_19'
+_DEBUG_OUTF = 'combined'
 _DEBUG_SUP = False
 _DEBUG_LOG = '_logs'
 _DEBUG_NL = False
@@ -84,14 +86,14 @@ def parse_args():
     :return: i, o
     :rtype: (str, str)
     """
-    global _DEBUG_INF, _DEBUG_OUTF, _DEBUG_SUP, _DEBUG_LOG, _DEBUG_NL
+    global _DEBUG, _DEBUG_INF, _DEBUG_OUTF, _DEBUG_SUP, _DEBUG_LOG, _DEBUG_NL
 
     if _DEBUG:
         return _DEBUG_INF, _DEBUG_OUTF, _DEBUG_SUP, _DEBUG_LOG, _DEBUG_NL
 
     buf = 'Combine the output of multiple JSON files from capture.py or this utility.'
     parser = argparse.ArgumentParser(description=buf)
-    buf = 'Required. Directory of captured data files. Only files with ".json" or ".txt" extensions are read.'
+    buf = 'Required. Directory of captured data files. Only files with a ".json" extension are read.'
     parser.add_argument('-i', help=buf, required=True)
     buf = 'Required. Name of combined data capture file. Placed in the folder specified by -i. The extension ".json" '\
           'is automatically appended.'
@@ -117,44 +119,44 @@ def combine_main():
     global _DEBUG
 
     # Get and validate user input
-    inf, in_outf, s_flag, log, nl = parse_args()
+    inf, outf, s_flag, log, nl = parse_args()
     if s_flag:
         brcdapi_log.set_suppress_all()
     if not nl:
         brcdapi_log.open_log(log)
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    ml.append('inf: ' + inf)
-    ml.append('outf: ' + in_outf)
+    ml.append('Directory, -i:   ' + inf)
+    ml.append('Output file, -o: ' + outf)
     brcdapi_log.log(ml, True)
 
     # Create project
-    projObj = brcddb_project.new(inf, datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
-    projObj.s_python_version(sys.version)
-    projObj.s_description('Captured data from ' + inf)
+    proj_obj = brcddb_project.new(inf, datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
+    proj_obj.s_python_version(sys.version)
+    proj_obj.s_description('Captured data from ' + inf)
 
     # Get a list of files - Filter out directories is just to protect the user. It shouldn't be necessary.
-    buf = in_outf.lower()
-    x = len(buf)
-    outf = in_outf if (x > len('.txt') and buf[x-len('.txt'):] == '.txt') or \
-                      (x > len('.json') and buf[x-len('.json'):] == '.json') else buf + '.json'
-    files = brcddb_file.read_director(inf)
+    outf = brcddb_file.full_file_name(outf, '.json')
+    files = brcddb_file.read_directory(inf)
     if outf in files:
         brcdapi_log.log('Combined output file, ' + outf + ', already exists in: ' + inf + '. Processing halted', True)
-        projObj.s_error_flag()
+        proj_obj.s_error_flag()
     else:
         x = len('.json')
-        file_l = [f for f in files if len(f) > x and f.lower()[len(f)-x:] == '.json']
-        x = len('.txt')
-        file_l.extend([f for f in files if len(f) > x and f.lower()[len(f)-x:] == '.txt'])
-        for file in file_l:
+        for file in [f for f in files if len(f) > x and f.lower()[len(f)-x:] == '.json']:
             brcdapi_log.log('Processing file: ' + file, True)
             obj = brcddb_file.read_dump(inf + '/' + file)
-            brcddb_copy.plain_copy_to_brcddb(obj, projObj)
+            brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
 
         # Now save the combined file
         plain_copy = dict()
-        brcddb_copy.brcddb_to_plain_copy(projObj, plain_copy)
-        brcddb_file.write_dump(plain_copy, inf + '/' + outf)
+        brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
+        try:
+            brcddb_file.write_dump(plain_copy, inf + '/' + outf)
+        except FileNotFoundError:
+            buf = 'The folder for the output file: ' + outf + ', was not found. The folder for the output file, -o, is '
+            buf += 'assumed to be in the same folder as the input file, -i. Typically, only a file name is specified '
+            buf += 'for the output file.'
+            brcdapi_log.log(buf, True)
 
     return brcddb_common.EXIT_STATUS_OK
 
@@ -164,12 +166,10 @@ def combine_main():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-else:
-    _ec = combine_main()
-    brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), True)
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = combine_main()
+brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec))
 exit(_ec)
-
-

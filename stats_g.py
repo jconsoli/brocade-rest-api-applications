@@ -39,16 +39,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.4     | 14 Nov 2021   | Added interface statistics (buffer usage)                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.5     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '14 Nov 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.4'
+__version__ = '3.0.5'
 
 import sys
 import argparse
@@ -138,9 +140,9 @@ def _ports(proj_obj, port):
             switch_wwn = switch_obj.r_obj_key()
             for login_obj in [fab_obj.r_login_obj(mem) for mem in ml if fab_obj.r_login_obj(mem) is not None]:
                 port_obj = login_obj.r_port_obj()
-                if port_obj is not None and port_obj.r_switch_obj().r_obj_key() == switch_wwn:
+                if port_obj is not None and port_obj.r_switch_key() == switch_wwn:
                     # When written, login objects were only returned on the switch where the login occured so
-                    # switch_wwn has to match port_obj.r_switch_obj().r_obj_key() so this test is future proofing
+                    # switch_wwn has to match port_obj.r_switch_key() so this test is future proofing
                     r.append(port_obj.r_obj_key())
         else:
             brcdapi_log.log(_invalid_port_ref + port, True)
@@ -623,7 +625,7 @@ def _write_report(switch_obj, report, graph_list, ml):
     return brcddb_common.EXIT_STATUS_OK
 
 
-def parse_args():
+def _get_input():
     """Parses the module load command line
 
     :return ip_addr: IP address
@@ -646,42 +648,57 @@ def parse_args():
     global _DEBUG, _DEBUG_sup, _DEBUG_r, _DEBUG_i, _DEBUG_gp, _DEBUG_gs, _DEBUG_gt, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_sup, _DEBUG_r, _DEBUG_i, _DEBUG_gp, _DEBUG_gs, _DEBUG_gt, _DEBUG_log, _DEBUG_nl
+        args_sup, args_r, args_i, args_gp, args_gs, args_gt, args_log, args_nl =\
+            _DEBUG_sup, _DEBUG_r, _DEBUG_i, _DEBUG_gp, _DEBUG_gs, _DEBUG_gt, _DEBUG_log, _DEBUG_nl
 
-    buf = 'Create Excel Workbook from statistics gathered with stats_c.py. WARNING: Graphing parameters are not ' \
-          'yet implemented. This module will only create the Excel Workbook with tables. You will then need to ' \
-          'create your own graphs manually.'
-    parser = argparse.ArgumentParser(description=buf)
-    buf = 'Suppress all library generated output to STD_IO except the exit code. Useful with batch processing'
-    parser.add_argument('-sup', help=buf, action='store_true', required=False)
-    parser.add_argument('-r', help='Required. Report name. ".xlsx" is automatically appended.', required=True)
-    buf = 'Required. Name of data input file. This must be the output file, -o, from stats_c.py. ".json" is '\
-          'automatically appended'
-    parser.add_argument('-i', help=buf, required=True)
-    buf = 'Optional. Creates a worksheet with a graph of one or more statistical counters for a port. Useful for ' \
-          'analyzing performance for a specific port. Parameters that follow are the port number followed by any of '\
-          'the statistical parameters in brocade-interface/fibrechannel-statistics. Only the final leaf should be '\
-          'used. All parameters must be separated by a comma. Separate multiple graphs with a semi-colon. Graphs are '\
-          'plotted against the sample time. For example, to graph the Tx and Rx frames for port 3/14: '\
-          '"-gp 3/14,in-frames,out-frames"'
-    parser.add_argument('-gp', help=buf, required=False)
-    buf = 'Optional. Similar to the -gp option. Creates a worksheet with a graph for a specific statistical ' \
-          'counter for one or more ports. Parameters that follow are the statistical counter followed by the ports. '\
-          'To automatically pick the ports with the highest peak counts in any of the individual samples, enter top-x'\
-          ' instead of specific ports. To automatically pick the ports with highest accumulated count over all samples'\
-          ', enter avg-x. For example, to graph the 5 ports with the highest accumulated BB credit zero counters: '\
-          '-gs bb-credit-zero,avg-5.'
-    parser.add_argument('-gs', help=buf, required=False)
-    buf = 'Optional. Specifies the graph type. Valid chart types are: ' + ', '.join(report_graph.chart_types) + '. '
-    buf += 'Default: line.'
-    parser.add_argument('-gt', help=buf, required=False)
-    buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
-          'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-    parser.add_argument('-log', help=buf, required=False,)
-    buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-    parser.add_argument('-nl', help=buf, action='store_true', required=False)
-    args = parser.parse_args()
-    return args.sup, args.r, args.i, args.gp, args.gs, args.gt, args.log, args.nl
+    else:
+        buf = 'Create Excel Workbook from statistics gathered with stats_c.py. WARNING: Graphing parameters are not ' \
+              'yet implemented. This module will only create the Excel Workbook with tables. You will then need to ' \
+              'create your own graphs manually.'
+        parser = argparse.ArgumentParser(description=buf)
+        buf = 'Suppress all library generated output to STD_IO except the exit code. Useful with batch processing'
+        parser.add_argument('-sup', help=buf, action='store_true', required=False)
+        parser.add_argument('-r', help='Required. Report name. ".xlsx" is automatically appended.', required=True)
+        buf = 'Required. Name of data input file. This must be the output file, -o, from stats_c.py. ".json" is '\
+              'automatically appended'
+        parser.add_argument('-i', help=buf, required=True)
+        buf = 'Optional. Creates a worksheet with a graph of one or more statistical counters for a port. Useful for ' \
+              'analyzing performance for a specific port. Parameters that follow are the port number followed by any '\
+              'of the statistical parameters in brocade-interface/fibrechannel-statistics. Only the final leaf should '\
+              'be used. All parameters must be separated by a comma. Separate multiple graphs with a semi-colon. '\
+              'Graphs are plotted against the sample time. For example, to graph the Tx and Rx frames for port 3/14: '\
+              '"-gp 3/14,in-frames,out-frames"'
+        parser.add_argument('-gp', help=buf, required=False)
+        buf = 'Optional. Similar to the -gp option. Creates a worksheet with a graph for a specific statistical ' \
+              'counter for one or more ports. Parameters that follow are the statistical counter followed by the '\
+              'ports. To automatically pick the ports with the highest peak counts in any of the individual samples, '\
+              'enter top-x instead of specific ports. To automatically pick the ports with highest accumulated count '\
+              'over all samples, enter avg-x. For example, to graph the 5 ports with the highest accumulated BB '\
+              'credit zero counters: -gs bb-credit-zero,avg-5.'
+        parser.add_argument('-gs', help=buf, required=False)
+        buf = 'Optional. Specifies the graph type. Valid chart types are: ' + ', '.join(report_graph.chart_types) + '. '
+        buf += 'Default: line.'
+        parser.add_argument('-gt', help=buf, required=False)
+        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
+              'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
+        parser.add_argument('-log', help=buf, required=False,)
+        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
+        parser.add_argument('-nl', help=buf, action='store_true', required=False)
+        args = parser.parse_args()
+        args_sup, args_r, args_i, args_gp, args_gs, args_gt, args_log, args_nl =\
+            args.sup, args.r, args.i, args.gp, args.gs, args.gt, args.log, args.nl
+
+    # Set up log file and debug
+    if args_sup:
+        brcdapi_log.set_suppress_all()
+    if not args_nl:
+        brcdapi_log.open_log(args_log)
+
+    return brcddb_file.full_file_name(args_r, '.xlsx'),\
+        brcddb_file.full_file_name(args_i, '.json'), \
+        args_gp, \
+        args_gs, \
+        args_gt
 
 
 def pseudo_main():
@@ -693,25 +710,15 @@ def pseudo_main():
     global _DEBUG, __version__
 
     # Get and validate user input
-    s_flag, report, in_f, single_port_graph_in, stats_graph_in, graph_type, log, nl = parse_args()
-    if s_flag:
-        brcdapi_log.set_suppress_all()
-    if not nl:
-        brcdapi_log.open_log(log)
+    report, in_f, single_port_graph_in, stats_graph_in, graph_type = _get_input()
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append(os.path.basename(__file__) + ' version: ' + __version__)
-    ml.append('Suppress:   ' + str(s_flag))
     ml.append('Report:     ' + report)
     ml.append('Input file: ' + in_f)
     ml.append('Port graph: ' + str(single_port_graph_in))
     ml.append('Stat graph: ' + str(stats_graph_in))
     ml.append('Graph type: ' + str(graph_type))
     brcdapi_log.log(ml, True)
-    x = len('.json')  # Which is also the same as len('.xlsx')
-    if len(in_f) < x or in_f[len(in_f)-x] != '.json':
-        in_f += '.json'
-    if len(report) < x or report[len(report)-x:] != '.xlsx':
-        report += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
 
     # Read in the previously collected data
     obj = brcddb_file.read_dump(in_f)
@@ -739,10 +746,10 @@ def pseudo_main():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-else:
-    _ec = pseudo_main()
-    brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), True)
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
 exit(_ec)

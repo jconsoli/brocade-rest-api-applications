@@ -47,16 +47,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.8     | 14 Nov 2021   | Deprecated pyfos_auth                                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.9     | 31 Dec 2021   | Account for all json output file names                                            |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '14 Nov 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.8'
+__version__ = '3.0.9'
 
 import argparse
 import sys
@@ -243,6 +245,7 @@ def pseudo_main():
     ml.append('KPI file:    ' + str(c_file))
     ml.append('FID List:    ' + str(fid))
     brcdapi_log.log(ml, True)
+    outf = brcddb_file.full_file_name(outf, '.json')
 
     # Create project
     proj_obj = brcddb_project.new("Captured_data", datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -259,8 +262,8 @@ def pseudo_main():
         api_int.get_batch(session, proj_obj, _kpi_list(session, c_file), fid_l)
         if proj_obj.r_is_any_error():
             brcdapi_log.log('Errors encountered. Search the log for "ERROR:".', True)
-    except:
-        brcdapi_log.log('Programming error encountered.', True)
+    except BaseException as e:
+        brcdapi_log.exception('Programming error encountered. Exception is: ' + str(e), True)
 
     # Logout
     obj = brcdapi_rest.logout(session)
@@ -269,8 +272,6 @@ def pseudo_main():
 
     # Dump the database to a file
     if _WRITE:
-        if '.' not in outf:
-            outf += '.json'
         brcdapi_log.log('Saving project to: ' + outf, True)
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
@@ -285,10 +286,10 @@ def pseudo_main():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-else:
-    _ec = pseudo_main()
-    brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), True)
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec))
 exit(_ec)

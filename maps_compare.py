@@ -55,16 +55,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.6     | 13 Feb 2021   | Added # -*- coding: utf-8 -*-                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.7     | 31 Dec 2021   | Added default file extensions.                                                    |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '13 Feb 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.6'
+__version__ = '3.0.7'
 
 import argparse
 import brcddb.util.file as brcddb_file
@@ -72,19 +74,18 @@ import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.brcddb_switch as brcddb_switch
 import brcddb.brcddb_chassis as brcddb_chassis
 import brcddb.util.compare as brcddb_compare
-import brcddb.brcddb_project as brcddb_project
 import brcdapi.log as brcdapi_log
 import brcddb.brcddb_common as brcddb_common
 import brcddb.report.utils as report_utils
 import brcddb.app_data.report_tables as brcddb_rt
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = True   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
+_DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
 _DEBUG_BF = '../Tools/rene/DL21KOS126_copy_moderate_policy.json'
 _DEBUG_CF = '../Tools/rene/DL21KOS126_moderate_v4_X7.json'
 _DEBUG_OUTF = '../Tools/rene/rene_compare_report.xlsx'
 _DEBUG_RF = None  # JSON dump from previous write. Speeds up debug. Set to None for normal operation.
-_DEBUG_WF = None  # See notes with _DEBUG_RF, 'test_compare_obj.txt'
+_DEBUG_WF = None  # See notes with _DEBUG_RF, 'test_compare_obj.json'
 _DEBUG_SUP = False
 _DEBUG_LOG = '_logs'
 _DEBUG_NL = False
@@ -111,11 +112,11 @@ difference in Tx power. The keys in these tables are used as a RegEx search. Key
 | gt    | Same as lt except compare object + this value is greater than the base value.                             |
 +-------|-----------------------------------------------------------------------------------------------------------|
 """
-_control_tables = {
-    'ProjectObj': {
+_control_tables = dict(
+    ProjectObj={
         '/_(obj_key|alerts)': dict(skip=True),
     },
-    'ChassisObj': {
+    ChassisObj={
         '/_(obj_key|project_obj|alerts)': dict(skip=True),
         '/brocade-chassis/chassis/date': dict(skip=True),
         '/brocade-fru/fan/speed': dict(lt=500, gt=500),
@@ -130,29 +131,29 @@ _control_tables = {
         '/brocade-fru/wwn/time-(alive|awake)': dict(skip=True),
         '/brocade-fru/wwn/time-alive/time-awake': dict(skip=True),
     },
-    'FabricObj': {
+    FabricObj={
         '/_(obj_key|project_obj|alerts|base_logins|port_map)': dict(skip=True),
     },
-    'LoginObj': {
+    LoginObj={
         '/_(obj_key|project_obj|alerts)': dict(skip=True),
     },
-    'FdmiNodeObj': {
+    FdmiNodeObj={
         '/_(obj_key|project_obj|alerts)': dict(skip=True),
     },
-    'FdmiPortObj': {
+    FdmiPortObj={
         '/_(obj_key|project_obj|alerts)': dict(skip=True),
     },
-    'ZoneCfgObj': {
+    ZoneCfgObj={
         '/_(obj_key|project_obj|alerts)': dict(skip=True),
         '/brocade-zone/(.*)': dict(skip=True),  # Everything in brocade-zone is already in the object
     },
-    'ZoneObj': {
+    ZoneObj={
         '/_(obj_key|project_obj|alerts)': dict(skip=True),
     },
-    'AliasObj': {
+    AliasObj={
         '/_(obj_key|project_obj|alerts)': dict(skip=True),
     },
-    'SwitchObj': {
+    SwitchObj={
         '/_(obj_key|project_obj|alerts)': dict(skip=True),
         'brocade-fibrechannel-logical-switch/fibrechannel-logical-switch/(port|ge-port)-member-list/port-member':
             dict(skip=True),
@@ -181,7 +182,7 @@ _control_tables = {
         'brocade-logging/raslog/current-severity/default-severity': dict(skip=True),
         'brocade-logging/raslog/message-id': dict(skip=True),
     },
-    'PortObj': {
+    PortObj={
         '/_(obj_key|project_obj|alerts|sfp_thresholds|maps_fc_port_group)': dict(skip=True),
         '/fibrechannel/fcid': dict(skip=True),  # Deprecated
         '/fibrechannel/enabled-state': dict(skip=True),  # Deprecated
@@ -203,50 +204,46 @@ _control_tables = {
         '/media-rdp/remote-media-(voltage|temperature|tx-bias|tx-power|rx-power)-alert/(high|low)-(warning|alarm)':
             dict(skip=True),  # These remote media values aren't always valid
     },
-    'AlertObj': {
+    AlertObj={
         '/msg_tbl': dict(skip=True),
     },
-}
+)
 
-_column_names = {
-    '_flags': 'Flag',
-    '_port_objs': 'FC Port',
-    '_ge_port_objs': 'GE Port',
-    '_maps_rules': 'MAPS Rule',
-    '_maps_group_rules': 'MAPS Group Rule',
-    '_maps_groups': 'MAPS Group',
-    '_login_objs': 'Login',
-    '_zonecfg_objs': 'Zone Configuration',
-    '_alias_objs': 'Alias',
-    '_zone_objs': 'Zone',
-    '_eff_zone_objs': 'Effective Zone Member',
-    '_fdmi_node_objs': 'FDMI Node',
-    '_fdmi_port_objs': 'FDMI Port',
-    '_fabric_objs': 'Fabric'
-}
+_column_names = dict(
+    _flags='Flag',
+    _port_objs='FC Port',
+    _ge_port_objs='GE Port',
+    _maps_rules='MAPS Rule',
+    _maps_group_rules='MAPS Group Rule',
+    _maps_groups='MAPS Group',
+    _login_objs='Login',
+    _zonecfg_objs='Zone Configuration',
+    _alias_objs='Alias',
+    _zone_objs='Zone',
+    _eff_zone_objs='Effective Zone Member',
+    _fdmi_node_objs='FDMI Node',
+    _fdmi_port_objs='FDMI Port',
+    _fabric_objs='Fabric'
+)
 
 
 def _format_disp(fk, obj):
     """Converts API keys to human readable format
 
     :param fk: List of keys to convert
-    :type obj: list
+    :type fk: list
     :param obj: Change object
     :type obj: dict
     :return: List of keys in human readable format for report
     :type: list
     """
     # I have no idea what I was thinking when I did this. It works but it's ugly
-
     global _key_conv_tbl
 
-    b = obj.get('b')
-    c = obj.get('c')
-    tfk = fk.copy()
+    b, c, tfk = obj.get('b'), obj.get('c'), fk.copy()
+
     if len(tfk) == 2 and tfk[0] == '_port_objs':
         key = 'Port'
-        b = obj.get('b')
-        c = obj.get('c')
     elif len(tfk) > 2 and tfk[0] == '_port_objs':
         tfk[1] = 's/p'
         key = '/'.join(tfk)
@@ -256,22 +253,42 @@ def _format_disp(fk, obj):
             key = 'Port ' + fk[1] + '/' + fk[2] + ' ' + '/'.join(tfk[3:])
         try:
             b = str(brcddb_common.port_conversion_tbl[tfk[3]][int(b)])
-            c = str(brcddb_common.port_conversion_tbl[tfk[3]][int(c)])
-        except:
+        except KeyError:
+            b = obj.get('b')
+        except ValueError:
             try:
                 b = str(brcddb_common.port_conversion_tbl[tfk[3]][b])
-                c = str(brcddb_common.port_conversion_tbl[tfk[3]][c])
-            except:
+            except KeyError:
                 b = obj.get('b')
+        try:
+            c = str(brcddb_common.port_conversion_tbl[tfk[3]][int(c)])
+        except KeyError:
+            c = obj.get('c')
+        except ValueError:
+            try:
+                c = str(brcddb_common.port_conversion_tbl[tfk[3]][c])
+            except KeyError:
                 c = obj.get('c')
     elif len(tfk) > 2 and tfk[0] == 'brocade-fibrechannel-switch' and tfk[1] == 'fibrechannel-switch':
         key = '/'.join(tfk)
         try:
-            b = str(brcddb_common.switch_conversion_tbl[key][int(b)])
-            c = str(brcddb_common.switch_conversion_tbl[key][int(c)])
-        except:
+            b = str(brcddb_common.port_conversion_tbl[tfk[3]][int(b)])
+        except KeyError:
             b = obj.get('b')
+        except ValueError:
+            try:
+                b = str(brcddb_common.port_conversion_tbl[tfk[3]][b])
+            except KeyError:
+                b = obj.get('b')
+        try:
+            c = str(brcddb_common.port_conversion_tbl[tfk[3]][int(c)])
+        except KeyError:
             c = obj.get('c')
+        except ValueError:
+            try:
+                c = str(brcddb_common.port_conversion_tbl[tfk[3]][c])
+            except KeyError:
+                c = obj.get('c')
         if key in _key_conv_tbl:
             key = _key_conv_tbl[key]
     else:
@@ -325,9 +342,9 @@ def _basic_add_to_content(obj, b_obj, c_obj, content):
     start = len(content)
     if obj is not None:
         for k, v in obj.items():
-            _content_append({'font': 'std', 'align': 'wrap', 'disp': ('', v.get('b'), v.get('c'), v.get('r'))}, content)
+            _content_append(dict(font='std', align='wrap', disp=('', v.get('b'), v.get('c'), v.get('r'))), content)
     if len(content) == start:
-        content.append({'merge': 4, 'font': 'std', 'align': 'wrap', 'disp': ('No changes')})
+        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
 
 
 def _alias_add_to_content(obj, b_obj, c_obj, content):
@@ -343,9 +360,9 @@ def _alias_add_to_content(obj, b_obj, c_obj, content):
             alias = c_obj.r_alias_for_wwn(c_buf)
             if len(alias) > 0:
                 c_buf = alias[0] + ' (' + c_buf + ')'
-            _content_append({'font': 'std', 'align': 'wrap', 'disp': ('', b_buf, c_buf, v.get('r'))}, content)
+            _content_append(dict(font='std', align='wrap', disp=('', b_buf, c_buf, v.get('r'))), content)
     if len(content) == start:
-        content.append({'merge': 4, 'font': 'std', 'align': 'wrap', 'disp': ('No changes')})
+        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
 
 
 def _switch_add_to_content(obj, b_obj, c_obj, content):
@@ -354,9 +371,9 @@ def _switch_add_to_content(obj, b_obj, c_obj, content):
     for change_obj in [t_obj for t_obj in obj if t_obj.get('r') is not None]:
         b_buf = brcddb_switch.best_switch_name(b_obj.r_project_obj().r_switch_obj(change_obj.get('b')), True)
         c_buf = brcddb_switch.best_switch_name(c_obj.r_project_obj().r_switch_obj(change_obj.get('c')), True)
-        _content_append({'font': 'std', 'align': 'wrap', 'disp': ('', b_buf, c_buf, change_obj.get('r'))}, content)
+        _content_append(dict(font='std', align='wrap', disp=('', b_buf, c_buf, change_obj.get('r'))), content)
     if len(content) == start:
-        content.append({'merge': 4, 'font': 'std', 'align': 'wrap', 'disp': ('No changes')})
+        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
 
 
 def _fabric_add_to_content(obj, b_obj, c_obj, content):
@@ -367,9 +384,9 @@ def _fabric_add_to_content(obj, b_obj, c_obj, content):
         for k, v in obj.items():
             b_buf = brcddb_fabric.best_fab_name(proj_obj.r_fabric_obj(v.get('b')), True)
             c_buf = brcddb_fabric.best_fab_name(proj_obj.r_fabric_obj(v.get('c')), True)
-            _content_append({'font': 'std', 'align': 'wrap', 'disp': ('', b_buf, c_buf, v.get('r'))}, content)
+            _content_append(dict(font='std', align='wrap', disp=('', b_buf, c_buf, v.get('r'))), content)
     if len(content) == start:
-        content.append({'merge': 4, 'font': 'std', 'align': 'wrap', 'disp': ('No changes')})
+        content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
 
 
 def _null(obj, b_obj, c_obj, content):
@@ -377,28 +394,27 @@ def _null(obj, b_obj, c_obj, content):
     return
 
 
-_action_table = {
-    '_fabric_objs': {
-        '_alias_objs': {'t': 'Aliases', 'f': _basic_add_to_content},
-        '_eff_zone_objs': {'t': 'Zones in effective zones configuration', 'f': _basic_add_to_content},
-        '_fdmi_node_objs': {'t': 'FDMI Nodes', 'f': _alias_add_to_content},
-        '_fdmi_port_objs': {'t': 'FDMI Ports', 'f': _alias_add_to_content},
-        '_login_objs': {'t': 'Name server logins', 'f': _alias_add_to_content},
-        '_switch_keys': {'t': 'Switches in fabric', 'f': _switch_add_to_content},
-        '_zone_objs': {'t': 'Zones', 'f': _basic_add_to_content},
-        '_zonecfg_objs': {'t': 'Zone configurations', 'f': _basic_add_to_content},
-    },
-    '_chassis_objs': {
-        '_switch_keys': {'t': 'Switches in fabric', 'f': _switch_add_to_content},
-    },
-    '_switch_objs': {
-        '_fabric_key': {'t': 'Member of Fabric', 'f': _fabric_add_to_content},
-        '_maps_rules': {'t': 'MAPS Rules', 'f': _basic_add_to_content},
-        # '_maps_group_rules': {'t': 'MAPS Group Rules', 'f': _basic_add_to_content},
-        '_maps_group_rules': {'t': 'MAPS Group Rules', 'f': _null},
-        '_maps_groups': {'t': 'MAPS Groups', 'f': _basic_add_to_content},
-    },
-}
+_action_table = dict(
+    _fabric_objs=dict(
+        _alias_objs=dict(t='Aliases', f=_basic_add_to_content),
+        _eff_zone_objs=dict(t='Zones in effective zones configuration', f=_basic_add_to_content),
+        _fdmi_node_objs=dict(t='FDMI Nodes', f=_alias_add_to_content),
+        _fdmi_port_objs=dict(t='FDMI Ports', f=_alias_add_to_content),
+        _login_objs=dict(t='Name server logins', f=_alias_add_to_content),
+        _switch_keys=dict(t='Switches in fabric', f=_switch_add_to_content),
+        _zone_objs=dict(t='Zones', f=_basic_add_to_content),
+        _zonecfg_objs=dict(t='Zone configurations', f=_basic_add_to_content),
+    ),
+    _chassis_objs=dict(
+        _switch_keys=dict(t='Switches in fabric', f=_switch_add_to_content),
+    ),
+    _switch_objs=dict(
+        _fabric_key=dict(t='Member of Fabric', f=_fabric_add_to_content),
+        _maps_rules=dict(t='MAPS Rules', f=_basic_add_to_content),
+        _maps_group_rules=dict(t='MAPS Group Rules', f=_null),
+        _maps_groups=dict(t='MAPS Groups', f=_basic_add_to_content),
+    ),
+)
 
 
 def _api_added_compares(obj, k, fk, content):
@@ -425,7 +441,7 @@ def _api_added_compares(obj, k, fk, content):
             _api_added_compares(t_obj, k, fk, content)
         elif isinstance(t_obj, (str, int, float)):
             if k == 'b':
-                _content_append({'font': 'std', 'align': 'wrap', 'disp': _format_disp(fk, obj)}, content)
+                _content_append(dict(font='std', align='wrap', disp=_format_disp(fk, obj)), content)
             elif k not in ('c', 'r'):
                 brcdapi_log.exception('Unknown element: ' + str(t_obj), True)
         else:
@@ -471,7 +487,7 @@ def _page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj, page):
     for base_key, f_obj in c_obj.items():
         b_fab_obj = b_proj_obj.r_fabric_obj(base_key)
         c_fab_obj = c_proj_obj.r_fabric_obj(base_key)
-        t_content = [{'font': 'hdr_2', 'align': 'wrap', 'disp': ('Key', 'Base Value', 'Compare Value', 'Change')}]
+        t_content = [dict(font='hdr_2', align='wrap', disp=('Key', 'Base Value', 'Compare Value', 'Change'))]
         obj_tbl = _action_table[page]
 
         # Add each individual item for the brcddb object to the sheet
@@ -482,19 +498,19 @@ def _page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj, page):
                     # obj can be None if code was upgraded and a new KPI was introduced and captured. This logic skips
                     # reporting on anything new because we have no idea what the previous version would have been
                     t_content.append(dict())
-                    t_content.append({'font': 'hdr_2', 'merge': 4, 'align': 'wrap', 'disp': cntl_tbl.get('t')})
+                    t_content.append(dict(font='hdr_2', merge=4, align='wrap', disp=cntl_tbl.get('t')))
                     cntl_tbl.get('f')(obj, b_fab_obj, c_fab_obj, t_content)
 
         # Add each item added to the brcddb object (these are the items from the API)
         t_content.append(dict())
-        t_content.append({'font': 'hdr_2', 'merge': 4, 'align': 'wrap', 'disp': 'Added from RESTConf API'})
+        t_content.append(dict(font='hdr_2', merge=4, align='wrap', disp=('Added from RESTConf API',)))
         for k1 in [key for key in f_obj.keys() if key not in obj_tbl]:
             _api_added_compares(f_obj, k1, list(), t_content)
         # Sheet name and title
         title, sname = _main_pages[page]['ts'](b_proj_obj, base_key)
         sname = sname.replace(' ', '_').replace(':', '').replace('-', '_')
         sname = sname[:28] + '_' + str(sheet_index) if len(sname) > 28 else sname + '_' + str(sheet_index)
-        tbl_contents.append({'s': sname, 'd': title})
+        tbl_contents.append(dict(s=sname, d=title))
         report_utils.title_page(wb, None, sname, sheet_index, title, _main_pages[page]['sc'](t_content),
                                 (42, 42, 42, 24))
         sheet_index += 1
@@ -504,12 +520,11 @@ def _page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj, page):
 
 # After the fact, I realized I needed to sort the display output. The next 2 methods sort and filter the output
 def _sort_switch(content):
-    rl = list()
-    re = list()
+    rl, re = list(), list()
     for obj in content:
         try:
             key = obj.get('disp')[0]
-        except:
+        except (TypeError, IndexError):
             key = ''
         if not key.startswith('brocade-maps/group/members'):
             if key.startswith('Port '):
@@ -518,9 +533,9 @@ def _sort_switch(content):
                 rl.append(obj)
 
     rl.append(dict())
-    rl.append({'merge': 4, 'font': 'hdr_2', 'align': 'wrap', 'disp': ('Ports')})
+    rl.append(dict(merge=4, font='hdr_2', align='wrap', disp=('Ports',)))
     if len(re) == 0:
-        rl.append({'merge': 4, 'font': 'std', 'align': 'wrap', 'disp': ('No changes')})
+        rl.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
     else:
         rl.extend(re)
     return rl
@@ -545,17 +560,17 @@ def _switch_ts(o, k):
     return brcddb_switch.best_switch_name(obj, True), brcddb_switch.best_switch_name(obj, False)
 
 
-_main_pages = {  # 's': sheet name. 't': sheet title. 'n': method to return object name
-    '_fabric_objs': {'s': 'F_', 't': 'Fabric Comparisons: ', 'n': _fabric_name, 'sc': _sort_null, 'ts': _fabric_ts},
-    '_switch_objs': {'s': 'S_', 't': 'Switch Comparisons: ', 'n': _switch_name, 'sc': _sort_switch, 'ts': _switch_ts},
-    '_chassis_objs': {'s': 'C_', 't': 'Chassis Comparisons: ', 'n': _chassis_name, 'sc': _sort_null, 'ts': _chassis_ts},
-}
+_main_pages = dict(  # 's': sheet name. 't': sheet title. 'n': method to return object name
+    _fabric_objs=dict(s='F_', t='Fabric Comparisons: ', n=_fabric_name, sc=_sort_null, ts=_fabric_ts),
+    _switch_objs=dict(s='S_', t='Switch Comparisons: ', n=_switch_name, sc=_sort_switch, ts=_switch_ts),
+    _chassis_objs=dict(s='C_', t='Chassis Comparisons: ', n=_chassis_name, sc=_sort_null, ts=_chassis_ts),
+)
 
 
 def _login_obj_name(obj, k, wwn):
     try:
         return obj.r_fabric_obj(k).r_alias_for_wwn(wwn)[0] + ' (' + wwn + ')'
-    except:
+    except (ValueError, IndexError):
         return wwn
 
 
@@ -617,26 +632,25 @@ def _new_report(c, b_proj_obj, c_proj_obj, c_obj, r_name):
     title = str(b_proj_obj.get('policyName')) + ' Compared to ' + str(c_proj_obj.get('policyName'))
     tc_page = 'Project_Summary'
     t_content = [
-        {'font': 'std', 'align': 'wrap', 'disp': ('Total changes', c)},
+        dict(font='std', align='wrap', disp=('Total changes', c)),
         dict(),
-        {'font': 'hdr_2', 'align': 'wrap', 'disp': ('Key', 'Base Value', 'Compare Value', 'Change')},
+        dict(font='hdr_2', align='wrap', disp=('Key', 'Base Value', 'Compare Value', 'Change')),
     ]
 
     # Add any added changes to the project objects
     for k, obj in c_obj.items():
         if k not in _main_pages.keys():
-            t_content.append({'font': 'std', 'align': 'wrap',
-                              'disp': (k, obj.get('b'), obj.get('c'), obj.get('r'))})
+            t_content.append(dict(font='std', align='wrap', disp=(k, obj.get('b'), obj.get('c'), obj.get('r'))))
 
     # Add all the chassis, switch and fabric sheets
     for k, p_obj in _main_pages.items():
         t_content.append(dict())
-        t_content.append({'font': 'hdr_2', 'merge': 4, 'align': 'wrap', 'disp': p_obj.get('t')})
+        t_content.append(dict(font='hdr_2', merge=4, align='wrap', disp=p_obj.get('t')))
         sheet_index, tbl_contents = _page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj.get(k), k)
         for d in tbl_contents:
-            td = {'font': 'link', 'merge': 4, 'align': 'wrap', 'disp': d.get('d')}
+            td = dict(font='link', merge=4, align='wrap', disp=d.get('d'))
             if 's' in d:  # Is there a link to a page?
-                td.update({'hyper': '#' + d.get('s') + '!A1'})
+                td.update(dict(hyper='#' + d.get('s') + '!A1'))
                 t_content.append(td)
 
     # Add the project summary with table of contents and save the report.
@@ -658,14 +672,15 @@ def pseudo_main():
         brcdapi_log.set_suppress_all()
     if not nl:
         brcdapi_log.open_log(log)
-    if len(rf) < len('.xlsx') or rf[len(rf)-len('.xlsx'):] != '.xlsx':
-        rf += '.xlsx'  # Add the .xlsx extension to the Workbook if it wasn't specified on the command line
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append(':START: Compare Report:')
     ml.append('    Base file:    ' + bf)
     ml.append('    Compare file: ' + cf)
     ml.append('    Report file:  ' + rf)
     brcdapi_log.log(ml, True)
+    bf = brcddb_file.full_file_name(bf, '.json')
+    cf = brcddb_file.full_file_name(cf, '.json')
+    rf = brcddb_file.full_file_name(rf, '.xlsx')
 
     # Read the projects to compare and build the cross references
     ml = list()
@@ -698,13 +713,14 @@ def pseudo_main():
     # Compare the two projects
     brcdapi_log.log('Please wait. The comparison may take several seconds', True)
     if _DEBUG_RF is not None:
-        compare_obj = brcddb_file.read_dump(_DEBUG_RF)
+        compare_obj = brcddb_file.read_dump(brcddb_file.full_file_name(_DEBUG_RF, '.json'))
         c = 100
     else:
         c, compare_obj = brcddb_compare.compare(b_proj_obj, c_proj_obj, None, _control_tables)
         if _DEBUG_WF is not None:
-            brcddb_file.write_dump(compare_obj, _DEBUG_WF)
+            brcddb_file.write_dump(compare_obj, brcddb_file.full_file_name(_DEBUG_WF, '.json'))
     _new_report(c, b_proj_obj, c_proj_obj, compare_obj, rf)
+
     return brcddb_common.EXIT_STATUS_OK
 
 
@@ -713,10 +729,10 @@ def pseudo_main():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-else:
-    _ec = pseudo_main()
-    brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), True)
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = pseudo_main()
+brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)])
 exit(_ec)

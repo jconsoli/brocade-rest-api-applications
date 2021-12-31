@@ -36,15 +36,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.3     | 14 Nov 2021   | Deprecated pyfos_auth                                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.5     | 31 Dec 2021   | Added default file extensions                                                     |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '14 Nov 2021'
+__date__ = '31 Dec 2021'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 import argparse
 import brcdapi.fos_auth as brcdapi_auth
@@ -53,6 +55,7 @@ import brcdapi.brcdapi_rest as brcdapi_rest
 import brcddb.report.utils as report_utils
 import brcddb.api.interface as api_int
 import brcddb.brcddb_common as brcddb_common
+import brcddb.util.file as brcddb_file
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
 _MAX_RULE_BATCH = 20  # Maximum number of MAPS rules to create in one API call. This is far more conservative than req.
@@ -156,7 +159,8 @@ def _create_new_rules(session, fid, new_sfp_rules):
                     else:
                         er_l.append(d)
             if len(er_l) > 0:
-                brcdapi_log.log('Failed to create rules. API response:' + brcdapi_auth.formatted_error_msg(er_obj), True)
+                brcdapi_log.log('Failed to create rules. API response:' + brcdapi_auth.formatted_error_msg(er_obj),
+                                True)
                 return sum_new_rules  # If we get here, something is really wrong so just bail out
         # rule.get('name') should never be None in the line below. I'm just extra cautious
         sum_new_rules.extend([rule.get('name') for rule in new_rules if rule.get('name') is not None])
@@ -186,8 +190,6 @@ def _rules_to_keep(session, fid, maps_policy):
 
     # Remove all old SFP rules and add the new rules
     rule_list = maps_policy.get('rule-list').get('rule')
-    # return [rule.get('name') for rule in obj.get('rule') if rule.get('monitoring-system') not in _sfp_monitoring_system
-    #         and rule.get('group-name') not in _sfp_groups and rule.get('name') in rule_list]
     return [rule.get('name') for rule in obj.get('rule') if rule.get('monitoring-system') not in _sfp_monitoring_system
             and rule.get('name') in rule_list]
 
@@ -357,6 +359,7 @@ def pseudo_main():
         if file is None:
             sfp_rules = list()
         else:
+            file = brcddb_file.full_file_name(file, '.xlsx')
             brcdapi_log.log('Adding rules can take up to a minute. Please be patient.', True)
             _sfp_monitoring_system = ['CURRENT', 'RXP', 'SFP_TEMP', 'TXP', 'VOLTAGE']
             sfp_rules = report_utils.parse_sfp_file_for_rules(file, _get_groups(session, fid))
@@ -364,8 +367,8 @@ def pseudo_main():
             brcdapi_log.log('Error opening or reading ' + file, True)
         else:
             ec = _modify_maps(session, fid, sfp_rules, new_policy, mp, enable_flag)
-    except:
-        brcdapi_log.log('Programming error encountered', True)
+    except BaseException as e:
+        brcdapi_log.log('Programming error encountered. Exception is: ' + str(e), True)
 
     obj = brcdapi_rest.logout(session)
     if brcdapi_auth.is_error(obj):
@@ -380,10 +383,10 @@ def pseudo_main():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-else:
-    _ec = pseudo_main()
-    brcdapi_log.close_log('Processing Complete. Exit code: ' + str(_ec), False)
+    exit(brcddb_common.EXIT_STATUS_OK)
+
+_ec = pseudo_main()
+brcdapi_log.close_log('Processing Complete. Exit code: ' + str(_ec), False)
 exit(_ec)
