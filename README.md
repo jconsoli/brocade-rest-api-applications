@@ -32,6 +32,12 @@ Added the ability to generate CLI zone commands in the zone merge utility.
 * search - Greatly simplified search methods but it is now for programmers only as it accepts JSON as input.
 * Imporved several help and feedback messages.
 
+**Updated 31 Dec 2021**
+
+* Several comments and user messaging improved
+* Replaced all bare exception clauses with explicit exceptions
+* Improved search and added more examples
+
 **applications**
 
 Contains modules used primarily for SAN automations tasks:
