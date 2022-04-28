@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2021 Jack Consoli.  All rights reserved.
+# Copyright 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -15,74 +15,61 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-:mod:`stats_clear.py` - Clears all port statistics for all ports in a FID on a chassis.
+:mod:`port_config.py` - Examples on how to modify port configuration parameters.
 
 **Description**
 
-    Example on how to:
-
-    * Determine all FC ports in a logical switch
-    * Determine all GE ports in a logical switch
-    * Clear all port statistics for both FC and GE ports
+    Illustrates how to change parameters available in the 'brocade-interface/fibrechannel'. This specific example
+    changes the user friendly port name and sets LOS TOV mode.
 
 Version Control::
 
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
     +===========+===============+===================================================================================+
-    | 1.0.0     | 13 Feb 2021   | Initial Launch                                                                    |
+    | 1.x.x     | 03 Jul 2019   | Experimental                                                                      |
+    | 2.x.x     |               |                                                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.1     | 14 Nov 2021   | Deprecated pyfos_auth                                                             |
+    | 3.0.0     |               | Initial Launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.2     | 31 Dec 2021   | Updated comments only.                                                            |
+    | 3.0.1     | 27 Nov 2020   | Added examples using the brcdapi.port library.                                    |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.2     | 09 Jan 2021   | Open log file.                                                                    |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.3     | 13 Feb 2021   | Added # -*- coding: utf-8 -*-                                                     |
+    |           |               | Broke out examples into seperate modules.                                         |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.4     | 14 Nov 2021   | Deprecated pyfos_auth                                                             |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.5     | 31 Dec 2021   | Updated comments only. No functional changes.                                     |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.6     | 28 Apr 2022   | Added "running" to URI                                                            |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '3.0.6'
 
 import argparse
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.fos_auth as brcdapi_auth
 import brcdapi.log as brcdapi_log
-import brcdapi.port as brcdapi_port
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_IP = '10.xxx.x.xxx'
+_DEBUG_IP = 'xx.x.xxx.xx'
 _DEBUG_ID = 'admin'
 _DEBUG_PW = 'password'
-_DEBUG_SEC = None  # 'self'  # Use None or 'none' for HTTP. Use the certificate if HTTPS and not self signed
+_DEBUG_SEC = 'self'  # Use None or 'none' for HTTP. Use the certificate if HTTPS and not self signed
 _DEBUG_FID = '128'
 _DEBUG_VERBOSE = False  # When True, all content and responses are formatted and printed (pprint).
 _DEBUG_LOG = '_logs'
 _DEBUG_NL = False
-
-
-def get_ge_port_list(session, fid):
-    """Returns the list of GE ports in a logical switch
-
-    :param session: Session object returned from brcdapi.brcdapi_auth.login()
-    :type session: dict
-    :param fid: Logical switch FID number
-    :type fid: int
-    :return: List of GE ports
-    :rtype: list
-    """
-    obj = brcdapi_rest.get_request(
-        session, 'running/brocade-fibrechannel-logical-switch/fibrechannel-logical-switch/fabric-id/' + str(fid))
-    if brcdapi_auth.is_error(obj):
-        brcdapi_log.log(brcdapi_auth.formatted_error_msg(obj), True)
-        return list()
-    if 'fibrechannel-logical-switch' in obj and 'ge-port-member-list' in obj['fibrechannel-logical-switch']:
-        pl = obj['fibrechannel-logical-switch']['ge-port-member-list'].get('port-member')
-        return list() if pl is None else pl
-    return list()
 
 
 def parse_args():
@@ -110,7 +97,10 @@ def parse_args():
     if _DEBUG:
         return _DEBUG_IP, _DEBUG_ID, _DEBUG_PW, _DEBUG_SEC, _DEBUG_FID, _DEBUG_VERBOSE, _DEBUG_LOG, _DEBUG_NL
     else:
-        parser = argparse.ArgumentParser(description='Clear statistics for all ports in a logical switch.')
+        buf = 'Useful as a programming example only on how to make port configuration changes via the '\
+              'running/brocade-interface/fibrechannel branch. This specific example sets the port name to "port_s_p" '\
+              'and sets LOS_TOV'
+        parser = argparse.ArgumentParser(description=buf)
         parser.add_argument('-ip', help='(Required) IP address', required=True)
         parser.add_argument('-id', help='(Required) User ID', required=True)
         parser.add_argument('-pw', help='(Required) Password', required=True)
@@ -169,21 +159,28 @@ def pseudo_main():
             ec = -1
 
         else:
-            # Get the port lists
             fc_plist = [port.get('name') for port in obj.get('fibrechannel')]
-            ge_plist = get_ge_port_list(session, fid)
-
-            # Clear stats for all FC and GE ports
-            brcdapi_log.log('Clearing statistics for all ports of fid: ' + str(fid), True)
-            obj = brcdapi_port.clear_stats(session, fid, fc_plist, ge_plist)
+            pl = list()
+            content = {'fibrechannel': pl}
+            for p in fc_plist:
+                d = {
+                    'name': p,
+                    'user-friendly-name': 'port_' + p.replace('/', '_'),  # Name port "port_s_p"
+                    'los-tov-mode-enabled': 2  # Enable LOS_TOV
+                }
+                # For other port configuration parameters, search the Rest API Guide or Yang models for
+                # brocade-interface/fibrechannel
+                pl.append(d)
+            # PATCH only changes specified leaves in the content for this URI. It does not replace all resources
+            obj = brcdapi_rest.send_request(session, 'running/brocade-interface/fibrechannel', 'PATCH', content, fid)
             if brcdapi_auth.is_error(obj):
-                brcdapi_log.log('Error clearing stats for ports for FID ' + str(fid), True)
+                brcdapi_log.log('Error configuring ports for FID ' + str(fid), True)
                 brcdapi_log.log(brcdapi_auth.formatted_error_msg(obj), True)
                 ec = -1
             else:
-                brcdapi_log.log('Successfully cleared stats for all ports for FID ' + str(fid), True)
+                brcdapi_log.log('Successfully configured ports for FID ' + str(fid), True)
 
-    except:
+    except:  # Bare because I don't care what went wrong at this point. I just want to log out no matter what happens.
         brcdapi_log.log('Encountered a programming error', True)
         ec = -1
 
@@ -200,9 +197,9 @@ def pseudo_main():
 #
 ###################################################################
 if _DOC_STRING:
-    print('_DOC_STRING set. No processing')
+    print('_DOC_STRING is True. No processing')
     exit(0)
 
 _ec = pseudo_main()
-brcdapi_log.close_log('Processing Complete. Exit code: ' + str(_ec))
+brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
 exit(_ec)
