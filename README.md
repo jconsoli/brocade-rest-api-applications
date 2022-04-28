@@ -38,6 +38,11 @@ Added the ability to generate CLI zone commands in the zone merge utility.
 * Replaced all bare exception clauses with explicit exceptions
 * Improved search and added more examples
 
+**Updated 28 Apr 2022**
+
+* Added support for new URIs in FOS 9.1
+* Moved some generic libraries from brcddb to brcdapi
+
 **applications**
 
 Contains modules used primarily for SAN automations tasks:
