@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2020, 2021 Jack Consoli.  All rights reserved.
+# Copyright 2020, 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -48,29 +48,32 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.2     | 31 Dec 2021   | Removed old unused code.                                                          |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.3     | 28 Apr 2022   | Fixed IndexError and relocated libraries.                                         |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.2'
+__version__ = '3.1.3'
 
 import argparse
+import brcdapi.log as brcdapi_log
+import brcdapi.gen_util as gen_util
+import brcdapi.file as brcdapi_file
+import brcdapi.excel_util as excel_util
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.brcddb_switch as brcddb_switch
 import brcddb.brcddb_chassis as brcddb_chassis
 import brcddb.util.compare as brcddb_compare
 import brcddb.brcddb_project as brcddb_project
-import brcdapi.log as brcdapi_log
 import brcddb.brcddb_common as brcddb_common
 import brcddb.report.utils as report_utils
 import brcddb.app_data.report_tables as brcddb_rt
-import brcddb.util.util as brcddb_util
-import brcddb.util.file as brcddb_file
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
@@ -249,11 +252,11 @@ def _format_disp(fk, obj):
         try:
             b = str(brcddb_common.port_conversion_tbl[tfk[3]][int(b)])
             c = str(brcddb_common.port_conversion_tbl[tfk[3]][int(c)])
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, IndexError):
             try:
                 b = str(brcddb_common.port_conversion_tbl[tfk[3]][b])
                 c = str(brcddb_common.port_conversion_tbl[tfk[3]][c])
-            except KeyError:
+            except (KeyError, IndexError):
                 b = obj.get('b')
                 c = obj.get('c')
     elif len(tfk) > 2 and tfk[0] == 'brocade-fibrechannel-switch' and tfk[1] == 'fibrechannel-switch':
@@ -261,7 +264,7 @@ def _format_disp(fk, obj):
         try:
             b = str(brcddb_common.switch_conversion_tbl[key][int(b)])
             c = str(brcddb_common.switch_conversion_tbl[key][int(c)])
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, IndexError):
             b = obj.get('b')
             c = obj.get('c')
         if key in _key_conv_tbl:
@@ -346,10 +349,10 @@ def _zoneobj_add_to_content(obj, b_obj, c_obj, content):
     if obj is not None:
         for k, v in obj.items():
             buf = str(k)
-            for mem_d in brcddb_util.convert_to_list(v.get('_members')):
+            for mem_d in gen_util.convert_to_list(v.get('_members')):
                 _content_append(dict(font='std', align='wrap', disp=(buf, mem_d['b'], mem_d['c'], mem_d['r'])), content)
                 buf = ''
-            for mem_d in brcddb_util.convert_to_list(v.get('_pmembers')):
+            for mem_d in gen_util.convert_to_list(v.get('_pmembers')):
                 _content_append(dict(font='std', align='wrap', disp=(buf, mem_d['b'], mem_d['c'], mem_d['r'])), content)
                 buf = ''
     if len(content) == start:
@@ -718,7 +721,7 @@ def _new_report(c, b_proj_obj, c_proj_obj, c_obj, r_name):
 
     # Set up the workbook
     sheet_index = 0
-    wb = report_utils.new_report()
+    wb = excel_util.new_report()
 
     # Setup the Project summary sheet with table of content
     title = b_proj_obj.r_obj_key() + ' Compared to ' + c_proj_obj.r_obj_key()
@@ -739,7 +742,7 @@ def _new_report(c, b_proj_obj, c_proj_obj, c_obj, r_name):
     sheet_index, tbl_contents = _project_page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj.get('_project_obj'))
     d = tbl_contents[0]
     td = dict(font='link', merge=4, align='wrap', disp=d.get('d'))
-    td.update(dict(hyper='#' + d.get('s') + '!A1'))
+    td.update(hyper='#' + d.get('s') + '!A1')
     t_content.append(td)
 
     # Add all the chassis, switch and fabric sheets
@@ -750,12 +753,12 @@ def _new_report(c, b_proj_obj, c_proj_obj, c_obj, r_name):
         for d in tbl_contents:
             td = dict(font='link', merge=4, align='wrap', disp=d.get('d'))
             if 's' in d:  # Is there a link to a page?
-                td.update(dict(hyper='#' + d.get('s') + '!A1'))
+                td.update(hyper='#' + d.get('s') + '!A1')
                 t_content.append(td)
 
     # Add the project summary with table of contents and save the report.
     report_utils.title_page(wb, None, tc_page, 0, title, t_content, (24, 42, 42, 12))
-    report_utils.save_report(wb, r_name)
+    excel_util.save_report(wb, r_name)
 
 
 def pseudo_main():
@@ -772,9 +775,9 @@ def pseudo_main():
         brcdapi_log.set_suppress_all()
     if not nl:
         brcdapi_log.open_log(log)
-    rf = brcddb_file.full_file_name(rf, '.xlsx')
-    bf = brcddb_file.full_file_name(bf, '.json')
-    cf = brcddb_file.full_file_name(cf, '.json')
+    rf = brcdapi_file.full_file_name(rf, '.xlsx')
+    bf = brcdapi_file.full_file_name(bf, '.json')
+    cf = brcdapi_file.full_file_name(cf, '.json')
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append(':START: Compare Report:')
     ml.append('    Base file:    ' + bf)

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2019, 2020, 2021 Jack Consoli.  All rights reserved.
+# Copyright 2019, 2020, 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -40,28 +40,31 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.4     | 31 Dec 2021   | Finished report and print types.                                                  |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.5     | 28 Apr 2022   | Relocated libraries                                                               |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.4'
+__version__ = '3.0.5'
 
 import argparse
 import json
 import brcddb.brcddb_project as brcddb_project
 import brcdapi.log as brcdapi_log
+import brcdapi.gen_util as gen_util
+import brcdapi.excel_util as excel_util
 import brcddb.brcddb_common as brcddb_common
 import brcddb.classes.util as brcddb_class_util
 import brcddb.util.util as brcddb_util
-import brcddb.util.file as brcddb_file
+import brcdapi.file as brcdapi_file
 import brcddb.util.search as brcddb_search
 import brcddb.util.obj_convert as brcddb_conv
-import brcddb.report.utils as report_utils
 import brcddb.report.chassis as report_chassis
 import brcddb.report.fabric as report_fabric
 import brcddb.report.login as report_login
@@ -182,11 +185,11 @@ def _print_title(obj):
 def _print_disp(obj):
     global _working_obj_l
 
-    disp = brcddb_util.convert_to_list(obj.get('disp'))
+    disp = gen_util.convert_to_list(obj.get('disp'))
     to_print_l = list()
     for b_obj in _working_obj_l:
         for buf in disp:
-            for d in brcddb_util.convert_to_list(obj.get('replace')):
+            for d in gen_util.convert_to_list(obj.get('replace')):
                 buf = buf.replace(d['t'], str(b_obj.r_get(d['r'])))
             to_print_l.append(buf)
     if len(to_print_l) > 0:
@@ -228,7 +231,7 @@ def _has_sheet_name(obj, buf):
 #
 ###################################################################
 def _validate_obj_type(obj_l, obj_type):
-    type_l = brcddb_util.remove_duplicates([brcddb_class_util.get_simple_class_type(obj) for obj in obj_l])
+    type_l = gen_util.remove_duplicates([brcddb_class_util.get_simple_class_type(obj) for obj in obj_l])
     if (len(type_l) == 1 and type_l[0] == obj_type) or len(type_l) == 0:
         return True
     brcdapi_log.log('Invalid report object type. Expected: ' + obj_type + '. Received: ' + ', '.join(type_l), True)
@@ -419,8 +422,8 @@ def _def_report_act(obj):
 
     if not _has_sheet_name(obj, 'workbook'):
         return  # Appropriate error message is logged in _has_sheet_name
-    _wb = report_utils.new_report()
-    _report_name = brcddb_file.full_file_name(obj.get('name'), '.xlsx')
+    _wb = excel_util.new_report()
+    _report_name = brcdapi_file.full_file_name(obj.get('name'), '.xlsx')
     for k, v in obj.items():
         if k != 'name':
             _report_display.update({k: v})
@@ -557,9 +560,9 @@ def _get_input():
         # Read in the filter file
         x = len('.json')
         if len(filter_file) <= x or filter_file[len(filter_file)-x:].lower() != '.json':
-            filter_file = brcddb_file.full_file_name(filter_file, '.txt')
+            filter_file = brcdapi_file.full_file_name(filter_file, '.txt')
         try:
-            filter_obj = json.loads(''.join(brcddb_file.read_file(filter_file, remove_blank=True, rc=True)))
+            filter_obj = json.loads(''.join(brcdapi_file.read_file(filter_file, remove_blank=True, rc=True)))
         except FileNotFoundError:
             ml.append('Filter file, ' + filter_file + ', not found')
             ec = brcddb_common.EXIT_STATUS_ERROR
@@ -574,7 +577,7 @@ def _get_input():
 
         else:
             # User feedback
-            proj_file = brcddb_file.full_file_name(proj_file, '.json')
+            proj_file = brcdapi_file.full_file_name(proj_file, '.json')
             ml.append('Project, -i:     ' + str(proj_file))
             ml.append('filter file, -f: ' + str(filter_file))
 
@@ -614,7 +617,7 @@ def psuedo_main():
 
     if _wb is not None and _report_name is not None:
         brcdapi_log.log('Saving ' + _report_name, True)
-        report_utils.save_report(_wb, _report_name)
+        excel_util.save_report(_wb, _report_name)
 
     return brcddb_common.EXIT_STATUS_OK
 

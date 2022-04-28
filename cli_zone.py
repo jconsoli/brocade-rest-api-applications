@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2020, 2021 Jack Consoli.  All rights reserved.
+# Copyright 2020, 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -75,24 +75,27 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.3     | 31 Dec 2021   | Make all exception clauses explicit.                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.4     | 28 Apr 2022   | Relocated libraries.                                                              |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2020, 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.3'
+__version__ = '3.0.4'
 
 import argparse
 import brcdapi.log as brcdapi_log
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.util as brcdapi_util
+import brcdapi.gen_util as gen_util
+import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
 import brcddb.apps.zone as brcddb_zone
 import brcddb.util.util as brcddb_util
-import brcddb.util.file as brcddb_file
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False
@@ -182,7 +185,7 @@ def _format_fault(obj, line_num, file_content):
         'Reason:  ' + str(obj.get('reason')),
         'err_msg:',
     ]
-    msg_l.extend(['  ' + buf for buf in brcddb_util.convert_to_list(obj.get('err_msg'))])
+    msg_l.extend(['  ' + buf for buf in gen_util.convert_to_list(obj.get('err_msg'))])
     return '\n'.join(msg_l)
 
 
@@ -226,7 +229,7 @@ def pseudo_main():
     # Read in the CLI file, condition the input strings and send it
     ml = list()
     try:
-        file_contents = brcddb_file.read_file(cli_file)
+        file_contents = brcdapi_file.read_file(cli_file)
     except FileNotFoundError:
         ml.extend(['', 'File ' + cli_file + ' not found. Did you remember the file extension?'])
     except PermissionError:
@@ -235,9 +238,9 @@ def pseudo_main():
         brcdapi_log.log(ml, True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    content.update(dict(changes=brcddb_util.parse_cli(file_contents)))
+    content.update(changes=brcddb_util.parse_cli(file_contents))
     if t_flag:
-        content.update(dict(test=True))
+        content.update(test=True)
     response = brcddb_zone.send_zoning(content)
 
     # General information

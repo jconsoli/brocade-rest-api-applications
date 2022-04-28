@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2019, 2020, 2021 Jack Consoli.  All rights reserved.
+# Copyright 2019, 2020, 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -57,19 +57,22 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.7     | 31 Dec 2021   | Added default file extensions.                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.8     | 28 Apr 2022   | Relocated libraries                                                               |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.7'
+__version__ = '3.0.8'
 
 import argparse
-import brcddb.util.file as brcddb_file
+import brcdapi.excel_util as excle_utils
+import brcdapi.file as brcdapi_file
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.brcddb_switch as brcddb_switch
 import brcddb.brcddb_chassis as brcddb_chassis
@@ -626,7 +629,7 @@ def _new_report(c, b_proj_obj, c_proj_obj, c_obj, r_name):
     """
     # Set up the workbook
     sheet_index = 0
-    wb = report_utils.new_report()
+    wb = excle_utils.new_report()
 
     # Setup the Project summary sheet with table of content
     title = str(b_proj_obj.get('policyName')) + ' Compared to ' + str(c_proj_obj.get('policyName'))
@@ -650,12 +653,12 @@ def _new_report(c, b_proj_obj, c_proj_obj, c_obj, r_name):
         for d in tbl_contents:
             td = dict(font='link', merge=4, align='wrap', disp=d.get('d'))
             if 's' in d:  # Is there a link to a page?
-                td.update(dict(hyper='#' + d.get('s') + '!A1'))
+                td.update(hyper='#' + d.get('s') + '!A1')
                 t_content.append(td)
 
     # Add the project summary with table of contents and save the report.
     report_utils.title_page(wb, None, tc_page, 0, title, t_content, (24, 42, 42, 12))
-    report_utils.save_report(wb, r_name)
+    excle_utils.save_report(wb, r_name)
 
 
 def pseudo_main():
@@ -678,14 +681,14 @@ def pseudo_main():
     ml.append('    Compare file: ' + cf)
     ml.append('    Report file:  ' + rf)
     brcdapi_log.log(ml, True)
-    bf = brcddb_file.full_file_name(bf, '.json')
-    cf = brcddb_file.full_file_name(cf, '.json')
-    rf = brcddb_file.full_file_name(rf, '.xlsx')
+    bf = brcdapi_file.full_file_name(bf, '.json')
+    cf = brcdapi_file.full_file_name(cf, '.json')
+    rf = brcdapi_file.full_file_name(rf, '.xlsx')
 
     # Read the projects to compare and build the cross references
     ml = list()
-    b_proj_obj = brcddb_file.read_dump(bf)[0]
-    c_proj_obj = brcddb_file.read_dump(cf)[0]
+    b_proj_obj = brcdapi_file.read_dump(bf)[0]
+    c_proj_obj = brcdapi_file.read_dump(cf)[0]
     if b_proj_obj is None:
         ml.append('Missing or invalid base project.')
     if c_proj_obj is None:
@@ -713,12 +716,12 @@ def pseudo_main():
     # Compare the two projects
     brcdapi_log.log('Please wait. The comparison may take several seconds', True)
     if _DEBUG_RF is not None:
-        compare_obj = brcddb_file.read_dump(brcddb_file.full_file_name(_DEBUG_RF, '.json'))
+        compare_obj = brcdapi_file.read_dump(brcdapi_file.full_file_name(_DEBUG_RF, '.json'))
         c = 100
     else:
         c, compare_obj = brcddb_compare.compare(b_proj_obj, c_proj_obj, None, _control_tables)
         if _DEBUG_WF is not None:
-            brcddb_file.write_dump(compare_obj, brcddb_file.full_file_name(_DEBUG_WF, '.json'))
+            brcdapi_file.write_dump(compare_obj, brcdapi_file.full_file_name(_DEBUG_WF, '.json'))
     _new_report(c, b_proj_obj, c_proj_obj, compare_obj, rf)
 
     return brcddb_common.EXIT_STATUS_OK

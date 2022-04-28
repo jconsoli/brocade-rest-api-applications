@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2021 Jack Consoli.  All rights reserved.
+# Copyright 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -40,24 +40,26 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.2     | 31 Dec 2021   | Updated comments. No functional changes.                                          |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.3     | 28 Apr 2022   | Adjusted for new URI format.                                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import datetime
 import argparse
 import brcddb.brcddb_project as brcddb_project
 import brcdapi.brcdapi_rest as brcdapi_rest
-import brcdapi.pyfos_auth as pyfos_auth
+import brcdapi.fos_auth as fos_auth
 import brcdapi.log as brcdapi_log
+import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
-import brcddb.util.file as brcdd_file
 import brcddb.api.interface as api_int
 import brcddb.brcddb_port as brcddb_port
 
@@ -70,14 +72,14 @@ _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
 _kpi_l = (
-    # 'brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface._get_chassis()
-    'brocade-fibrechannel-switch/fibrechannel-switch',
-    'brocade-interface/fibrechannel',  # Basic port information
-    'brocade-interface/fibrechannel-statistics',  # Statistics
-    'brocade-media/media-rdp',  # SFP data
-    'brocade-fdmi/hba',  # Node data for what's attached. Used for port description
-    'brocade-name-server/fibrechannel-name-server',  # Login data. Used for port description
-    # 'brocade-ficon/rnid',  # To capture RNID data for FICON (mainframe) environments
+    # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface._get_chassis()
+    'running/brocade-fibrechannel-switch/fibrechannel-switch',
+    'running/brocade-interface/fibrechannel',  # Basic port information
+    'running/brocade-interface/fibrechannel-statistics',  # Statistics
+    'running/brocade-media/media-rdp',  # SFP data
+    'running/brocade-fdmi/hba',  # Node data for what's attached. Used for port description
+    'running/brocade-name-server/fibrechannel-name-server',  # Login data. Used for port description
+    # 'running/brocade-ficon/rnid',  # To capture RNID data for FICON (mainframe) environments
 )
 
 
@@ -159,7 +161,7 @@ def _capture_data(proj_obj, kpi_l, fid_l, user_id, pw, ip_addr, sec):
     """
     # Login
     session = api_int.login(user_id, pw, ip_addr, sec, proj_obj)
-    if pyfos_auth.is_error(session):
+    if fos_auth.is_error(session):
         return brcddb_common.EXIT_STATUS_API_ERROR  # api_int.login() prints the error message detail.
 
     ec = brcddb_common.EXIT_STATUS_OK
@@ -171,8 +173,8 @@ def _capture_data(proj_obj, kpi_l, fid_l, user_id, pw, ip_addr, sec):
 
     # Logout
     obj = brcdapi_rest.logout(session)
-    if pyfos_auth.is_error(obj):
-        brcdapi_log.log(pyfos_auth.formatted_error_msg(obj), True)
+    if fos_auth.is_error(obj):
+        brcdapi_log.log(fos_auth.formatted_error_msg(obj), True)
         ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     return ec
@@ -188,18 +190,13 @@ def _parse_login_credentials(in_file):
     """
     # Read the file with login credentials and format into a list of dictionaries
     rl = list()
-    file_content = brcdd_file.read_file(in_file, remove_blank=True, rc=True)
+    file_content = brcdapi_file.read_file(in_file, remove_blank=True, rc=True)
     for mod_line in file_content:
         params = mod_line.replace(' ', '').split(',')
         if len(params) == 3:
             params.append('none')
         if len(params) == 4:
-            rl.append(dict(
-                id=params[0],
-                pw=params[1],
-                ip=params[2],
-                sec=params[3]
-            ))
+            rl.append(dict(id=params[0], pw=params[1], ip=params[2], sec=params[3]))
         else:
             brcdapi_log.log('Missing parameters in input file. Line:\n' + mod_line, True)
 
@@ -246,6 +243,8 @@ def pseudo_main():
     :return: Exit code
     :rtype: int
     """
+    global _kpi_l
+    
     # Get the command line input
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     in_file, fid_str, vd, log, nl = parse_args()

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2019, 2020, 2021 Jack Consoli.  All rights reserved.
+# Copyright 2019, 2020, 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -50,16 +50,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.6     | 31 Dec 2021   | Removed unused code.                                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.7     | 28 Apr 2022   | Improved error messages and used new libraries.                                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.6'
+__version__ = '3.0.7'
 
 import argparse
 import sys
@@ -67,13 +69,13 @@ import datetime
 
 import brcddb.brcddb_project as brcddb_project
 import brcdapi.log as brcdapi_log
+import brcdapi.file as brcdapi_file
 import brcddb.util.copy as brcddb_copy
-import brcddb.util.file as brcddb_file
 import brcddb.brcddb_common as brcddb_common
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_INF = '_capture_2021_07_22_12_31_19'
+_DEBUG_INF = 'test/captures'
 _DEBUG_OUTF = 'combined'
 _DEBUG_SUP = False
 _DEBUG_LOG = '_logs'
@@ -135,8 +137,8 @@ def combine_main():
     proj_obj.s_description('Captured data from ' + inf)
 
     # Get a list of files - Filter out directories is just to protect the user. It shouldn't be necessary.
-    outf = brcddb_file.full_file_name(outf, '.json')
-    files = brcddb_file.read_directory(inf)
+    outf = brcdapi_file.full_file_name(outf, '.json')
+    files = brcdapi_file.read_directory(inf)
     if outf in files:
         brcdapi_log.log('Combined output file, ' + outf + ', already exists in: ' + inf + '. Processing halted', True)
         proj_obj.s_error_flag()
@@ -144,19 +146,16 @@ def combine_main():
         x = len('.json')
         for file in [f for f in files if len(f) > x and f.lower()[len(f)-x:] == '.json']:
             brcdapi_log.log('Processing file: ' + file, True)
-            obj = brcddb_file.read_dump(inf + '/' + file)
+            obj = brcdapi_file.read_dump(inf + '/' + file)
             brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
 
         # Now save the combined file
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
         try:
-            brcddb_file.write_dump(plain_copy, inf + '/' + outf)
+            brcdapi_file.write_dump(plain_copy, inf + '/' + outf)
         except FileNotFoundError:
-            buf = 'The folder for the output file: ' + outf + ', was not found. The folder for the output file, -o, is '
-            buf += 'assumed to be in the same folder as the input file, -i. Typically, only a file name is specified '
-            buf += 'for the output file.'
-            brcdapi_log.log(buf, True)
+            brcdapi_log.log(['', 'Folder not found: ' + inf, ''], True)
 
     return brcddb_common.EXIT_STATUS_OK
 

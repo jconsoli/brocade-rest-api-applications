@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2021 Jack Consoli.  All rights reserved.
+# Copyright 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -26,28 +26,30 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.1     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.2     | 28 Apr 2022   | Use new URI formats.                                                              |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 import argparse
 import brcdapi.log as brcdapi_log
 import brcdapi.fos_auth as fos_auth
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.util as brcdapi_util
+import brcdapi.file as brcdapi_file
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
-import brcddb.util.file as brcddb_file
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
@@ -65,12 +67,12 @@ _DEBUG_d = False
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
-_kpis_for_capture = ('brocade-fibrechannel-switch/fibrechannel-switch',
-                     'brocade-interface/fibrechannel',
-                     'brocade-zone/defined-configuration',
-                     'brocade-zone/effective-configuration',
-                     'brocade-fibrechannel-configuration/zone-configuration',
-                     'brocade-fibrechannel-configuration/fabric')
+_kpis_for_capture = ('running/brocade-fibrechannel-switch/fibrechannel-switch',
+                     'running/brocade-interface/fibrechannel',
+                     'running/brocade-zone/defined-configuration',
+                     'running/brocade-zone/effective-configuration',
+                     'running/brocade-fibrechannel-configuration/zone-configuration',
+                     'running/brocade-fibrechannel-configuration/fabric')
 _ZONE_KPI_FILE = '_zone_merge_kpis.txt'
 
 _control_tables = {
@@ -269,7 +271,7 @@ def pseudo_main():
         return ec
 
     # Read the project file
-    proj_obj = brcddb_project.read_from(brcddb_file.full_file_name(cfile, '.json'))
+    proj_obj = brcddb_project.read_from(brcdapi_file.full_file_name(cfile, '.json'))
     if proj_obj is None:
         return brcddb_common.EXIT_STATUS_ERROR
     fab_obj = None

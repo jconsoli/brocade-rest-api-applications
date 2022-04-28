@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2020, 2021 Jack Consoli.  All rights reserved.
+# Copyright 2020, 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -41,16 +41,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.5     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.6     | 28 Apr 2022   | Relocated libraries.                                                              |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.5'
+__version__ = '3.0.6'
 
 import sys
 import argparse
@@ -58,8 +60,10 @@ import os
 import datetime
 from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
 import openpyxl.utils.cell as xl
-import brcddb.brcddb_project as brcddb_project
 import brcdapi.log as brcdapi_log
+import brcdapi.gen_util as gen_util
+import brcdapi.excel_util as excel_util
+import brcddb.brcddb_project as brcddb_project
 import brcddb.util.util as brcddb_util
 import brcddb.brcddb_common as brcddb_common
 import brcddb.report.utils as report_utils
@@ -117,16 +121,16 @@ def _ports(proj_obj, port):
 
     r = list()
     switch_obj = proj_obj.r_switch_obj(proj_obj.r_get('base_switch_wwn'))
-    s, p = brcddb_util.slot_port(port)
+    s, p = gen_util.slot_port(port)
     if s is None or p is None:
-        if brcddb_util.is_valid_zone_name(port):
+        if gen_util.is_valid_zone_name(port):
             fab_obj = switch_obj.r_fabric_obj()
             ml = list()  # Fill this with login WWNs
             # Remember that a zone name can't be the same as an alias name so one of these loops will do nothing
             for obj in fab_obj.r_zones_for_wwn(port):  # Zone list for alias. Yes, port can be a WWN or an alias
                 l = obj.r_members() + obj.r_pmembers()
                 for mem in l:
-                    if brcddb_util.is_wwn(mem):
+                    if gen_util.is_wwn(mem):
                         ml.append(mem)
                     else:
                         obj = fab_obj.r_alias_obj(mem)
@@ -172,14 +176,14 @@ def _get_ports(switch_obj, ports):
     :rtype: list
     """
     r = list()
-    for port in brcddb_util.convert_to_list(ports.split(',')):
+    for port in gen_util.convert_to_list(ports.split(',')):
         if port in _port_match:
             r.extend(_port_match.get(port)(switch_obj))
         else:
             r.extend(_ports(switch_obj, port))
 
     r.extend(r)
-    return brcddb_util.remove_duplicates(r)
+    return gen_util.remove_duplicates(r)
 
 
 def _get_parameters(parms):
@@ -324,7 +328,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
             sheet = _sheet_map[port]
             data_sheet['A1'] = 'Time'  # Column header for the time stamp
             col = 2
-            for stat in brcddb_util.convert_to_list(graph_obj.get('parms')):
+            for stat in gen_util.convert_to_list(graph_obj.get('parms')):
                 try:
                     stat_ref = stat if rt.Port.port_display_tbl['fibrechannel-statistics/' + stat]['d'] is None else \
                         rt.Port.port_display_tbl['fibrechannel-statistics/' + stat]['d']
@@ -374,7 +378,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
             # Find all the time stamps, reference sheets, and columns
             tl = list()
             rl = list()
-            for port in brcddb_util.convert_to_list(graph_obj.get('parms')):
+            for port in gen_util.convert_to_list(graph_obj.get('parms')):
                 port_obj = switch_obj_l[0].r_port_obj(port)
                 if port_obj is None:
                     ml.append('Could not find port ' + port)
@@ -533,20 +537,20 @@ def _graphs(switch_obj, single_port_graph_in, stats_graph_in, graph_type):
                     for port_obj in port_obj_l:
                         port_obj.s_new_key('_peak', port_peak_d[port_obj.r_obj_key()], True)
                         port_obj.s_new_key('_total', port_total_d[port_obj.r_obj_key()], True)
-                    peak_ports = brcddb_util.sort_obj_num(port_obj_l, '_peak', True)[0: min(n, len(port_obj_l))]
-                    max_ports = brcddb_util.sort_obj_num(port_obj_l, '_total', True)[0: min(n, len(port_obj_l))]
+                    peak_ports = gen_util.sort_obj_num(port_obj_l, '_peak', True)[0: min(n, len(port_obj_l))]
+                    max_ports = gen_util.sort_obj_num(port_obj_l, '_total', True)[0: min(n, len(port_obj_l))]
 
                     # Above sorts by port object. All we want is the port number
                     if 'top' in temp_l[0]:
-                        to_graph.update(dict(parms=[port_obj.r_obj_key() for port_obj in peak_ports]))
+                        to_graph.update(parms=[port_obj.r_obj_key() for port_obj in peak_ports])
                     else:
-                        to_graph.update(dict(parms=[port_obj.r_obj_key() for port_obj in max_ports]))
+                        to_graph.update(parms=[port_obj.r_obj_key() for port_obj in max_ports])
 
                 elif 'eport' in temp_l[0].lower().replace('-', ''):
                     port_list = brcddb_search.match_test(switch_obj.r_port_objects, bp_tables.is_e_port)
                     if len(port_list) == 0:
                         ml.append('No E-Ports found')
-                    to_graph.update(dict(parms=[port_obj.r_obj_key() for port_obj in port_list]))
+                    to_graph.update(parms=[port_obj.r_obj_key() for port_obj in port_list])
 
                 else:  # It's a list of ports. Make sure they are valid and prepend '0/' if necessary
                     port_list = list()
@@ -556,7 +560,7 @@ def _graphs(switch_obj, single_port_graph_in, stats_graph_in, graph_type):
                             ml.append('Invalid port number or port not found in switch: ' + mod_port)
                         else:
                             port_list.append(mod_port)
-                    to_graph.update(dict(parms=port_list))
+                    to_graph.update(parms=port_list)
 
                 if len(to_graph['parms']) > 0:
                     graphs.append(to_graph)
@@ -583,7 +587,7 @@ def _write_report(switch_obj, report, graph_list, ml):
     # Get the project and set up the workbook
     brcdapi_log.log('Generating Report: ' + report + '. This may take several seconds', True)
     proj_obj = switch_obj.r_project_obj()
-    wb = report_utils.new_report()
+    wb = excel_util.new_report()
 
     # Setup the Project summary sheet with table of content
     title = 'Port Performance'
@@ -613,14 +617,14 @@ def _write_report(switch_obj, report, graph_list, ml):
     # Add the individual graphs and port sheets
     _add_ports(wb, tc_page, t_content_p, 0, switch_obj)
     ml.extend(_add_graphs(wb, tc_page, t_content_g, 0, switch_obj, graph_list))
-    ml = brcddb_util.remove_duplicates(ml)
+    ml = gen_util.remove_duplicates(ml)
     t_content.extend(t_content_g + t_content_p)
 
     # Add the table of contents and save the report.
     report_utils.title_page(wb, None, tc_page, 0, title, t_content, (12, 22, 16, 10, 64))
     ml.append('Saving the report.')
     brcdapi_log.log(ml, True)
-    report_utils.save_report(wb, report)
+    excel_util.save_report(wb, report)
 
     return brcddb_common.EXIT_STATUS_OK
 

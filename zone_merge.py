@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2021 Jack Consoli.  All rights reserved.
+# Copyright 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -36,16 +36,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.6     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.7     | 28 Apr 2022   | Use new URI formats.                                                              |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.6'
+__version__ = '1.0.7'
 
 import argparse
 import sys
@@ -58,36 +60,37 @@ import brcdapi.log as brcdapi_log
 import brcdapi.fos_auth as fos_auth
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.util as brcdapi_util
+import brcdapi.file as brcdapi_file
+import brcdapi.excel_util as excel_util
+import brcdapi.gen_util as gen_util
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.util.compare as brcddb_compare
 import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
-import brcddb.report.utils as report_utils
-import brcddb.util.file as brcddb_file
 import brcddb.util.copy as brcddb_copy
 import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
 _DEBUG_i = 'zone_merge_test'
-_DEBUG_cfg = None  # 'combined_cfg'
+_DEBUG_cfg = 'new_zone_cfg'
 _DEBUG_a = False
 _DEBUG_t = False
-_DEBUG_scan = False
+_DEBUG_scan = True
 _DEBUG_cli = False
 _DEBUG_sup = False
 _DEBUG_d = False
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
-_kpis_for_capture = ('brocade-fibrechannel-switch/fibrechannel-switch',
-                     'brocade-interface/fibrechannel',
-                     'brocade-zone/defined-configuration',
-                     'brocade-zone/effective-configuration',
-                     'brocade-fibrechannel-configuration/zone-configuration',
-                     'brocade-fibrechannel-configuration/fabric')
+_kpis_for_capture = ('running/brocade-fibrechannel-switch/fibrechannel-switch',
+                     'running/brocade-interface/fibrechannel',
+                     'running/brocade-zone/defined-configuration',
+                     'running/brocade-zone/effective-configuration',
+                     'running/brocade-fibrechannel-configuration/zone-configuration',
+                     'running/brocade-fibrechannel-configuration/fabric')
 _ZONE_KPI_FILE = '_zone_merge_kpis.txt'
 
 _control_tables = {
@@ -109,6 +112,7 @@ _control_tables = {
 
 # Used in _condition_input() to translate column header names in the Workbook to input names used by capture.py
 _check_d = dict(user_id='id', pw='pw', ip_addr='ip', security='sec', fid='fid', fab_wwn='fab_wwn', cfg='cfg')
+
 
 def _zone_cli(proj_obj):
     """Prints the zoning commands to the log
@@ -264,8 +268,8 @@ def _get_project(sl, pl, addl_parms):
     for sub_d in sl:
         ip_addr = sub_d['ip']
         file_name = work_folder + '/switch_' + ip_addr.split('.').pop() + '_' + str(len(pid_l))
-        sub_d.update(dict(file=file_name))
-        file_name = brcddb_file.full_file_name(file_name, '.json')
+        sub_d.update(file=file_name)
+        file_name = brcdapi_file.full_file_name(file_name, '.json')
         d = captured_d.get(ip_addr)
         if d is None:
             sub_d_l = list()
@@ -275,7 +279,7 @@ def _get_project(sl, pl, addl_parms):
                       '-ip', ip_addr,
                       '-id', sub_d['id'],
                       '-pw', sub_d['pw'],
-                      '-s', sub_d['sec'],
+                      '-s', 'none' if sub_d['sec'] is None else sub_d['sec'],
                       '-f', file_name,
                       '-c', zone_kpi_file] + addl_parms
             pid_l.append(dict(p=subprocess.Popen(params), file_name=file_name, ip=ip_addr))
@@ -283,15 +287,15 @@ def _get_project(sl, pl, addl_parms):
 
     # Add the data read from this chassis to the project object
     for pid_d in pid_l:  # Wait for all captures to complete before continuing
-        pid_d.update(dict(s=pid_d['p'].wait()))
+        pid_d.update(s=pid_d['p'].wait())
         brcdapi_log.log('Completed capture for ' + pid_d['file_name'] + '. Ending status: ' + str(pid_d['s']), True)
     for pid_d in pid_l:
-        obj = brcddb_file.read_dump(pid_d['file_name'])
+        obj = brcdapi_file.read_dump(pid_d['file_name'])
         if obj is None:
             rl.append('Capture for ' + file_name + '. failed.')
         else:
             brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
-            captured_d[pid_d['ip']].update(dict(fab_keys=obj['_fabric_objs'].keys()))
+            captured_d[pid_d['ip']].update(fab_keys=obj['_fabric_objs'].keys())
     if len(rl) > 0:
         return rl, proj_obj
 
@@ -307,15 +311,16 @@ def _get_project(sl, pl, addl_parms):
             if isinstance(fid, int):  # If the user is just running a scan, there won't be a fid
                 for fab_obj in fab_obj_l:
                     if fid in brcddb_fabric.fab_fids(fab_obj):
+                        s_buf = 'none' if sub_d['sec'] is None else sub_d['sec']
                         zm_d = fab_obj.r_get('zone_merge')
-                        zm_d.update(dict(fab_wwn=fab_obj.r_obj_key(),
-                                         update=sub_d['update'],
-                                         cfg=sub_d['cfg'],
-                                         fid=sub_d['fid'],
-                                         ip=sub_d['ip'],
-                                         id=sub_d['id'],
-                                         pw=sub_d['pw'],
-                                         sec=sub_d['sec']))
+                        zm_d.update(fab_wwn=fab_obj.r_obj_key(),
+                                    update=sub_d['update'],
+                                    cfg=sub_d['cfg'],
+                                    fid=sub_d['fid'],
+                                    ip=sub_d['ip'],
+                                    id=sub_d['id'],
+                                    pw=sub_d['pw'],
+                                    sec=s_buf)
                         fab_obj.s_new_key('zone_merge', zm_d)
                         found = True
                         break
@@ -326,8 +331,8 @@ def _get_project(sl, pl, addl_parms):
     if len(pl) > 0:
         brcdapi_log.log('Reading project files', True)
     for sub_d in pl:
-        file_name = brcddb_file.full_file_name(sub_d['project_file'], '.json')
-        obj = brcddb_file.read_dump(file_name)
+        file_name = brcdapi_file.full_file_name(sub_d['project_file'], '.json')
+        obj = brcdapi_file.read_dump(file_name)
         brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
         for fab_obj in [proj_obj.r_fabric_obj(k) for k in obj['_fabric_objs'].keys()]:
             if fab_obj.r_get('zone_merge') is None:  # It should be None. This is just future proofing.
@@ -336,7 +341,7 @@ def _get_project(sl, pl, addl_parms):
         if fab_obj is None:
             rl.append('Could not find fabric WWN ' + str(sub_d.get('fab_wwn')) + ' in ' + file_name)
         else:
-            fab_obj.r_get('zone_merge').update(dict(fab_wwn=fab_obj.r_obj_key(), update=False, cfg=sub_d['cfg']))
+            fab_obj.r_get('zone_merge').update(fab_wwn=fab_obj.r_obj_key(), update=False, cfg=sub_d['cfg'])
 
     return rl, proj_obj
 
@@ -521,7 +526,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=buf)
     buf = 'Required. Zone merge data file. See zone_merge_sample.xlsx for details. ".xlsx" is automatically appended.'
     parser.add_argument('-i', help=buf, required=True)
-    buf = 'Optional. Typically, when merging fabrics it’s desired to have one new zone configuration that will be used'\
+    buf = 'Optional. Often, When merging fabrics it is desired to have one new zone configuration that will be used '\
           'as the final zone configuration. Use this option to specify the name of the new zone configuration to be '\
           'created. Included in this zone configuration are all the zones specified in the "cfg" column in the '\
           'workbook specified with the -i option.'
@@ -614,11 +619,11 @@ def _get_input():
     ml.append('CLI flag, -cli:        ' + str(cli_flag))
     ml.append('Test:                  ' + str(t_flag))
     brcdapi_log.log(ml, True)
-    c_file = brcddb_file.full_file_name(c_file, '.xlsx')
+    c_file = brcdapi_file.full_file_name(c_file, '.xlsx')
 
     # Parse the input file
     ml = list()
-    switch_l = report_utils.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=c_file)['content']
+    switch_l = excel_util.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=c_file)['content']
     if a_flag and not isinstance(cfg_name, str):
         ml.append('Configuration activate flag, -a, specified without a valid zone configuration name, -cfg')
     if len(ml) == 0:
@@ -629,7 +634,7 @@ def _get_input():
                 sl.append(_condition_input(sub_d))
             else:
                 pl.append(sub_d)
-                if not scan_flag and not brcddb_util.is_wwn(sub_d.get('fab_wwn'), full_check=True):
+                if not scan_flag and not gen_util.is_wwn(sub_d.get('fab_wwn'), full_check=True):
                     ml.append('fab_wwn is not a valid WWN in row ' + str(i+1))
     if len(ml) > 0:
         brcdapi_log.log(ml, True)

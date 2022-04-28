@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2019, 2020, 2021 Jack Consoli.  All rights reserved.
+# Copyright 2019, 2020, 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -41,16 +41,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.8     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.9     | 28 Apr 2022   | Added additional help messages.                                                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.8'
+__version__ = '3.0.9'
 
 import argparse
 import datetime
@@ -58,9 +60,9 @@ import os
 import subprocess
 import brcdapi.log as brcdapi_log
 import brcdapi.brcdapi_rest as brcdapi_rest
-import brcddb.util.file as brcddb_file
+import brcdapi.excel_util as excel_util
+import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
-import brcddb.report.utils as report_utils
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
@@ -175,23 +177,30 @@ def psuedo_main():
     brcdapi_log.log(ml, True)
 
     # Read the file with login credentials and perform some basic validation
-    switch_parms = list()
+    ml, switch_parms = list(), list()
     if sfp is not None:
         addl_parms_report.extend(['-sfp', sfp])
-    file = brcddb_file.full_file_name(in_file, '.xlsx')
-    for d in report_utils.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=file)['content']:
-        buf = brcddb_file.full_file_name(d['name'].split('/').pop().split('\\').pop(), '.json')  # Just the file name
-        switch_parms.append(['-id', d['user_id'],
-                             '-pw', d['pw'],
-                             '-ip', d['ip_addr'],
-                             '-s', d['security'],
-                             '-f', folder + '/' + buf])
+    file = brcdapi_file.full_file_name(in_file, '.xlsx')
+    try:
+        for d in excel_util.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=file)['content']:
+            buf = brcdapi_file.full_file_name(d['name'].split('/').pop().split('\\').pop(), '.json')  # Just file name
+            switch_parms.append(['-id', d['user_id'],
+                                 '-pw', d['pw'],
+                                 '-ip', d['ip_addr'],
+                                 '-s', 'none' if d['security'] is None else d['security'],
+                                 '-f', folder + '/' + buf])
+    except FileNotFoundError:
+        ml.extend(['', file + ' not found.'])
 
     # Create the folder
     try:
         os.mkdir(folder)
     except FileExistsError:
-        brcdapi_log.log('Folder ' + folder + ' already exists.', True)
+        ml.extend('Folder ' + folder + ' already exists.')
+    except FileNotFoundError:
+        ml.extend(['', folder + ' contains a path that does not exist.'])
+    if len(ml) > 0:
+        brcdapi_log.log(ml, True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Kick off all the data captures

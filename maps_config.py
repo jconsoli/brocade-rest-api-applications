@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2021 Jack Consoli.  All rights reserved.
+# Copyright 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -38,24 +38,26 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.5     | 31 Dec 2021   | Added default file extensions                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.6     | 28 Apr 2022   | Use full URI                                                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.4'
+__version__ = '1.0.6'
 
 import argparse
 import brcdapi.fos_auth as brcdapi_auth
 import brcdapi.log as brcdapi_log
 import brcdapi.brcdapi_rest as brcdapi_rest
+import brcdapi.file as brcdapi_file
 import brcddb.report.utils as report_utils
 import brcddb.api.interface as api_int
 import brcddb.brcddb_common as brcddb_common
-import brcddb.util.file as brcddb_file
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
 _MAX_RULE_BATCH = 20  # Maximum number of MAPS rules to create in one API call. This is far more conservative than req.
@@ -67,7 +69,7 @@ _DEBUG_SEC = 'self'  # 'none'
 _DEBUG_FID = 2
 _DEBUG_NP = 'Test_Policy_2'
 _DEBUG_MP = 'dflt_aggressive_policy'
-_DEBUG_F = 'sfp_rules_r9.xlsx'
+_DEBUG_F = 'sfp_rules_r10.xlsx'
 _DEBUG_A = False
 _DEBUG_SUPPRESS = False
 _DEBUG_VERBOSE = False
@@ -143,7 +145,7 @@ def _create_new_rules(session, fid, new_sfp_rules):
     while i < num_rules:
         x = i + _MAX_RULE_BATCH if i + _MAX_RULE_BATCH <= num_rules else num_rules
         new_rules = new_sfp_rules[i:x]
-        obj = brcdapi_rest.send_request(session, 'brocade-maps/rule', 'POST', dict(rule=new_rules), fid)
+        obj = brcdapi_rest.send_request(session, 'running/brocade-maps/rule', 'POST', dict(rule=new_rules), fid)
         if brcdapi_auth.is_error(obj):
             # If the rule already exists, you cannot use POST or PATCH to write over it and PUT is not supported. I'm
             # assuming you could DELETE then POST and I could also check to see if the rule is changing but this simple
@@ -217,7 +219,11 @@ def _create_new_policy(session, fid, policy, rule_list, enable_flag=False):
     }
 
     # Now send the new MAPS policy to the switch
-    obj = brcdapi_rest.send_request(session, 'brocade-maps/maps-policy', 'POST', {'maps-policy': new_content}, fid)
+    obj = brcdapi_rest.send_request(session,
+                                    'runningbrocade-maps/maps-policy',
+                                    'POST',
+                                    {'maps-policy': new_content},
+                                    fid)
     if brcdapi_auth.is_error(obj):
         brcdapi_log.log('Failed to set MAPS policy. API response:\n' + brcdapi_auth.formatted_error_msg(obj), True)
         brcdapi_log.log('This typically occurs when the policy already exists.', True)
@@ -359,7 +365,7 @@ def pseudo_main():
         if file is None:
             sfp_rules = list()
         else:
-            file = brcddb_file.full_file_name(file, '.xlsx')
+            file = brcdapi_file.full_file_name(file, '.xlsx')
             brcdapi_log.log('Adding rules can take up to a minute. Please be patient.', True)
             _sfp_monitoring_system = ['CURRENT', 'RXP', 'SFP_TEMP', 'TXP', 'VOLTAGE']
             sfp_rules = report_utils.parse_sfp_file_for_rules(file, _get_groups(session, fid))

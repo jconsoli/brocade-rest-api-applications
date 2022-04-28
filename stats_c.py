@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2020, 2021 Jack Consoli.  All rights reserved.
+# Copyright 2020, 2021, 2022 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -65,16 +65,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.5     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.6     | 28 Apr 2022   | Adjusted for new URI format in 9.0                                                |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021 Jack Consoli'
-__date__ = '31 Dec 2021'
+__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
+__date__ = '28 Apr 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.5'
+__version__ = '3.0.6'
 
 import sys
 import os
@@ -82,15 +84,15 @@ import signal
 import time
 import datetime
 import argparse
-import brcddb.brcddb_project as brcddb_project
+import brcdapi.util as brcdapi_util
 import brcdapi.log as brcdapi_log
-import brcdapi.pyfos_auth as pyfos_auth
+import brcdapi.fos_auth as fos_auth
 import brcdapi.brcdapi_rest as brcdapi_rest
+import brcdapi.file as brcdapi_file
+import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
 import brcddb.util.copy as brcddb_copy
-import brcddb.util.file as brcddb_file
 import brcddb.api.interface as brcddb_int
-import brcdapi.util as brcdapi_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False
@@ -117,7 +119,7 @@ _EXCEPTION_MSG = 'This normally occurs when data collection is terminated with C
 _DEFAULT_POLL_INTERVAL = 10  # Default poll interval, -p
 _DEFAULT_MAX_SAMPLE = 100  # Default number of samples, -m
 _proj_obj = None  # Project object (brcddb.classes.project.ProjectObj)
-_session = None  # Session object returned from brcdapi.pyfos_auth.login()
+_session = None  # Session object returned from brcdapi.fos_auth.login()
 _out_f = None  # Name of output file for plain text copy of _proj_obj
 _base_switch_obj = None  # First switch object, brcddb.classes.switch.SwitchObj
 _switch_obj = list()  # List of switch objects containing the statistic samples.
@@ -126,19 +128,18 @@ _switch_obj = list()  # List of switch objects containing the statistic samples.
 _uris = (
     # Don't forget that if NPIV is enabled, there may be multiple logins per port. I took the liberty of assuming you
     # may also want to know other information such as the name of the switch a port is in, alias of attached login,
-    # zone the logins are in,
-    'brocade-fibrechannel-switch/fibrechannel-switch',  # Switch name, DID, etc...
-    'brocade-interface/fibrechannel',  # Base port information
-    # 'media-rdp',  # SFP data
-)
+    # and zone the logins are in,
+    'running/brocade-fibrechannel-switch/fibrechannel-switch',  # Switch name, DID, etc...
+    'running/brocade-interface/fibrechannel',  # Base port information
+ )
 _uris_2 = (  # Execute if there is a fabric principal
-    # 'brocade-fibrechannel-configuration/port-configuration',  # Port configuration
-    'brocade-name-server/fibrechannel-name-server',  # Name server login registration information
-    'brocade-fibrechannel-configuration/zone-configuration',  # Alias and zoning associated with login
-    'brocade-zone/defined-configuration',
-    'brocade-zone/effective-configuration',
-    'brocade-fdmi/hba',  # FDMI node data
-    'brocade-fdmi/port',  # FDMI port data
+    # 'running/brocade-fibrechannel-configuration/port-configuration',  # Port configuration
+    'running/brocade-name-server/fibrechannel-name-server',  # Name server login registration information
+    'running/brocade-fibrechannel-configuration/zone-configuration',  # Alias and zoning associated with login
+    'running/brocade-zone/defined-configuration',
+    'running/brocade-zone/effective-configuration',
+    'running/brocade-fdmi/hba',  # FDMI node data
+    'running/brocade-fdmi/port',  # FDMI port data
 )
 
 
@@ -154,8 +155,8 @@ def _wrap_up(exit_code):
     if _session is not None:
         try:
             obj = brcdapi_rest.logout(_session)
-            if pyfos_auth.is_error(obj):
-                brcdapi_log.log(pyfos_auth.formatted_error_msg(obj), True)
+            if fos_auth.is_error(obj):
+                brcdapi_log.log(fos_auth.formatted_error_msg(obj), True)
         except BaseException as e:
             brcdapi_log.log(['Logout failure. ' + _EXCEPTION_MSG, 'Exception: ' + str(e)], True)
         _session = None
@@ -165,7 +166,7 @@ def _wrap_up(exit_code):
         _proj_obj.s_new_key('switch_list', [obj.r_obj_key() for obj in _switch_obj])
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(_proj_obj, plain_copy)
-        brcddb_file.write_dump(plain_copy, _out_f)
+        brcdapi_file.write_dump(plain_copy, _out_f)
     except BaseException as e:
         brcdapi_log.log('Unknown exception: ' + str(e), True)
     return ec
@@ -251,7 +252,7 @@ def _get_input():
     if args.sup:
         brcdapi_log.set_suppress_all()
 
-    return args_ip, args_id, args_pw, sec, args_fid, args_p, args_m, brcddb_file.full_file_name(args_o, '.json')
+    return args_ip, args_id, args_pw, sec, args_fid, args_p, args_m, brcdapi_file.full_file_name(args_o, '.json')
 
 
 def _stats_diff(old_obj, new_obj):
@@ -336,8 +337,8 @@ def pseudo_main():
 
     # Login
     _session = brcddb_int.login(user_id, pw, ip, sec, _proj_obj)
-    if pyfos_auth.is_error(_session):
-        brcdapi_log.log(pyfos_auth.formatted_error_msg(_session), True)
+    if fos_auth.is_error(_session):
+        brcdapi_log.log(fos_auth.formatted_error_msg(_session), True)
         return brcddb_common.EXIT_STATUS_ERROR
 
     try:  # I always put all code after login in a try/except in case of a code bug or network error, I still logout
@@ -375,17 +376,17 @@ def pseudo_main():
             switch_obj = _proj_obj.s_add_switch(base_switch_wwn + '-' + str(i))
             last_time = time.time()
             obj = brcddb_int.get_rest(_session, 'brocade-interface/fibrechannel', switch_obj, fid)
-            if not pyfos_auth.is_error(obj):
+            if not fos_auth.is_error(obj):
                 for p in obj.get('fibrechannel'):
                     switch_obj.s_add_port(p.get('name')).s_new_key('fibrechannel', p)
                 obj = brcddb_int.get_rest(_session, stats_buf, switch_obj, fid)
-            if pyfos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
+            if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
                                 True)
                 _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
                 return brcddb_common.EXIT_STATUS_ERROR
             obj = brcddb_int.get_rest(_session, stats_buf, switch_obj, fid)
-            if pyfos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
+            if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
                                 True)
                 _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
