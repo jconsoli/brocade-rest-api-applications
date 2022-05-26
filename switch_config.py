@@ -45,15 +45,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.5     | 28 Apr 2022   | Used full URI                                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.6     | 26 May 2022   | Disabled debug mode (_DEBUG)                                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '26 May 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.5'
+__version__ = '1.0.6'
 
 import argparse
 import sys
@@ -77,10 +79,10 @@ import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = True  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = '10.155.2.69'
+_DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
+_DEBUG_ip = 'xx.xxx.x.69'
 _DEBUG_id = 'admin'
-_DEBUG_pw = 'Pass@word1!'
+_DEBUG_pw = 'password'
 _DEBUG_sec = 'self'
 _DEBUG_i = 'Switch_Configuration'
 _DEBUG_force = False
