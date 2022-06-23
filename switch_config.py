@@ -17,6 +17,17 @@
 """
 :mod:`switch_config.py` -
 
+$ToDo running/brocade-fibrechannel-switch/fibrechannel-switch/principal (0 for no, 1 for yes)
+
+To set it:
+
+PATCH running/brocade-fibrechannel-configuration/fabric
+
+principal-selection-enabled - boolean
+principal-priority - hex value. See options for fabricprincipal -priority
+
+Look for insistent-domain-id-enabled
+
 **Description**
 
     Although FOS doesn't care what order the port bind commands are in, humans like to see them in port order. I'm not
@@ -47,15 +58,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.6     | 26 May 2022   | Disabled debug mode (_DEBUG)                                                      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.7     | 22 Jun 2022   | Replaced CLI port address binding with API based port address binding introduced  |
+    |           |               | in FOS 9.1.                                                                       |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
-__date__ = '26 May 2022'
+__date__ = '22 Jun 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.6'
+__version__ = '1.0.7'
 
 import argparse
 import sys
@@ -66,7 +80,6 @@ import brcdapi.switch as brcdapi_switch
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.fos_auth as fos_auth
 import brcdapi.port as brcdapi_port
-import brcdapi.fos_cli as brcdapi_cli
 import brcdapi.util as brcdapi_util
 import brcdapi.file as brcdapi_file
 import brcdapi.gen_util as gen_util
@@ -80,11 +93,11 @@ import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = 'xx.xxx.x.69'
+_DEBUG_ip = 'xx.xxx.x.xxx'
 _DEBUG_id = 'admin'
 _DEBUG_pw = 'password'
-_DEBUG_sec = 'self'
-_DEBUG_i = 'Switch_Configuration'
+_DEBUG_sec = None  # 'self'
+_DEBUG_i = 'test'
 _DEBUG_force = False
 _DEBUG_sup = False
 _DEBUG_echo = True
@@ -92,67 +105,86 @@ _DEBUG_d = False
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
-
 _basic_capture_kpi_l = [
     # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface.get_chassis()
     'running/brocade-fibrechannel-switch/fibrechannel-switch',
     'running/brocade-interface/fibrechannel',
 ]
-_switch_d_to_api = dict(
+_switch_d_bfs_fs_to_api = dict(  # Conversion table for brocade-fibrechannel-switch/fibrechannel-switch
     did='domain-id',
     switch_name='user-friendly-name',
     fab_name='fabric-user-friendly-name',  # The fabric name is set and read in the switch parameters. IDK why
-    banner='banner'
+    banner='banner',
 )
+_switch_d_bfc_fab_to_api = dict(  # Conversion table for brocade-fibrechannel-configuration/fabric
+    idid='insistent-domain-id-enabled',
+    p_fab_enable='principal-selection-enabled',
+    p_fab_priority='principal-priority',
+)
+_switch_d_bfc_sw_config_to_api = dict(  # Conversion table for brocade-fibrechannel-configuration/switch-configuration
+    xisl='xisl-enabled',
+)
+# Below is used in _configure_ports. I did it this way so that additional parameters can easily be added in the future.
+_config_ports_d = dict(port_name='user-friendly-name')
 
 
-def _cli_via_ssh(ip, user_id, pw, fid, cmd_in):
-    """Issues CLI commands to the switch.
+def _configure_chassis(session, chassis_d):
+    """Configure, create if necessary, a logical switch
 
-    Note: As of FOS 9.0.0b, the ability to bind port address was not yet exposed in the API so an SSH session is created
-    to issue CLI commands to bind the port addresses.
-
-    :param ip: IP address
-    :type ip: str
-    :param user_id: User ID
-    :type user_id: str
-    :param pw: Password
-    :type pw: str
-    :param fid: Fabric ID
-    :type fid: int
-    :param cmd_in: List of CLI commands to execute
-    :type cmd_in: list, str, None
-    :return: Exit code
+    :param session: Session object, or list of session objects, returned from brcdapi.fos_auth.login()
+    :type session: dict
+    :param chassis_d: Switch object as returned from report_utils.parse_switch_file()
+    :type chassis_d: dict
+    :return: Completion code - see brcddb.common
     :rtype: int
-"""
-    ec = brcddb_common.EXIT_STATUS_OK
-    cmd_l = gen_util.convert_to_list(cmd_in)
-    if len(cmd_l) == 0:
-        return ec
+    """
+    for kpi, content in chassis_d.items():
+        tl = kpi.split('/')
+        content_d = {tl[len(tl)-1]: content} if tl[0] == 'running' else content
+        obj = brcdapi_rest.send_request(session, kpi, 'PATCH', content_d)
+        if fos_auth.is_error(obj):
+            brcdapi_log.exception(['Error processing ' + kpi + 'Error is: ', fos_auth.formatted_error_msg(obj)], True)
+            return brcddb_common.EXIT_STATUS_API_ERROR
 
-    # Login
-    brcdapi_log.log('Attempting SSH login', True)
-    el, ssh = brcdapi_cli.login(ip, user_id, pw)
-    if len(el) > 0:
-        brcdapi_log.log(el, True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
+    return brcddb_common.EXIT_STATUS_OK
 
-    # Send the commands
-    # Programmers note: I don't know why setcontext didn't work so I wrapped all the commands in fosexec.
-    brcdapi_log.log('Sending CLI commands', True)
-    for cmd in ['fosexec --fid ' + str(fid) + ' -cmd "' + buf + '"' for buf in cmd_l]:
-        el, ml = brcdapi_cli.send_command(ssh, cmd)
-        all_msgs = ml + el
-        if len(el) > 0:
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        brcdapi_log.log(['CLI Send: ' + cmd, 'Response: '] + all_msgs)
-        if 'failed' in ''.join(all_msgs).lower():
-            brcdapi_log.log('Failed: ' + cmd, True)
-            ec = brcddb_common.EXIT_STATUS_ERROR
 
-    # Logout and close the session
-    ssh.close()
-    brcdapi_log.log('Logout of SSH session')
+def _configure_ports(session, fid, port_d, enable_flag):
+    """Configure ports with running/brocade-interface/fibrechannel
+
+    :param session: Session object returned from brcdapi.fos_auth.login()
+    :type session: dict
+    :param fid: Logical FID number for switch with ports. Use None if switch is not VF enabled.
+    :type fid: int
+    :param port_d: Port dictionary as returned from brcddb.report.utils.parse_switch_file()
+    :type port_d: dict
+    :param enable_flag: If True, enable all ports
+    :type enable_flag: bool
+    """
+    global _config_ports_d
+
+    # Figure out which ports need to be configured
+    ec, content_l = brcddb_common.EXIT_STATUS_OK, list()
+    for port, val_d in port_d.items():
+        d = {'name': port, 'is-enabled-state': True} if enable_flag else dict(name=port)
+        for k, v in _config_ports_d.items():
+            buf = val_d.get(k)
+            if buf is not None:
+                d.update({v: buf})
+        if len(d) > 1:
+            content_l.append(d)
+
+    # Update port configurations on the switch
+    if len(content_l) > 0:
+        obj = brcdapi_rest.send_request(session,
+                                         'running/brocade-interface/fibrechannel',
+                                         'PATCH',
+                                         {'fibrechannel': content_l},
+                                         fid)
+        if fos_auth.is_error(obj):
+            brcdapi_log.exception(['Error configuring ports for FID ' + str(fid), fos_auth.formatted_error_msg(obj)],
+                                  True)
+            ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     return ec
 
@@ -244,7 +276,7 @@ def _create_switch(session, chassis_obj, switch_d, echo):
     obj = brcdapi_switch.create_switch(session, fid, base, ficon, echo)
     if fos_auth.is_error(obj):
         switch_d['err_msgs'].append('Error creating FID ' + str(fid))
-        brcdapi_log.log([switch_d['err_msgs'][len(switch_d['err_msgs']) - 1], fos_auth.formatted_error_msg(obj)],
+        brcdapi_log.exception([switch_d['err_msgs'][len(switch_d['err_msgs']) - 1], fos_auth.formatted_error_msg(obj)],
                         True)
         return brcddb_common.EXIT_STATUS_ERROR
 
@@ -264,44 +296,57 @@ def _config_fab_and_switch(session, switch_d, echo):
     :param echo: If True, echo switch configuration details to STD_OUT
     :type echo: bool
     """
-    global _switch_d_to_api
+    global _switch_d_bfs_fs_to_api, _switch_d_bfc_fab_to_api, _switch_d_bfc_sw_config_to_api
 
     # Load common use stuff into local variables
     ec = brcddb_common.EXIT_STATUS_OK
     fid = switch_d['fid']
     idid = False if switch_d['switch_type'] == 'ficon' else switch_d['idid']
 
-    # Set switch configuration parameters.
+    # Set switch configuration parameters for brocade-fibrechannel-switch/fibrechannel-switch.
     sub_content = dict()
-    for k, v in _switch_d_to_api.items():
-        if switch_d[k] is not None:
-            sub_content.update({v: switch_d[k]})
+    for k, v in _switch_d_bfs_fs_to_api.items():
+        v_buf = switch_d[k]
+        if v_buf is not None:
+            if k == 'banner':
+                v_buf = gen_util.valid_banner.sub('-', v_buf)
+                if switch_d[k] != switch_d[k]:
+                    buf = 'Invalid characters in banner for FID ' + str(fid) + '. Replaced invalid characters with "-"'
+                    switch_d['err_msgs'].append(buf)
+                    brcdapi_log.log(buf, True)
+            sub_content.update({v: v_buf})
     if switch_d['switch_type'] == 'ficon':
         sub_content.update({'in-order-delivery-enabled': True, 'dynamic-load-sharing': 'two-hop-lossless-dls'})
 
-    # Send the changes.
+    # Send the changes for brocade-fibrechannel-switch/fibrechannel-switch.
     obj = brcdapi_switch.fibrechannel_switch(session, fid, sub_content, None, echo)
     if fos_auth.is_error(obj):
         # in-order-delivery-enabled and dynamic-load-sharing not supported in pre-FOS 9.0 so just try it again
-        sub_content.pop('in-order-delivery-enabled', None)
-        sub_content.pop('dynamic-load-sharing', None)
-        obj = brcdapi_switch.fibrechannel_switch(session, fid, sub_content, None, echo)
-        if fos_auth.is_error(obj):
-            brcdapi_log.log(['Failed to configure FID ' + str(fid), fos_auth.formatted_error_msg(obj)], True)
-            ec = brcddb_common.EXIT_STATUS_API_ERROR
+        if 'in-order-delivery-enabled' in sub_content or 'dynamic-load-sharing' in sub_content:
+            sub_content.pop('in-order-delivery-enabled', None)
+            sub_content.pop('dynamic-load-sharing', None)
+            obj = brcdapi_switch.fibrechannel_switch(session, fid, sub_content, None, echo)
+            if fos_auth.is_error(obj):
+                brcdapi_log.exception(['Failed to configure FID ' + str(fid), fos_auth.formatted_error_msg(obj)], True)
+                ec = brcddb_common.EXIT_STATUS_API_ERROR
+            else:
+                buf = 'Setting "in-order-delivery-enabled" and "dynamic-load-sharing" not supported in this FOS '\
+                      'version. These features must be set manually.'
+                brcdapi_log.log(buf)
         else:
-            switch_d['err_msgs'].append('Failed to set in order delivery and dynamic load sharing')
-            buf = 'In order delivery and dynamic load sharing not supported via the API in this version of FOS. '\
-                  'Remember to set these parameters manually.'
-            brcdapi_log.log(buf, True)
+            ml = ['Failed to set all switch parameters. Error from FOS is:', fos_auth.formatted_error_msg(obj)]
+            switch_d['err_msgs'].extend(ml)
+            brcdapi_log.log(ml, True)
 
-    # Set the fabric parameters.
-    # XISL (ability to use the base switch for ISLs) is enabled by default so we only need to disable it
+    # Set the fabric parameters: brocade-fibrechannel-configuration/switch-configuration
+    # Allow XISL is enabled by default. If the switch already exists and someone is trying to enable it, there is no
+    # logic below to check for the current state. Some API calls return an error if something is being set to the same
+    # state. As a future, I should check to see if that's the case here and if so, check to current setting.
     if not switch_d['xisl']:
         obj = brcdapi_rest.send_request(session,
                                         'running/brocade-fibrechannel-configuration/switch-configuration',
                                         'PATCH',
-                                        {'switch-configuration': {'xisl-enabled': False}},
+                                        {'switch-configuration': {_switch_d_bfc_sw_config_to_api['xisl']: False}},
                                         fid)
         if fos_auth.is_error(obj):
             switch_d['err_msgs'].append('Failed to disable XISL')
@@ -309,18 +354,25 @@ def _config_fab_and_switch(session, switch_d, echo):
                   fos_auth.formatted_error_msg(obj),
                   'Enabling and disabling of XISLs via the API was not supported until FOS v9.0.',
                   'Unless there are other error messages, all other operations are or will be completed as expected.']
-            brcdapi_log.log(ml, True)
+            brcdapi_log.exception(ml, True)
             ec = brcddb_common.EXIT_STATUS_API_ERROR
 
+    # Build running/brocade-fibrechannel-configuration/fabric
+    sub_content_d = dict()
     if idid:
+        sub_content_d.update({_switch_d_bfc_fab_to_api['idid']: True})
+    if switch_d.get('p_fab_enable') is not None and switch_d['p_fab_enable']:
+        sub_content_d.update({_switch_d_bfc_fab_to_api['p_fab_enable']: True,
+                              _switch_d_bfc_fab_to_api['p_fab_priority']: switch_d.get('p_fab_priority')})
+    if len(sub_content_d) > 0:
         obj = brcdapi_rest.send_request(session,
                                         'running/brocade-fibrechannel-configuration/fabric',
                                         'PATCH',
-                                        {'fabric': {'insistent-domain-id-enabled': True}},
+                                        {'fabric': sub_content_d},
                                         fid)
         if fos_auth.is_error(obj):
             switch_d['err_msgs'].append('Failed to set insistent domain id')
-            brcdapi_log.log(['Failed to set insistent domain id for FID ' + str(fid),
+            brcdapi_log.exception(['Failed to set insistent domain id for FID ' + str(fid),
                              fos_auth.formatted_error_msg(obj)], True)
             ec = brcddb_common.EXIT_STATUS_API_ERROR
 
@@ -340,6 +392,8 @@ def _add_remove_ports(session, switch_obj, switch_d, force, echo):
     :type force: bool
     :param echo: If True, echo switch configuration details to STD_OUT
     :type echo: bool
+    :return: Ending status. See brcddb.common
+    :rtype: int
     """
     # Load common use stuff into local variables
     ec = brcddb_common.EXIT_STATUS_OK
@@ -366,13 +420,12 @@ def _add_remove_ports(session, switch_obj, switch_d, force, echo):
         brcdapi_log.log(ml, True)
     default_fid = chassis_obj.r_default_switch_fid()
 
-    # $ToDo brcdapi_switch.add_ports doesn't remove GE ports
-    # Remove ports
+    # Remove ports - $ToDo brcdapi_switch.add_ports doesn't remove GE ports
     obj = brcdapi_switch.add_ports(session, default_fid, fid, switch_d['remove_ports'], None, echo)
     if fos_auth.is_error(obj):
         ml = ['Error moving ports from FID ' + str('fid') + ' to ' + str(default_fid),
               fos_auth.formatted_error_msg(obj)]
-        brcdapi_log.log(ml, True)
+        brcdapi_log.exception(ml, True)
         ec = brcddb_common.EXIT_STATUS_ERROR
 
     # Add ports
@@ -381,10 +434,42 @@ def _add_remove_ports(session, switch_obj, switch_d, force, echo):
         if fos_auth.is_error(obj):
             ml = ['Error moving ports from FID ' + from_fid + ' to ' + str(fid),
                   fos_auth.formatted_error_msg(obj)]
-            brcdapi_log.log(ml, True)
+            brcdapi_log.exception(ml, True)
             ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
+
+
+def _bind_address_to_port(session, switch_obj, switch_d, force, echo):
+    """Binds the addresses to the port
+
+    WARNING: force has not yet been implemented. The assumption is that the port is disabled.
+
+    :param session: Session object, or list of session objects, returned from brcdapi.fos_auth.login()
+    :type session: dict
+    :param switch_obj: Chassis object
+    :type switch_obj: brcddb.classes.switch.SwitchObj
+    :param switch_d: Switch object as returned from report_utils.parse_switch_file()
+    :type switch_d: dict
+    :param force: Disable the port and bind the address regardless of the state of port binding or other port state.
+    :type force: bool
+    :param echo: If True, echo switch configuration details to STD_OUT
+    :type echo: bool
+    :return: Ending status. See brcddb.common
+    :rtype: int
+    """
+    port_d = dict()
+    for port_num, d in switch_d['ports'].items():
+        port_d.update({port_num: '0x' + d['port_addr'] + '00'})
+    if len(port_d) > 0:
+        obj = brcdapi_switch.bind_addresses(session, brcddb_switch.switch_fid(switch_obj), port_d, echo)
+        if fos_auth.is_error(obj):
+            ml = ['Errors encountered binding port address for FID ' + str(brcddb_switch.switch_fid(switch_obj)),
+                  fos_auth.formatted_error_msg(obj)]
+            brcdapi_log.exception(ml, True)
+            return brcddb_common.EXIT_STATUS_ERROR
+
+    return brcddb_common.EXIT_STATUS_OK
 
 
 def _enable_switch(session, fid, echo):
@@ -399,7 +484,7 @@ def _enable_switch(session, fid, echo):
     """
     obj = brcdapi_switch.fibrechannel_switch(session, fid, {'is-enabled-state': True}, None, echo)
     if fos_auth.is_error(obj):
-        brcdapi_log.log(['Failed to enable FID ' + str(fid), fos_auth.formatted_error_msg(obj)], True)
+        brcdapi_log.exception(['Failed to enable FID ' + str(fid), fos_auth.formatted_error_msg(obj)], True)
         return brcddb_common.EXIT_STATUS_API_ERROR
 
     return brcddb_common.EXIT_STATUS_OK
@@ -420,19 +505,16 @@ def _enable_ports(session, fid, port_l, echo):
     if len(port_l) > 0:
         obj = brcdapi_port.enable_port(session, fid, port_l, echo)
         if fos_auth.is_error(obj):
-            brcdapi_log.log(['Failed to enable ports on FID ' + str(fid), fos_auth.formatted_error_msg(obj)], True)
+            brcdapi_log.exception(['Failed to enable ports on FID ' + str(fid), fos_auth.formatted_error_msg(obj)],
+                                  True)
             return brcddb_common.EXIT_STATUS_API_ERROR
 
     return brcddb_common.EXIT_STATUS_OK
 
 
-def _configure_switch(user_id, pw, session, proj_obj, switch_d, force, echo):
+def _configure_switch(session, proj_obj, switch_d, force, echo):
     """Configure, create if necessary, a logical switch
 
-    :param user_id: User ID. Only used if switch_d['bind_commands'] is a list of len > 0
-    :type user_id: str, None
-    :param pw: Login password. Only used if switch_d['bind_commands'] is a list of len > 0
-    :type pw: str
     :param session: Session object, or list of session objects, returned from brcdapi.fos_auth.login()
     :type session: dict
     :param proj_obj: Project object
@@ -443,17 +525,12 @@ def _configure_switch(user_id, pw, session, proj_obj, switch_d, force, echo):
     :type force: bool
     :param echo: If True, echo switch configuration details to STD_OUT
     :type echo: bool
+    :return: Error code - see brcddb.common
+    :rtype: int
     """
     global _basic_capture_kpi_l
 
     r_status = [brcddb_common.EXIT_STATUS_OK]
-
-    # Get some basic switch information for the chassis
-    # api_int.get_batch(session, proj_obj, _basic_capture_kpi_l, None)
-    # if proj_obj.r_is_any_error():
-    #     switch_d['err_msgs'].append('Error reading logical switch information from chassis')
-    #     brcdapi_log.log(switch_d['err_msgs'][len(switch_d['err_msgs'])-1], True)
-    #     return brcddb_common.EXIT_STATUS_ERROR
 
     # See if the FID already exists. If not, create the switch
     fid = switch_d['fid']
@@ -488,7 +565,7 @@ def _configure_switch(user_id, pw, session, proj_obj, switch_d, force, echo):
 
     # Bind addresses
     if switch_d['bind']:
-        ec = _cli_via_ssh(session['ip_addr'], user_id, pw, fid, switch_d.get('bind_commands'))
+        ec = _bind_address_to_port(session, switch_obj, switch_d, force, echo)
         r_status.append(ec)
         if ec != brcddb_common.EXIT_STATUS_OK:
             switch_d['err_msgs'].append('Failed to bind all addresses. Check the log for details')
@@ -500,12 +577,8 @@ def _configure_switch(user_id, pw, session, proj_obj, switch_d, force, echo):
         if ec != brcddb_common.EXIT_STATUS_OK:
             switch_d['err_msgs'].append('Failed to enable switch. Check the log for details')
 
-    # Enable and ports
-    if switch_d['enable_ports']:
-        ec = _enable_ports(session, fid, switch_d['ports'].keys(), echo)
-        r_status.append(ec)
-        if ec != brcddb_common.EXIT_STATUS_OK:
-            switch_d['err_msgs'].append('Failed to enable all ports. Check the log for details')
+    # Configure ports
+    r_status.append(_configure_ports(session, switch_d['fid'], switch_d['ports'], switch_d['enable_ports']))
 
     # Pick the first non-OK error code to return
     ec = brcddb_common.EXIT_STATUS_OK
@@ -513,20 +586,6 @@ def _configure_switch(user_id, pw, session, proj_obj, switch_d, force, echo):
         if ec != brcddb_common.EXIT_STATUS_OK:
             break
     return ec
-
-
-def _bind_commands(switch_d):
-    """Add a list of CLI commands to bind the ports associated with a switch to switch_d
-
-    :param switch_d: Switch object as returned from report_utils.parse_switch_file()
-    :type switch_d: dict
-    :return: List of CLI commands to bind the addresses
-    :rtype: list
-    """
-    port_l = brcddb_util.sp_port_sort(switch_d['ports'].keys())  # See module description for why a sorted list
-    bl = ['portaddress --bind ' + port + ' ' + switch_d['ports'][port]['port_addr'].upper() + '00' for port in port_l
-          if 'port_addr' in switch_d['ports'][port]]
-    switch_d.update(bind_commands=[buf.replace('0/', '') if '10/' not in buf else buf for buf in bl])
 
 
 def _print_summary(switch_d_list):
@@ -554,8 +613,8 @@ def _print_summary(switch_d_list):
     brcdapi_log.log(ml, True)
 
 
-def parse_args():
-    """Parses the module load command line
+def _get_input():
+    """Retrieves the command line input, reads the input Workbook, and minimally validates the input
 
     :return ip: Switch IP address
     :rtype ip: str
@@ -568,34 +627,47 @@ def parse_args():
         _DEBUG_d, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_i, _DEBUG_force, _DEBUG_sup, _DEBUG_echo,\
-               _DEBUG_d, _DEBUG_log, _DEBUG_nl
-    buf = 'Reads a X6-8_Slot_48_FICON_Config Excel Workbook and configures each switch accordingly. Use ficon_zone.py '\
-          'to configure the zoning. If the IP address, -ip, is specified, the script will attempt to login and make '\
-          'the changes. Otherwise, only CLI commands are generated.'
-    parser = argparse.ArgumentParser(description=buf)
-    parser.add_argument('-ip', help='(Optional) IP address', required=False)
-    parser.add_argument('-id', help='(Optional) User ID', required=False)
-    parser.add_argument('-pw', help='(Optional) Password', required=False)
-    buf = '(Optional) \'CA\' or \'self\' for HTTPS mode. HTTP is used when not specified.'
-    parser.add_argument('-s', help=buf, required=False,)
-    parser.add_argument('-i', help='(Required) File name of Excel Workbook to read.', required=True)
-    buf = '(Optional) No parameters. If specified, move ports even if they are online'
-    parser.add_argument('-force', help=buf, action='store_true', required=False)
-    buf = '(Optional) Suppress all library generated output to STD_IO except the exit code. Useful with batch ' \
-          'processing'
-    parser.add_argument('-sup', help=buf, action='store_true', required=False)
-    buf = '(Optional) Echoes activity detail to STD_OUT. Recommended because there are multiple operations that ' \
-          'can be very time consuming.'
-    parser.add_argument('-echo', help=buf, action='store_true', required=False)
-    parser.add_argument('-d', help='Enable debug logging', action='store_true', required=False)
-    buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
-          'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-    parser.add_argument('-log', help=buf, required=False,)
-    buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-    parser.add_argument('-nl', help=buf, action='store_true', required=False)
-    args = parser.parse_args()
-    return args.ip, args.id, args.pw, args.s, args.i, args.force, args.sup, args.echo, args.d, args.log, args.nl
+        args_ip, args_id, args_pw, args_s, args_i, args_force, args_sup, args_echo, args_d, args_log, args_nl = \
+            _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_i, _DEBUG_force, _DEBUG_sup, _DEBUG_echo, \
+            _DEBUG_d, _DEBUG_log, _DEBUG_nl
+    else:
+        buf = 'Reads a switch configuration workbook and configures each logical switch accordingly. See '\
+              'X6_X7-4_Switch_Configuration.xlsx, X6_X7-8_Switch_Configuration.xlsx, and '\
+              'Fixed_Port_Switch_Configuration.xlsx.'
+        parser = argparse.ArgumentParser(description=buf)
+        parser.add_argument('-ip', help='(Optional) IP address', required=True)
+        parser.add_argument('-id', help='(Optional) User ID', required=True)
+        parser.add_argument('-pw', help='(Optional) Password', required=True)
+        buf = '(Optional) \'CA\' or \'self\' for HTTPS mode. HTTP is used when not specified.'
+        parser.add_argument('-s', help=buf, required=False,)
+        parser.add_argument('-i', help='(Required) File name of Excel Workbook to read.', required=True)
+        buf = '(Optional) No parameters. If specified, move ports even if they are online'
+        parser.add_argument('-force', help=buf, action='store_true', required=False)
+        buf = '(Optional) Suppress all library generated output to STD_IO except the exit code. Useful with batch ' \
+              'processing'
+        parser.add_argument('-sup', help=buf, action='store_true', required=False)
+        buf = '(Optional) Echoes activity detail to STD_OUT. Recommended because there are multiple operations that ' \
+              'can be very time consuming.'
+        parser.add_argument('-echo', help=buf, action='store_true', required=False)
+        parser.add_argument('-d', help='Enable debug logging', action='store_true', required=False)
+        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
+              'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
+        parser.add_argument('-log', help=buf, required=False,)
+        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
+        parser.add_argument('-nl', help=buf, action='store_true', required=False)
+        args = parser.parse_args()
+        args_ip, args_id, args_pw, args_s, args_i, args_force, args_sup, args_echo, args_d, args_log, args_nl = \
+            args.ip, args.id, args.pw, args.s, args.i, args.force, args.sup, args.echo, args.d, args.log, args.nl
+
+    # Set up the logging options
+    if args_sup:
+        brcdapi_log.set_suppress_all()
+    if not args_nl:
+        brcdapi_log.open_log(args_log)
+    if args_d:
+        brcdapi_rest.verbose_debug = True
+
+    return args_ip, args_id, args_pw, args_s if args_s else 'none', args_i, args_force, args_echo
 
 
 def pseudo_main():
@@ -608,84 +680,67 @@ def pseudo_main():
 
     # Get and validate command line input.
     ec = brcddb_common.EXIT_STATUS_OK
-    ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    ip, user_id, pw, sec, file, force, s_flag, echo, vd, log, nl = parse_args()
-    if vd:
-        brcdapi_rest.verbose_debug = True
-    if s_flag:
-        brcdapi_log.set_suppress_all()
-    if not nl:
-        brcdapi_log.open_log(log)
-    if sec is None:
-        sec = 'none'
+    ip, user_id, pw, sec, file, force, echo = _get_input()
     file = brcdapi_file.full_file_name(file, '.xlsx')
-    if ip is not None:
-        if user_id is None:
-            ml.append('Missing user ID, -id')
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        if pw is None:
-            ml.append('Missing password, -pw')
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    ml.append('File:       ' + file)
-    ml.append('IP address: ' + brcdapi_util.mask_ip_addr(ip) if isinstance(ip, str) else str(ip))
-    ml.append('ID:         ' + str(user_id))
-    ml.append('sec:        ' + sec)
-    if len(ml) > 0:
-        brcdapi_log.log(ml, True)
-    if ec != brcddb_common.EXIT_STATUS_OK:
-        return ec
-    echo = False if echo is None else echo
+    ml = ['File, -i:        ' + file,
+          'IP address, -ip: ' + brcdapi_util.mask_ip_addr(ip),
+          'ID, -id:         ' + str(user_id),
+          's, -s:           ' + sec,
+          'force, -force    ' + str(force),
+          'echo, -echo      ' + str(echo)]
+    if _DEBUG:
+        ml.insert(0, 'WARNING!!! Debug is enabled')
+    brcdapi_log.log(ml, True)
 
     # Read in the Workbook, generate the portaddress --bind commands, and configure the switch(es)
-    switch_d_list = [switch_d for switch_d in report_utils.parse_switch_file(file).values()]
-    session = proj_obj = None
+    chassis_d, switch_d_list = report_utils.parse_switch_file(file)
+    switch_d = session = proj_obj = None
 
     try:
+
+        # Login
+        session = api_int.login(user_id, pw, ip, sec, proj_obj)
+        if fos_auth.is_error(session):  # Errors are sent to the log in api_int.login()
+            return brcddb_common.EXIT_STATUS_API_ERROR
+
+        # Get a project object
+        proj_obj = brcddb_project.new('Create_LS', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
+        proj_obj.s_python_version(sys.version)
+        proj_obj.s_description('Creating logical switches from ' + os.path.basename(__file__))
+
+        # Read some basic chassis information. Primarily to see if defined switches and ports already exist
+        api_int.get_batch(session, proj_obj, _basic_capture_kpi_l, None)
+        if proj_obj.r_is_any_error():  # Error details are logged in api_int.get_batch()
+            return brcddb_common.EXIT_STATUS_API_ERROR
+
+        # Make chassis updates
+        ec = _configure_chassis(session, chassis_d)
+
+        # Create and/or modify the logical switches
         for switch_d in switch_d_list:
             switch_d.update(err_msgs=list())
 
-            # Create the bind commands
-            if switch_d['bind']:
-                _bind_commands(switch_d)
-                cli_l = switch_d['bind_commands'].copy()
-                i = 0
-                while i < len(cli_l):
-                    cli_l.insert(i, '')
-                    i += 16
-                cli_l.insert(0, '\n# Bind commands for FID ' + str(switch_d['fid']))
-                cli_l.append('\n# End bind commands for FID ' + str(switch_d['fid']))
-                brcdapi_log.log(cli_l, True)
-
             # Create the logical switch
-            if ip is not None and switch_d['switch_flag']:
-
-                if session is None:  # Login
-                    session = api_int.login(user_id, pw, ip, sec, proj_obj)
-                    if fos_auth.is_error(session):
-                        return brcddb_common.EXIT_STATUS_API_ERROR
-
-                if proj_obj is None:  # Create a project object
-                    proj_obj = brcddb_project.new('Create_LS', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
-                    proj_obj.s_python_version(sys.version)
-                    proj_obj.s_description('Creating logical switches from ' + os.path.basename(__file__))
-
-                api_int.get_batch(session, proj_obj, _basic_capture_kpi_l, None)
-                if proj_obj.r_is_any_error():
-                    switch_d['err_msgs'].append('Error reading logical switch information from chassis')
-                    brcdapi_log.log(switch_d['err_msgs'][len(switch_d['err_msgs'])-1], True)
-                else:
-                    ec = _configure_switch(user_id, pw, session, proj_obj, switch_d, force, echo)
+            if switch_d['switch_flag']:
+                ec = _configure_switch(session, proj_obj, switch_d, force, echo)
+                if len(switch_d['err_msgs']) > 0:
+                    buf_l = ['Errors creating switch. Switch name: ' + str(switch_d.get('switch_name')) + ' DID: ' +
+                             str(switch_d.get('did'))]
+                    buf_l.extend('  ' + b for b in switch_d['err_msgs'])
+                    brcdapi_log.log(buf_l, True)
 
     except BaseException as e:
-        switch_d['err_msgs'].append('Programming error encountered. Exception: ' + str(e))
-        brcdapi_log.log(switch_d['err_msgs'][len(switch_d['err_msgs']) - 1], True)
+        buf = 'Programming error encountered. Exception: ' + str(e)
+        if isinstance(switch_d, dict) and isinstance(switch_d.get('err_msgs'), list):
+            switch_d['err_msgs'].append(buf)
+        brcdapi_log.log(buf, True)
         ec = brcddb_common.EXIT_STATUS_ERROR
 
-    # Logout and create and print a summary report
+    # Logout and display a summary report
     if session is not None:
         obj = brcdapi_rest.logout(session)
         if fos_auth.is_error(obj):
-            brcdapi_log.log(fos_auth.formatted_error_msg(obj), True)
+            brcdapi_log.exception(fos_auth.formatted_error_msg(obj), True)
             ec = brcddb_common.EXIT_STATUS_API_ERROR
     if ip is not None:
         _print_summary(switch_d_list)

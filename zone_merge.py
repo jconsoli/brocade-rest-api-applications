@@ -38,16 +38,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.7     | 28 Apr 2022   | Use new URI formats.                                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.8     | 22 Jun 2022   | Fixed reversed -cli and -d flags in parse_args()                                  |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '22 Jun 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.7'
+__version__ = '1.0.8'
 
 import argparse
 import sys
@@ -74,11 +76,11 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'zone_merge_test'
-_DEBUG_cfg = 'new_zone_cfg'
+_DEBUG_i = 'test/zone_merge_demo'
+_DEBUG_cfg = 'demo_zone_cfg'
 _DEBUG_a = False
 _DEBUG_t = False
-_DEBUG_scan = True
+_DEBUG_scan = False
 _DEBUG_cli = False
 _DEBUG_sup = False
 _DEBUG_d = False
@@ -235,7 +237,7 @@ def _get_project(sl, pl, addl_parms):
     :return proj_obj: Project object. None if there was an error obtaining the project object
     :rtype proj_obj: brcddb.classes.project.ProjObj, None
     """
-    global _ZONE_KPI_FILE
+    global _ZONE_KPI_FILE, _kpis_for_capture
 
     rl = list()  # Error messages
 
@@ -358,7 +360,7 @@ def _merge_aliases(change_d, base_fab_obj, add_fab_obj):
     :return: Error message list. If empty, no errors encountered
     :rtype: list
     """
-    # Basic prep
+    # Basic prep - initialize variables
     rl = list()
     if change_d is None:
         return rl
@@ -454,12 +456,9 @@ def _merge_zone_db(proj_obj, new_zone_cfg, a_flag):
     :return rl: Error message list. If empty, no errors encountered
     :rtype rl: list
     """
-    rl = list()
+    rl, fab_l, base_fab_obj, new_zonecfg_obj = list(), list(), None, None
 
     # Find a fabric to start with, base_fab_obj, and get a list of the remaining fabrics to add to it.
-    fab_l = list()
-    base_fab_obj = None
-    new_zonecfg_obj = None
     for fab_obj in proj_obj.r_fabric_objects():
         zd = fab_obj.r_get('zone_merge')  # zd should never be None. This is just future proofing.
         if zd is None or zd.get('fab_wwn') is None:
@@ -470,10 +469,8 @@ def _merge_zone_db(proj_obj, new_zone_cfg, a_flag):
                 mem_l = list()
                 if isinstance(zd['cfg'], str):
                     zonecfg_obj = fab_obj.r_zonecfg_obj(zd['cfg'])
-                    if zonecfg_obj is None:
-                        rl.append('Could not find ' + zd['cfg'] + ' in ' +
-                                  brcddb_fabric.best_fab_name(fab_obj, wwn=True))
-                    else:
+                    if zonecfg_obj is not None:
+                        # zonecfg_obj = fab_obj.s_add_zonecfg(new_zone_cfg)
                         mem_l = zonecfg_obj.r_members()
                 if isinstance(new_zone_cfg, str):
                     new_zonecfg_obj = base_fab_obj.s_add_zonecfg(new_zone_cfg, mem_l)
@@ -526,10 +523,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description=buf)
     buf = 'Required. Zone merge data file. See zone_merge_sample.xlsx for details. ".xlsx" is automatically appended.'
     parser.add_argument('-i', help=buf, required=True)
-    buf = 'Optional. Often, When merging fabrics it is desired to have one new zone configuration that will be used '\
-          'as the final zone configuration. Use this option to specify the name of the new zone configuration to be '\
-          'created. Included in this zone configuration are all the zones specified in the "cfg" column in the '\
-          'workbook specified with the -i option.'
+    buf = 'Optional. Specifies a zone configuration. When not specified, the zone configuration in the "cfg" column '\
+          'of the workbook, specified with the -i option, is updated with the merged zoning database. When specified, '\
+          'instead of updating the zone configuration specified in the workbook, the configuration with this name is '\
+          'updated. If the zone configuration does not exist, it is created. WARNING: When creating a new zone '\
+          'configuration you probably will want to update the workbook with this zone configuration.'
     parser.add_argument('-cfg', help=buf, required=False)
     buf = 'Optional. No parameters. Activates the zone configuration specified with the -cfg option.'
     parser.add_argument('-a', help=buf, action='store_true', required=False)
@@ -537,11 +535,12 @@ def parse_args():
     parser.add_argument('-t', help=buf, action='store_true', required=False)
     buf = 'Optional. No parameters. Scan switches and files for fabric information.'
     parser.add_argument('-scan', help=buf, action='store_true', required=False)
-    buf = 'Optional. No parameters. Prints the zome merge CLI commands to the log and console.'
+    buf = 'Optional. No parameters. Prints the zone merge CLI commands to the log and console whether -t is specified '\
+          'or not.'
     parser.add_argument('-cli', help=buf, action='store_true', required=False)
     buf = 'Optional. Suppress all output to STD_IO except the exit code and argument parsing errors. Useful with '\
-          'batch processing where only the exit status code is desired. Messages are still printed to the log file'\
-          '. No operands.'
+          'batch processing where only the exit status code is desired. Messages are still printed to the log file. '\
+          'No operands.'
     parser.add_argument('-sup', help=buf, action='store_true', required=False)
     buf = '(Optional) No parameters. When set, a pprint of all content sent and received to/from the API, except ' \
           'login information, is printed to the log.'
@@ -552,7 +551,7 @@ def parse_args():
     buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
     parser.add_argument('-nl', help=buf, action='store_true', required=False)
     args = parser.parse_args()
-    return args.i, args.cfg, args.a, args.t, args.scan, args.d, args.cli, args.sup, args.log, args.nl
+    return args.i, args.cfg, args.a, args.t, args.scan, args.cli, args.d, args.sup, args.log, args.nl
 
 
 def _condition_input(in_d):
@@ -567,7 +566,7 @@ def _condition_input(in_d):
 
 
 def _get_input():
-    """Retrieves the command line input, reads the input Workbook, and validates the input
+    """Retrieves the command line input, reads the input Workbook, and minimally validates the input
 
     :return ec: Error code from brcddb.brcddb_common
     :rtype ec: int
@@ -592,9 +591,7 @@ def _get_input():
 
     # Initialize the return variables
     ec = brcddb_common.EXIT_STATUS_OK
-    sl = list()
-    pl = list()
-    addl_parms = list()
+    sl, pl, addl_parms = list(), list(), list()
 
     # Get the user input
     c_file, cfg_name, a_flag, t_flag, scan_flag, cli_flag, d_flag, s_flag, log, nl = parse_args()

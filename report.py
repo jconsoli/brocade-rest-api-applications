@@ -51,16 +51,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.8     | 28 Apr 2022   | Removed custom pages add and remove.                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.9     | 22 Jun 2022   | Added error message when the folder for the project file does not exist.          |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '22 Jun 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.8'
+__version__ = '3.0.9'
 
 import argparse
 import brcddb.brcddb_project as brcddb_project
@@ -76,7 +78,7 @@ import brcddb.util.iocp as brcddb_iocp
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/sw_69'
+_DEBUG_i = 'test/test_0'
 _DEBUG_o = 'test/test_report_r0'
 _DEBUG_sup = False
 _DEBUG_sfp = 'sfp_rules_r10'
@@ -186,6 +188,9 @@ def pseudo_main():
         proj_obj = brcddb_project.read_from(inf)
     except FileNotFoundError:
         brcdapi_log.log('Input file, ' + inf + ', not found', True)
+        return brcddb_common.EXIT_STATUS_ERROR
+    except FileExistsError:
+        brcdapi_log.log('Folder in ' + inf + ' does not exist', True)
         return brcddb_common.EXIT_STATUS_ERROR
     if proj_obj is None:
         return brcddb_common.EXIT_STATUS_ERROR
