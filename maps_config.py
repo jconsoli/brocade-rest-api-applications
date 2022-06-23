@@ -40,15 +40,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.6     | 28 Apr 2022   | Use full URI                                                                      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.7     | 22 Jun 2022   | Missed a few cases where the full URI should have been used.                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '22 Jun 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.6'
+__version__ = '1.0.7'
 
 import argparse
 import brcdapi.fos_auth as brcdapi_auth
@@ -90,7 +92,7 @@ def _get_groups(session, fid):
     :return: List of defined group names
     :rtype: list
     """
-    group_obj = api_int.get_rest(session, 'brocade-maps/group', None, fid)
+    group_obj = api_int.get_rest(session, 'running/brocade-maps/group', None, fid)
     if brcdapi_auth.is_error(group_obj):
         brcdapi_log.log('Failed to get MAPS groups.', True)  # api_int.get_rest() logs detailed error message
         return None
@@ -111,7 +113,7 @@ def _get_policy(session, fid, policy=None):
     :rtype: int
     """
     # Get the policies
-    obj = api_int.get_rest(session, 'brocade-maps/maps-policy', None, fid)
+    obj = api_int.get_rest(session, 'running/brocade-maps/maps-policy', None, fid)
     if brcdapi_auth.is_error(obj):
         brcdapi_log.log('Failed to get MAPS policies.', True)  # api_int.get_rest() logs detailed error message
         return brcddb_common.EXIT_STATUS_API_ERROR, None
@@ -185,7 +187,7 @@ def _rules_to_keep(session, fid, maps_policy):
     global _sfp_groups
 
     # Get all the MAPS rules
-    obj = api_int.get_rest(session, 'brocade-maps/rule', None, fid)
+    obj = api_int.get_rest(session, 'running/brocade-maps/rule', None, fid)
     if brcdapi_auth.is_error(obj):
         brcdapi_log.log('Failed to get MAPS rules.', True)  # api_int.get_rest() logs detailed error message
         return None
@@ -220,7 +222,7 @@ def _create_new_policy(session, fid, policy, rule_list, enable_flag=False):
 
     # Now send the new MAPS policy to the switch
     obj = brcdapi_rest.send_request(session,
-                                    'runningbrocade-maps/maps-policy',
+                                    'running/brocade-maps/maps-policy',
                                     'POST',
                                     {'maps-policy': new_content},
                                     fid)

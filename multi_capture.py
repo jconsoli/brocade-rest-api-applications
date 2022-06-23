@@ -43,16 +43,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.9     | 28 Apr 2022   | Added additional help messages.                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.0     | 22 Jun 2022   | Improved error messaging.                                                         |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '22 Jun 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.9'
+__version__ = '3.1.0'
 
 import argparse
 import datetime
@@ -66,14 +68,14 @@ import brcddb.brcddb_common as brcddb_common
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'multi_capture_all_test'
+_DEBUG_i = 'test_copy'
 _DEBUG_f = None
 _DEBUG_sfp = 'sfp_rules_r10'
 _DEBUG_iocp = None  # 'test_iocp'
-_DEBUG_r = True
-_DEBUG_c = '*'
+_DEBUG_r = False
+_DEBUG_c = None
 _DEBUG_sup = False  # If true, all logging to STD_OUT is suppressed
-_DEBUG_d = True
+_DEBUG_d = None
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
@@ -81,12 +83,26 @@ _DEBUG_nl = False
 def parse_args():
     """Parses the module load command line when launching from stand-alone desk top application
 
-    :return f: Name of output file, if specified, for JSON dump
-    :rtype f: str, None
-    :return i: Name of input CSV file
+    :return i: Name of input file, Excel workbook with login credentials. See multi_capture_example.xlsx
     :rtype i: str
-    :return r: Name of report, if specified.
-    :rtype r: str, None
+    :return f: Name of log folder. None if not specified.
+    :rtype f: str, None
+    :return sfp: Name of SFP rules file. None if not specified.
+    :rtype sfp: str, None
+    :return iocp: Name of folder containing IOCP files. None if not specified.
+    :rtype iocp: str, None
+    :return r: If True, generate a report.
+    :rtype r: bool
+    :return c: Custom report parameters passed to _custom_report(). Typically not used.
+    :rtype c: str, None
+    :return sup: If True, suppress echo of messages to STD_OUT.
+    :rtype sup: bool
+    :return d: Debug flag. When True, a pprint of all I/O is sent to the log and console
+    :rtype d: bool
+    :return log: Folder for the log file. None if not specified.
+    :rtype log: bool
+    :return nl: No log. When True, a log file is not created.
+    :rtype nl: bool
     """
     global _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_sup, _DEBUG_d, _DEBUG_log, \
         _DEBUG_nl
@@ -181,8 +197,10 @@ def psuedo_main():
     if sfp is not None:
         addl_parms_report.extend(['-sfp', sfp])
     file = brcdapi_file.full_file_name(in_file, '.xlsx')
+    row = 1
     try:
         for d in excel_util.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=file)['content']:
+            row += 1
             buf = brcdapi_file.full_file_name(d['name'].split('/').pop().split('\\').pop(), '.json')  # Just file name
             switch_parms.append(['-id', d['user_id'],
                                  '-pw', d['pw'],
@@ -191,14 +209,19 @@ def psuedo_main():
                                  '-f', folder + '/' + buf])
     except FileNotFoundError:
         ml.extend(['', file + ' not found.'])
+    except AttributeError:
+        ml.extend(['',
+                   'Invalid login credentials in row ' + str(row) + ' in ' + file,
+                   'This typically occurs when cells are formatted with no content. Try deleting any unused rows.'])
 
     # Create the folder
-    try:
-        os.mkdir(folder)
-    except FileExistsError:
-        ml.extend('Folder ' + folder + ' already exists.')
-    except FileNotFoundError:
-        ml.extend(['', folder + ' contains a path that does not exist.'])
+    if len(ml) == 0:
+        try:
+            os.mkdir(folder)
+        except FileExistsError:
+            ml.extend(['', 'Folder ' + folder + ' already exists.'])
+        except FileNotFoundError:
+            ml.extend(['', folder + ' contains a path that does not exist.'])
     if len(ml) > 0:
         brcdapi_log.log(ml, True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
