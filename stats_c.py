@@ -67,16 +67,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.6     | 28 Apr 2022   | Adjusted for new URI format in 9.0                                                |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.7     | 25 Jul 2022   | Fixed bad reference to args.sec and removed double poll of stats                  |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '25 Jul 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.6'
+__version__ = '3.0.7'
 
 import sys
 import os
@@ -96,16 +98,16 @@ import brcddb.api.interface as brcddb_int
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False
-_DEBUG_ip = 'xx.xx.xx.xx'
+_DEBUG_ip = 'xx.xxx.x.xxx'
 _DEBUG_id = 'admin'
 _DEBUG_pw = 'password'
-_DEBUG_sec = 'self'  # 'none'
-_DEBUG_fid = 2
+_DEBUG_s = None  # 'self'
+_DEBUG_fid = '128'
 _DEBUG_sup = False
 _DEBUG_d = False
-_DEBUG_p = None
+_DEBUG_p = 5
 _DEBUG_m = 4
-_DEBUG_o = 'test/stats.json'
+_DEBUG_o = 'test/stats_r0.json'
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 """_MIN_POLL is the minimum time in seconds the command line will accept. It is actually the time to sleep between each
@@ -130,7 +132,7 @@ _uris = (
     # may also want to know other information such as the name of the switch a port is in, alias of attached login,
     # and zone the logins are in,
     'running/brocade-fibrechannel-switch/fibrechannel-switch',  # Switch name, DID, etc...
-    'running/brocade-interface/fibrechannel',  # Base port information
+    'running/brocade-interface/fibrechannel',  # Base port information + average frame size
  )
 _uris_2 = (  # Execute if there is a fabric principal
     # 'running/brocade-fibrechannel-configuration/port-configuration',  # Port configuration
@@ -200,12 +202,12 @@ def _get_input():
     :return file:  Name of output file where raw data is to be stored
     :rtype file: str
     """
-    global _DEBUG, _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_fid, _DEBUG_sup
+    global _DEBUG, _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_s, _DEBUG_fid, _DEBUG_sup
     global _DEBUG_p, _DEBUG_m, _DEBUG_o, _DEBUG_d, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
-        args_ip, args_id, args_pw, args_sec, args_fid, args_sup, args_p, args_m, args_o, args_d, args_log, args_nl =\
-            _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_fid, _DEBUG_sup, _DEBUG_p, _DEBUG_m, _DEBUG_o, \
+        args_ip, args_id, args_pw, args_s, args_fid, args_sup, args_p, args_m, args_o, args_d, args_log, args_nl =\
+            _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_s, _DEBUG_fid, _DEBUG_sup, _DEBUG_p, _DEBUG_m, _DEBUG_o, \
             _DEBUG_d, _DEBUG_log, _DEBUG_nl
     else:
         buf = 'Collect port statistics at a specified poll interval. Use Control-C to stop data collection and write ' \
@@ -238,21 +240,21 @@ def _get_input():
         buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
         parser.add_argument('-nl', help=buf, action='store_true', required=False)
         args = parser.parse_args()
-        args_ip, args_id, args_pw, args_sec, args_fid, args_sup, args_p, args_m, args_o, args_d, args_log, args_nl =\
-            args.ip, args.id, args.pw, args.sec, args.fid, args.sup, args.p, args.m, args.o, args.d, args.log, args.nl
+        args_ip, args_id, args_pw, args_s, args_fid, args_sup, args_p, args_m, args_o, args_d, args_log, args_nl =\
+            args.ip, args.id, args.pw, args.s, args.fid, args.sup, args.p, args.m, args.o, args.d, args.log, args.nl
 
     # Condition input
-    sec = 'none' if args_sec is None else args_sec
+    sec = 'none' if args_s is None else args_s
 
     # Set up the log file & debug mode
-    if not args.nl:
-        brcdapi_log.open_log(args.log)
-    if args.d:
+    if not args_nl:
+        brcdapi_log.open_log(args_log)
+    if args_d:
         brcdapi_rest.verbose_debug = True
-    if args.sup:
+    if args_sup:
         brcdapi_log.set_suppress_all()
 
-    return args_ip, args_id, args_pw, sec, args_fid, args_p, args_m, brcdapi_file.full_file_name(args_o, '.json')
+    return args_ip, args_id, args_pw, sec, int(args_fid), args_p, args_m, brcdapi_file.full_file_name(args_o, '.json')
 
 
 def _stats_diff(old_obj, new_obj):
@@ -363,7 +365,7 @@ def pseudo_main():
         time.sleep(5)  # Somewhat arbitrary time. Don't want a throttling delay if the poll interval is very short
 
         # Get the first sample
-        stats_buf = 'brocade-interface/fibrechannel-statistics'
+        stats_buf = 'running/brocade-interface/fibrechannel-statistics'
         last_time = time.time()
         last_stats = brcddb_int.get_rest(_session, stats_buf, _base_switch_obj, fid)
         for p in last_stats.get('fibrechannel-statistics'):
@@ -375,16 +377,18 @@ def pseudo_main():
             time.sleep(_MIN_POLL if x < _MIN_POLL else x)
             switch_obj = _proj_obj.s_add_switch(base_switch_wwn + '-' + str(i))
             last_time = time.time()
-            obj = brcddb_int.get_rest(_session, 'brocade-interface/fibrechannel', switch_obj, fid)
-            if not fos_auth.is_error(obj):
-                for p in obj.get('fibrechannel'):
-                    switch_obj.s_add_port(p.get('name')).s_new_key('fibrechannel', p)
-                obj = brcddb_int.get_rest(_session, stats_buf, switch_obj, fid)
+
+            # Get the config stuff. As of this writing, the only thing I used was frame size and buffer counts
+            obj = brcddb_int.get_rest(_session, 'running/brocade-interface/fibrechannel', switch_obj, fid)
             if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
                                 True)
                 _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
                 return brcddb_common.EXIT_STATUS_ERROR
+            for p in obj.get('fibrechannel'):
+                switch_obj.s_add_port(p.get('name')).s_new_key('fibrechannel', p)
+
+            # Get the port statistics
             obj = brcddb_int.get_rest(_session, stats_buf, switch_obj, fid)
             if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',

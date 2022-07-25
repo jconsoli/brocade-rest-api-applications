@@ -24,16 +24,18 @@ Version Control::
     +===========+===============+===================================================================================+
     | 1.0.0     | 23 Jun 2022   | Initial Launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.1     | 25 Jul 2022   | Added UCS counter                                                                 |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2022 Jack Consoli'
-__date__ = '23 June 2022'
+__date__ = '25 Jul 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 import argparse
 import copy
@@ -46,7 +48,6 @@ import brcdapi.excel_fonts as excel_fonts
 import brcdapi.excel_util as excel_util
 import brcddb.util.search as brcddb_search
 import brcddb.brcddb_common as brcddb_common
-import brcddb.brcddb_login as brcddb_login
 import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.brcddb_switch as brcddb_switch
@@ -55,16 +56,17 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/all_eng_lab'
-_DEBUG_o = 'test/test'
+_DEBUG_i = 'test/mh'
+_DEBUG_o = 'test/test_pc'
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
 # _switch_d is a template copied for each switch to track the number of login types, speed, and SFP type. _speed and
-# _fc4_types are templates copied in _switch_d. 0 in _speed is used for unknown login speeds.
+# 0 in _speed is used for unknown login speeds.
 _speed = {0: 0, 1: 0, 2: 0, 4: 0, 8: 0, 16: 0, 32: 0, 64: 0}
 _speed_keys = [int(i) for i in _speed.keys()]
 _speed_keys.sort()
+# _fc4_types are templates copied in _switch_d.
 _fc4_types = collections.OrderedDict()  # Ordered so that all reports are consistent
 _fc4_types['isl'] = dict(other=dict(h='Other', s=()))
 _fc4_types['targets'] = dict(
@@ -78,10 +80,12 @@ _fc4_types['targets'] = dict(
 )
 _fc4_types['initiators'] = dict(
     e=dict(h='Emulex', s=('emulex', 'lpe')),
-    q=dict(h='QLogic', s=('qlog',)),
+    q=dict(h='QLogic', s=('qlog', 'qle')),
+    ucs=dict(h='UCS', s=('cisco', 'fcoe')),
     other=dict(h='Other', s=tuple())
 )
 _fc4_types['unknown'] = dict(other=dict(h='Other', s=tuple()))
+_node_symb_key = 'brocade-name-server/fibrechannel-name-server/node-symbolic-name'
 
 _switch_d = dict()
 for _fc4_k, _fc4_d in _fc4_types.items():
@@ -111,6 +115,7 @@ def _sheet_for_report(wb, sheet_index, sname, stitle):
     # Initialize local variables
     border = excel_fonts.border_type('thin')
     alignment = excel_fonts.align_type('wrap')
+    hdr_1_font = excel_fonts.font_type('hdr_1')
 
     # Create the worksheet
     sheet = wb.create_sheet(index=sheet_index, title=sname)
@@ -119,24 +124,16 @@ def _sheet_for_report(wb, sheet_index, sname, stitle):
     sheet.freeze_panes = sheet['A2']
 
     # Set up the column widths and add the headers
-    col = 1
-    row = 1
+    row = col = 1
     for col_width in (5, 30):
-        cell = xl_util.get_column_letter(col) + str(row)
         sheet.column_dimensions[xl_util.get_column_letter(col)].width = col_width
-        sheet[cell].border = border
-        sheet[cell].font = excel_fonts.font_type('hdr_1')
-        sheet[cell].alignment = alignment
+        excel_util.cell_update(sheet, row, col, None, font=hdr_1_font, align=alignment, border=border)
         col += 1
     sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
     sheet['A1'] = stitle
     for i in _speed_keys:
-        cell = xl_util.get_column_letter(col) + str(row)
         sheet.column_dimensions[xl_util.get_column_letter(col)].width = 6
-        sheet[cell].border = border
-        sheet[cell].font = excel_fonts.font_type('hdr_1')
-        sheet[cell].alignment = alignment
-        sheet[cell] = i
+        excel_util.cell_update(sheet, row, col, i, font=hdr_1_font, align=alignment, border=border)
         col += 1
 
     return sheet
@@ -157,6 +154,7 @@ def _summary_sheet(wb, summary_l):
     border = excel_fonts.border_type('thin')
     alignment = excel_fonts.align_type('wrap')
     text_font = excel_fonts.font_type('std')
+    bold_font = excel_fonts.font_type('bold')
     total_sum = list()
     row = 2
 
@@ -190,12 +188,9 @@ def _summary_sheet(wb, summary_l):
     for fc4_type in _fc4_types:
 
         # Add the FC4 type header
-        col, row = 1, row + 1
-        cell = xl_util.get_column_letter(col) + str(row)
-        sheet[cell].font = excel_fonts.font_type('bold')
-        sheet[cell].alignment = alignment
+        row, col = row + 1, 1
         sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-        sheet[cell] = fc4_type
+        excel_util.cell_update(sheet, row, col, fc4_type, font=bold_font, align=alignment, border=border)
         row += 1
         type_start_row = row
 
@@ -208,21 +203,13 @@ def _summary_sheet(wb, summary_l):
 
             # Add the brand name to the worksheet
             col = 2
-            cell = xl_util.get_column_letter(col) + str(row)
-            sheet[cell].font = text_font
-            sheet[cell].alignment = alignment
-            sheet[cell].border = border
-            sheet[cell] = str(brand)
+            excel_util.cell_update(sheet, row, col, str(brand), font=text_font, align=alignment, border=border)
 
             # Add each speed within the brand
             for speed in _speed_keys:
                 col += 1
-                cell = xl_util.get_column_letter(col) + str(row)
-                sheet[cell].font = text_font
-                sheet[cell].alignment = alignment
-                sheet[cell].border = border
                 val = 0 if len(brand_d[speed]) == 0 else '=' + '+'.join(brand_d[speed])
-                sheet[cell] = val
+                excel_util.cell_update(sheet, row, col, val, font=text_font, align=alignment, border=border)
 
             row += 1
 
@@ -230,56 +217,34 @@ def _summary_sheet(wb, summary_l):
         type_end_row, col = row, 2
         row += 1
         total_sum.append(row)
-        cell = xl_util.get_column_letter(col) + str(row)
-        sheet[cell].font = text_font
-        sheet[cell].alignment = alignment
-        sheet[cell].border = border
-        sheet[cell] = 'sub-total'
+        excel_util.cell_update(sheet, row, col, 'sub-total', font=text_font, align=alignment, border=border)
         for k3 in range(0, len(_speed_keys)):
             col += 1
             col_letter = xl_util.get_column_letter(col)
-            cell = col_letter + str(row)
-            sheet[cell].font = text_font
-            sheet[cell].alignment = alignment
-            sheet[cell].border = border
-            sheet[cell] = '=sum(' + col_letter + str(type_start_row) + ':' + col_letter + str(type_end_row) + ')'
+            buf = '=sum(' + col_letter + str(type_start_row) + ':' + col_letter + str(type_end_row) + ')'
+            excel_util.cell_update(sheet, row, col, buf, font=text_font, align=alignment, border=border)
         row += 1
 
     # Add a project summary
-    row += 1
-    col = 1
-    cell = xl_util.get_column_letter(col) + str(row)
-    sheet[cell].font = excel_fonts.font_type('bold')
-    sheet[cell].alignment = alignment
+    row, col = row + 1, 1
     sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-    sheet[cell] = 'Project total'
+    excel_util.cell_update(sheet, row, col, 'Project total', font=bold_font, align=alignment)
     buf = '=$' + str(total_sum.pop(0))
     for i in total_sum:
         buf += '+$' + str(i)
-    col = 3
+    col += 2
     for k3 in range(0, len(_speed_keys)):
-        col_letter = xl_util.get_column_letter(col)
-        cell = col_letter + str(row)
-        sheet[cell].font = excel_fonts.font_type('bold')
-        sheet[cell].alignment = alignment
-        sheet[cell].border = border
-        sheet[cell] = buf.replace('$', col_letter)
+        excel_util.cell_update(sheet, row, col, buf.replace('$', xl_util.get_column_letter(col)), font=bold_font,
+                               align=alignment, border=border)
         col += 1
 
     # The total online ports
     buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(2+len(_speed_keys)) + str(row) + ')'
-    row += 2
-    col = 1
-    cell = xl_util.get_column_letter(col) + str(row)
-    sheet[cell].font = excel_fonts.font_type('bold')
-    sheet[cell].alignment = alignment
+    row, col = row + 2, 1
     sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-    sheet[cell] = 'Total Online Ports'
-    cell = 'C' + str(row)
-    sheet[cell].font = text_font
-    sheet[cell].alignment = alignment
-    sheet[cell].border = border
-    sheet[cell] = buf
+    excel_util.cell_update(sheet, row, col, 'Total Online Ports', font=bold_font, align=alignment)
+    col += 2
+    excel_util.cell_update(sheet, row, col, buf, font=bold_font, align=alignment)
 
 
 def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
@@ -304,16 +269,15 @@ def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
     border = excel_fonts.border_type('thin')
     alignment = excel_fonts.align_type('wrap')
     text_font = excel_fonts.font_type('std')
+    bold_font = excel_fonts.font_type('bold')
+
     switch_sum = list()  # A list of row numbers for each type summary
     rd = dict()
     col = 1
 
     # Add the sub-header. Typically the switch name
-    cell = xl_util.get_column_letter(col) + str(row)
-    sheet[cell].font = excel_fonts.font_type('hdr_2')
-    sheet[cell].alignment = alignment
     sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=2+len(_speed_keys))
-    sheet[cell] = sub_hdr
+    excel_util.cell_update(sheet, row, col, sub_hdr, font=excel_fonts.font_type('hdr_2'), align=alignment)
     row += 1
 
     # The report is a list of ports based on the FC4 type (ISL, target, initiator, and unknown) associated with the
@@ -321,16 +285,14 @@ def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
     # SFP type and brand are combined into a single cell. The next category is the speed which is displayed in the
     # columns.
     for k0 in _fc4_types.keys():
+
         d0 = switch_d.get(k0)
         if d0 is None:
             continue  # When I wrote this, d0 should never be None. This is just future proofing.
         col, row = 1, row + 1
         rd.update({k0: dict()})
-        cell = xl_util.get_column_letter(col) + str(row)
-        sheet[cell].font = excel_fonts.font_type('bold')
-        sheet[cell].alignment = alignment
+        excel_util.cell_update(sheet, row, col, str(k0), font=bold_font, align=alignment)
         sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-        sheet[cell] = str(k0)
         row += 1
         type_start_row = row  # Used for the formula in the type sub-total
 
@@ -338,52 +300,33 @@ def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
 
             for k2, d2 in d1.items():  # Brand
                 col = 2
-                cell = xl_util.get_column_letter(col) + str(row)
-                sheet[cell].font = text_font
-                sheet[cell].alignment = alignment
-                sheet[cell].border = border
                 buf = str(k1).upper() + ', ' + _fc4_types[k0][k2]['h']
-                sheet[cell] = buf
+                excel_util.cell_update(sheet, row, col, buf, font=text_font, align=alignment, border=border)
                 brand_d = dict()
                 rd[k0].update({buf: brand_d})
                 col += 1
 
                 for k3 in _speed_keys:  # Login speed
-                    cell = xl_util.get_column_letter(col) + str(row)
-                    brand_d.update({k3: cell})
-                    sheet[cell].font = text_font
-                    sheet[cell].alignment = alignment
-                    sheet[cell].border = border
-                    sheet[cell] = d2[k3]
+                    excel_util.cell_update(sheet, row, col, d2[k3], font=text_font, align=alignment, border=border)
+                    brand_d.update({k3: xl_util.get_column_letter(col) + str(row)})
                     col += 1
                 row += 1
 
         # Add the sub-total for each FC4 type
         type_end_row, row, col = row, row + 1, 2
         switch_sum.append(row)
-        cell = xl_util.get_column_letter(col) + str(row)
-        sheet[cell].font = text_font
-        sheet[cell].alignment = alignment
-        sheet[cell].border = border
-        sheet[cell] = 'sub-total'
+        excel_util.cell_update(sheet, row, col, 'sub-total', font=text_font, align=alignment, border=border)
         for k3 in range(0, len(_speed_keys)):
             col += 1
             col_letter = xl_util.get_column_letter(col)
-            cell = col_letter + str(row)
-            sheet[cell].font = text_font
-            sheet[cell].alignment = alignment
-            sheet[cell].border = border
-            sheet[cell] = '=sum(' + col_letter + str(type_start_row) + ':' + col_letter + str(type_end_row) + ')'
+            buf = '=sum(' + col_letter + str(type_start_row) + ':' + col_letter + str(type_end_row) + ')'
+            excel_util.cell_update(sheet, row, col, buf, font=text_font, align=alignment, border=border)
         row += 1
 
     # Add the totals for the switch
-    row += 1
-    col = 1
-    cell = xl_util.get_column_letter(col) + str(row)
-    sheet[cell].font = excel_fonts.font_type('bold')
-    sheet[cell].alignment = alignment
+    row, col = row + 1, 1
+    excel_util.cell_update(sheet, row, col, 'Switch total', font=bold_font, align=alignment)
     sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-    sheet[cell] = 'Switch total'
     buf = '=$' + str(switch_sum.pop(0))
     for i in switch_sum:
         buf += '+$' + str(i)
@@ -391,11 +334,8 @@ def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
     for k3 in range(0, len(_speed_keys)):
         col += 1
         col_letter = xl_util.get_column_letter(col)
-        cell = col_letter + str(row)
-        sheet[cell].font = excel_fonts.font_type('bold')
-        sheet[cell].alignment = alignment
-        sheet[cell].border = border
-        sheet[cell] = buf.replace('$', col_letter)
+        excel_util.cell_update(sheet, row, col, buf.replace('$', col_letter), font=bold_font, align=alignment,
+                               border=border)
 
     return row, rd
 
@@ -416,6 +356,7 @@ def _create_report(proj_obj, file_name):
     sheet_index = 0
     border = excel_fonts.border_type('thin')
     alignment = excel_fonts.align_type('wrap')
+    bold_font = excel_fonts.font_type('bold')
     ec = brcddb_common.EXIT_STATUS_OK
     fab_sum_l = list()  # Used to reference cells for summaries and totals. A list of dictionaries as follows:
     """
@@ -467,12 +408,8 @@ def _create_report(proj_obj, file_name):
         fab_sum_l.append(fab_d)
 
         # Add the summary totals for the fabric
-        row += 1
-        col = 1
-        cell = xl_util.get_column_letter(col) + str(row)
-        sheet[cell].font = excel_fonts.font_type('bold')
-        sheet[cell].alignment = alignment
-        sheet[cell] = 'Fabric total'
+        row, col = row + 1, 1
+        excel_util.cell_update(sheet, row, col, 'Fabric total', font=bold_font, align=alignment)
         sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
         buf = '=$' + str(fab_sum.pop(0))
         for i in fab_sum:
@@ -481,11 +418,8 @@ def _create_report(proj_obj, file_name):
         for k3 in _speed_keys:
             col += 1
             col_letter = xl_util.get_column_letter(col)
-            cell = col_letter + str(row)
-            sheet[cell].font = excel_fonts.font_type('bold')
-            sheet[cell].alignment = alignment
-            sheet[cell].border = border
-            sheet[cell] = buf.replace('$', col_letter)
+            excel_util.cell_update(sheet, row, col, buf.replace('$', col_letter), font=bold_font, align=alignment,
+                                   border=border)
         sheet_index += 1
 
     # Add a summary sheet
@@ -538,7 +472,7 @@ def psuedo_main():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _DEBUG, __version__, _speed, _switch_d
+    global _DEBUG, __version__, _speed, _switch_d, _node_symb_key
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -572,7 +506,6 @@ def psuedo_main():
 
             # Now figure out which port dictionary to use
             for port_obj in switch_obj.r_port_objects():
-
                 # Default keys
                 k0 = 'unknown'  # Basic FC4 type: isl, targets, initiators, or unknown
                 wave_length = port_obj.r_get('media-rdp/wavelength')
@@ -584,27 +517,25 @@ def psuedo_main():
                 buf = brcddb_port.port_type(port_obj)
                 if 'E-Port' in buf:
                     k0 = 'isl'
-                elif 'F-Port' in buf:
+                elif 'F-Port' in buf or 'N-Port' in buf:
 
                     # Is it a target or initiator?
-                    all_logins = port_obj.r_login_objects()
-                    if len(brcddb_search.match_test(all_logins, brcddb_search.target)) > 0:
+                    all_logins_l = port_obj.r_login_objects()
+                    if len(brcddb_search.match_test(all_logins_l, brcddb_search.target)) > 0:
                         k0 = 'targets'
-                    elif len(brcddb_search.match_test(all_logins, brcddb_search.initiator)) > 0:
+                    elif len(brcddb_search.match_test(all_logins_l, brcddb_search.initiator)) > 0:
                         k0 = 'initiators'
 
                     # Determine the brand, k2.
                     fc4_d = _fc4_types.get(k0)
                     if isinstance(fc4_d, dict):
-                        login_keys_l = port_obj.r_login_keys()
-                        if len(login_keys_l) > 0:
-                            wwn = login_keys_l[0]
-                            node_l = [brcddb_login.fdmi_node_name(fab_obj.r_fdmi_node_obj(wwn), wwn),
-                                      brcddb_login.ns_node_name(fab_obj.r_login_obj(wwn))]
+                        for login_obj in all_logins_l:
+                            if k2 != 'other':
+                                break
 
-                            for buf in [b.lower() for b in node_l if isinstance(b, str)]:
-                                if k2 != 'other':
-                                    break
+                            buf = login_obj.r_get(_node_symb_key)
+                            if isinstance(buf, str):
+                                buf = buf.lower()
                                 for k, d in fc4_d.items():
                                     if k2 != 'other':
                                         break

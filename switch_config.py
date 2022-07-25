@@ -61,15 +61,17 @@ Version Control::
     | 1.0.7     | 22 Jun 2022   | Replaced CLI port address binding with API based port address binding introduced  |
     |           |               | in FOS 9.1.                                                                       |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.8     | 25 Jul 2022   | Added module version number to output.                                            |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
-__date__ = '22 Jun 2022'
+__date__ = '25 Jul 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.7'
+__version__ = '1.0.8'
 
 import argparse
 import sys
@@ -682,12 +684,13 @@ def pseudo_main():
     ec = brcddb_common.EXIT_STATUS_OK
     ip, user_id, pw, sec, file, force, echo = _get_input()
     file = brcdapi_file.full_file_name(file, '.xlsx')
-    ml = ['File, -i:        ' + file,
-          'IP address, -ip: ' + brcdapi_util.mask_ip_addr(ip),
-          'ID, -id:         ' + str(user_id),
-          's, -s:           ' + sec,
-          'force, -force    ' + str(force),
-          'echo, -echo      ' + str(echo)]
+    ml = ['switch_config.py: ' + __version__,
+          'File, -i:         ' + file,
+          'IP address, -ip:  ' + brcdapi_util.mask_ip_addr(ip),
+          'ID, -id:          ' + str(user_id),
+          's, -s:            ' + sec,
+          'force, -force     ' + str(force),
+          'echo, -echo       ' + str(echo)]
     if _DEBUG:
         ml.insert(0, 'WARNING!!! Debug is enabled')
     brcdapi_log.log(ml, True)

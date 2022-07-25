@@ -40,16 +40,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.8     | 22 Jun 2022   | Fixed reversed -cli and -d flags in parse_args()                                  |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.9     | 25 Jul 2022   | Ignore empty rows when reading the input workbook.                                |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '22 Jun 2022'
+__date__ = '25 Jul 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.8'
+__version__ = '1.0.9'
 
 import argparse
 import sys
@@ -76,8 +78,8 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/zone_merge_demo'
-_DEBUG_cfg = 'demo_zone_cfg'
+_DEBUG_i = 'test/zone_merge_30'
+_DEBUG_cfg = None
 _DEBUG_a = False
 _DEBUG_t = False
 _DEBUG_scan = False
@@ -628,7 +630,8 @@ def _get_input():
             sub_d = switch_l[i]
             buf = sub_d.get('project_file')
             if buf is None:
-                sl.append(_condition_input(sub_d))
+                if sub_d['ip_addr'] is not None:  # Sometimes empty rows are returned from reading the worksheet
+                    sl.append(_condition_input(sub_d))
             else:
                 pl.append(sub_d)
                 if not scan_flag and not gen_util.is_wwn(sub_d.get('fab_wwn'), full_check=True):

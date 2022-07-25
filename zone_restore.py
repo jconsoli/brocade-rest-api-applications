@@ -28,16 +28,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.2     | 28 Apr 2022   | Use new URI formats.                                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.3     | 25 Jul 2022   | Added ability to activate a zone configuration.                                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '25 Jul 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import argparse
 import brcdapi.log as brcdapi_log
@@ -53,13 +55,13 @@ import brcddb.api.zone as api_zone
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_ip = 'xx.xxx.x.204'
+_DEBUG_ip = 'xx.xxx.xx.xx'
 _DEBUG_id = 'admin'
 _DEBUG_pw = 'password'
-_DEBUG_sec = 'none'
-_DEBUG_i = 'test/204'
-_DEBUG_fid = 30
-_DEBUG_wwn = '10:00:c4:f5:7c:64:5b:61'
+_DEBUG_sec = 'self'
+_DEBUG_i = 'test/test_30'
+_DEBUG_fid = 128
+_DEBUG_wwn = 'xx:xx:xx:xx:xx:xx:xx:xx'
 _DEBUG_a = False
 _DEBUG_scan = False
 _DEBUG_sup = False
@@ -121,7 +123,7 @@ def _scan_fabrics(proj_obj):
     if len(ml) == 0:
         ml.append('No fabrics specified.')
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     return ec
 
@@ -153,8 +155,11 @@ def parse_args():
     buf = 'Optional with -scan, otherwise required. Fabric WWN whose zone DB is to be read and set in the fabric '\
           'specified with the -fid parameter. Keep in mind that if the fabric was rebuilt, it may have a different WWN.'
     parser.add_argument('-wwn', help=buf, required=False)
-    buf = 'Optional. No parameters. Activates the zone configuration specified with the -cfg option.'
-    parser.add_argument('-a', help=buf, action='store_true', required=False)
+    buf = 'Optional. Specifies the zone zone configuration to activate. If not specified, no change is made to the '\
+          'effective configuration. If a zone configuration is in effect and this option is not specified, the '\
+          'effective zone may result in the defined zone configuration being inconsistent with the effective zone '\
+          'configuration.'
+    parser.add_argument('-a', help=buf, required=False)
     buf = 'Optional. No parameters. Scan switch if login credentials supplied and captured data file for fabric '\
           'information.'
     parser.add_argument('-scan', help=buf, action='store_true', required=False)
@@ -202,7 +207,7 @@ def _get_input():
     addl_parms = list()
 
     # Get and validate the user input
-    ip, user_id, pw, sec, fid, cfile, wwn, a_flag, scan_flag, d_flag, s_flag, log, nl = parse_args()
+    ip, user_id, pw, sec, fid, cfile, wwn, zone_cfg, scan_flag, d_flag, s_flag, log, nl = parse_args()
     if s_flag:
         addl_parms.append('-sup')
         brcdapi_log.set_suppress_all()
@@ -220,15 +225,15 @@ def _get_input():
         buf = ' INVALID. Must be an integer in the range of 1-128' if fid < 0 or fid > 128 else ''
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append('zone_merge.py version: ' + __version__)
-    ml.append('IP address:            ' + brcdapi_util.mask_ip_addr(ip))
-    ml.append('ID:                    ' + str(user_id))
-    ml.append('HTTPS:                 ' + str(sec))
-    ml.append('FID:                   ' + str(fid) + buf)
-    ml.append('Input file:            ' + cfile)
-    ml.append('WWN:                   ' + str(wwn))
-    ml.append('Activate zone cfg:     ' + str(a_flag))
-    ml.append('Scan:                  ' + str(scan_flag))
-    brcdapi_log.log(ml, True)
+    ml.append('IP address, -ip:       ' + brcdapi_util.mask_ip_addr(ip))
+    ml.append('ID, -id:               ' + str(user_id))
+    ml.append('HTTPS, -s:             ' + str(sec))
+    ml.append('FID, -fid:             ' + str(fid) + buf)
+    ml.append('Input file, -i:        ' + cfile)
+    ml.append('WWN, -wwn:             ' + str(wwn))
+    ml.append('Activate zone cfg, -a: ' + str(zone_cfg))
+    ml.append('Scan, -scan:           ' + str(scan_flag))
+    brcdapi_log.log(ml, echo=True)
     if len(buf) > 0:
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     if sec is None:
@@ -250,10 +255,10 @@ def _get_input():
         if len(ml) > 0:
             ml.insert(0, 'Missing the following required parameters:')
             ml.append('Use the -h option for additional help.')
-            brcdapi_log.log(ml, True)
+            brcdapi_log.log(ml, echo=True)
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    return ec, ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, a_flag, scan_flag, addl_parms
+    return ec, ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, scan_flag, addl_parms
 
 
 def pseudo_main():
@@ -265,7 +270,7 @@ def pseudo_main():
     global __version__
     global _DEBUG_id, _DEBUG_pw, _DEBUG_ip
 
-    ec, ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, a_flag, scan_flag, addl_parms = _get_input()
+    ec, ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, scan_flag, addl_parms = _get_input()
 
     if ec != brcddb_common.EXIT_STATUS_OK:
         return ec
@@ -278,7 +283,7 @@ def pseudo_main():
     if not scan_flag:
         fab_obj = proj_obj.r_fabric_obj(wwn)
         if fab_obj is None:
-            brcdapi_log.log(wwn + ' does not exist in ' + cfile + '. Try using the -scan option', True)
+            brcdapi_log.log(wwn + ' does not exist in ' + cfile + '. Try using the -scan option', echo=True)
             return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     if scan_flag:
@@ -287,25 +292,30 @@ def pseudo_main():
     # Login
     session = api_int.login(user_id, pw, ip, sec, proj_obj)
     if fos_auth.is_error(session):
-        brcdapi_log.log(fos_auth.formatted_error_msg(session), True)
+        brcdapi_log.log(fos_auth.formatted_error_msg(session), echo=True)
         return brcddb_common.EXIT_STATUS_ERROR
 
-    # Make the zoning change
     try:
-        brcdapi_log.log('Sending zone updates to FID ' + str(fid), True)
+        # Make the zoning change
+        brcdapi_log.log('Sending zone updates to FID ' + str(fid), echo=True)
         obj = api_zone.replace_zoning(session, fab_obj, fid)
         if fos_auth.is_error(obj):
-            brcdapi_log.log(fos_auth.formatted_error_msg(obj), True)
+            brcdapi_log.log(fos_auth.formatted_error_msg(obj), echo=True)
         else:
-            brcdapi_log.log('Zone restore completed successfully.', True)
+            brcdapi_log.log('Zone restore completed successfully.', echo=True)
+
+        # Activate the zone configuration
+        if zone_cfg is not None:
+            brcdapi_log.log('Enabling zone configuration ' + zone_cfg + ', fid: ' + str(fid), echo=True)
+            api_zone.enable_zonecfg(session, fab_obj, fid, zone_cfg)
 
     except BaseException as e:
-        brcdapi_log.log(['', 'Software error.', 'Exception: ' + str(e)], True)
+        brcdapi_log.log(['', 'Software error.', 'Exception: ' + str(e)], echo=True)
 
     # Logout
     obj = brcdapi_rest.logout(session)
     if fos_auth.is_error(obj):
-        brcdapi_log.log(fos_auth.formatted_error_msg(obj), True)
+        brcdapi_log.log(fos_auth.formatted_error_msg(obj), echo=True)
 
     return ec
 
