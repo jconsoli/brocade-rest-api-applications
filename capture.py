@@ -51,16 +51,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.0     | 28 Apr 2022   | Relocated libraries                                                               |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.1     | 04 Sep 2022   | Added module and version number to user feedback.                                 |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '04 Sep 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.0'
+__version__ = '3.1.1'
 
 import argparse
 import sys
@@ -78,13 +80,13 @@ import brcddb.brcddb_common as brcddb_common
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _WRITE = True  # Should always be True. Used for debug only. Prevents the output file from being written when False
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_ip = 'xx.xxx.x.xx'
+_DEBUG_ip = 'xx.xxx.x.79'
 _DEBUG_outf = 'test/sw_xx'
 _DEBUG_id = 'admin'
 _DEBUG_pw = 'password'
-_DEBUG_s = 'self'
+_DEBUG_s = None  # 'self'
 _DEBUG_sup = False
-_DEBUG_d = False
+_DEBUG_d = True
 _DEBUG_c = None  # '*'
 _DEBUG_fid = None
 _DEBUG_log = '_logs'
@@ -173,7 +175,7 @@ def _kpi_list(session, c_file):
                 rl.append(kpi)
         else:
             # Different versions of FOS support different KPIs so log it but don't pester the operator with it.
-            brcdapi_log.log(':UNKNOWN KPI: ' + kpi, False)
+            brcdapi_log.log(':UNKNOWN KPI: ' + kpi)
     return rl
 
 
@@ -232,6 +234,8 @@ def pseudo_main():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
+    global __version__
+
     ip, user_id, pw, outf, sec, s_flag, vd, c_file, fid, log, nl = parse_args()
     if vd:
         brcdapi_rest.verbose_debug = True
@@ -242,14 +246,18 @@ def pseudo_main():
     if sec is None:
         sec = 'none'
     fid_l = None if fid is None else fid.split(',')
-    ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    ml.append('IP:          ' + brcdapi_util.mask_ip_addr(ip, True))
-    ml.append('ID:          ' + user_id)
-    ml.append('security:    ' + sec)
-    ml.append('Output file: ' + outf)
-    ml.append('KPI file:    ' + str(c_file))
-    ml.append('FID List:    ' + str(fid))
-    brcdapi_log.log(ml, True)
+    ml = [
+        'capture.py version: ' + __version__,
+        'IP:          ' + brcdapi_util.mask_ip_addr(ip, keep_last=True),
+        'ID:          ' + user_id,
+        'security:    ' + sec,
+        'Output file: ' + outf,
+        'KPI file:    ' + str(c_file),
+        'FID List:    ' + str(fid)
+    ]
+    if _DEBUG:
+        ml.insert(0, 'WARNING!!! Debug is enabled')
+    brcdapi_log.log(ml, echo=True)
     outf = brcdapi_file.full_file_name(outf, '.json')
 
     # Create project
@@ -266,20 +274,20 @@ def pseudo_main():
     try:
         api_int.get_batch(session, proj_obj, _kpi_list(session, c_file), fid_l)
     except BaseException as e:
-        brcdapi_log.exception('Programming error encountered. Exception is: ' + str(e), True)
+        brcdapi_log.exception('Programming error encountered. Exception is: ' + str(e), echo=True)
 
     # Logout
     obj = brcdapi_rest.logout(session)
     if brcdapi_auth.is_error(obj):
-        brcdapi_log.log(brcdapi_auth.formatted_error_msg(obj), True)
+        brcdapi_log.log(brcdapi_auth.formatted_error_msg(obj), echo=True)
 
     # Dump the database to a file
     if _WRITE:
-        brcdapi_log.log('Saving project to: ' + outf, True)
+        brcdapi_log.log('Saving project to: ' + outf, echo=True)
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
         brcdapi_file.write_dump(plain_copy, outf)
-        brcdapi_log.log('Save complete', True)
+        brcdapi_log.log('Save complete', echo=True)
 
     return proj_obj.r_exit_code()
 

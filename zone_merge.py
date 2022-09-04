@@ -42,16 +42,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.9     | 25 Jul 2022   | Ignore empty rows when reading the input workbook.                                |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.0     | 04 Sep 2022   | Improved error messaging                                                          |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '25 Jul 2022'
+__date__ = '04 Sep 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.9'
+__version__ = '1.1.0'
 
 import argparse
 import sys
@@ -78,7 +80,7 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/zone_merge_30'
+_DEBUG_i = 'test/zone_merge_test'
 _DEBUG_cfg = None
 _DEBUG_a = False
 _DEBUG_t = False
@@ -201,7 +203,7 @@ def _patch_zone_db(proj_obj, eff_cfg):
             return rl
 
         # Send the changes to the switch
-        brcdapi_log.log('Sending zone updates to ' + brcddb_fabric.best_fab_name(fab_obj, wwn=True), True)
+        brcdapi_log.log('Sending zone updates to ' + brcddb_fabric.best_fab_name(fab_obj, wwn=True), echo=True)
         try:
             obj = api_zone.replace_zoning(session, base_fab_obj, fid)
             if fos_auth.is_error(obj):
@@ -220,7 +222,7 @@ def _patch_zone_db(proj_obj, eff_cfg):
         if fos_auth.is_error(obj):
             rl.append(fos_auth.formatted_error_msg(obj))
 
-        brcdapi_log.log(str(update_count) + ' switch(es) updated.', True)
+        brcdapi_log.log(str(update_count) + ' switch(es) updated.', echo=True)
 
     return rl
 
@@ -266,7 +268,7 @@ def _get_project(sl, pl, addl_parms):
 
     # Start all the data captures for the switches to be polled so that multiple switches can be captured in parallel
     if len(sl) > 0:
-        brcdapi_log.log('Collecting zoning data from switches', True)
+        brcdapi_log.log('Collecting zoning data from switches', echo=True)
     captured_d = dict()
     pid_l = list()
     for sub_d in sl:
@@ -292,7 +294,8 @@ def _get_project(sl, pl, addl_parms):
     # Add the data read from this chassis to the project object
     for pid_d in pid_l:  # Wait for all captures to complete before continuing
         pid_d.update(s=pid_d['p'].wait())
-        brcdapi_log.log('Completed capture for ' + pid_d['file_name'] + '. Ending status: ' + str(pid_d['s']), True)
+        brcdapi_log.log('Completed capture for ' + pid_d['file_name'] + '. Ending status: ' + str(pid_d['s']),
+                        echo=True)
     for pid_d in pid_l:
         obj = brcdapi_file.read_dump(pid_d['file_name'])
         if obj is None:
@@ -329,11 +332,12 @@ def _get_project(sl, pl, addl_parms):
                         found = True
                         break
                 if not found:
-                    rl.append('Could not find FID ' + str(fid) + ' in ' + brcdapi_util.mask_ip_addr(sub_d['ip']))
+                    rl.append('Could not find FID ' + str(fid) + ' in ' +
+                              brcdapi_util.mask_ip_addr(sub_d['ip'], keep_last=True))
 
     # Add in all the read in project files
     if len(pl) > 0:
-        brcdapi_log.log('Reading project files', True)
+        brcdapi_log.log('Reading project files', echo=True)
     for sub_d in pl:
         file_name = brcdapi_file.full_file_name(sub_d['project_file'], '.json')
         obj = brcdapi_file.read_dump(file_name)
@@ -617,7 +621,7 @@ def _get_input():
     ml.append('Scan flag, -scan:      ' + str(scan_flag))
     ml.append('CLI flag, -cli:        ' + str(cli_flag))
     ml.append('Test:                  ' + str(t_flag))
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
     c_file = brcdapi_file.full_file_name(c_file, '.xlsx')
 
     # Parse the input file
@@ -637,7 +641,7 @@ def _get_input():
                 if not scan_flag and not gen_util.is_wwn(sub_d.get('fab_wwn'), full_check=True):
                     ml.append('fab_wwn is not a valid WWN in row ' + str(i+1))
     if len(ml) > 0:
-        brcdapi_log.log(ml, True)
+        brcdapi_log.log(ml, echo=True)
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec, sl, pl, cfg_name, a_flag, t_flag, scan_flag, cli_flag, addl_parms
@@ -659,17 +663,17 @@ def pseudo_main():
     ml, proj_obj = _get_project(sl, pl, addl_parms)
 
     if scan_flag and proj_obj is not None:
-        brcdapi_log.log(_scan_fabrics(proj_obj), True)
+        brcdapi_log.log(_scan_fabrics(proj_obj), echo=True)
         return brcddb_common.EXIT_STATUS_OK
     if len(ml) > 0:
-        brcdapi_log.log(ml, True)
+        brcdapi_log.log(ml, echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Merge the zones logically
     ml = _merge_zone_db(proj_obj, cfg_name, a_flag)
     if len(ml) > 0:
         ml.insert(0, 'Merge test failed:')
-        brcdapi_log.log(ml, True)
+        brcdapi_log.log(ml, echo=True)
         ec = brcddb_common.EXIT_STATUS_ERROR
 
     else:
@@ -686,7 +690,7 @@ def pseudo_main():
     if cli_flag:
         ml.extend(_zone_cli(proj_obj))
 
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     return ec
 

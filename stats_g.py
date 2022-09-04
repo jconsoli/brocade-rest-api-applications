@@ -43,16 +43,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.6     | 28 Apr 2022   | Relocated libraries.                                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.7     | 04 Sep 2022   | Fixed table of contents hyper link                                                |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '04 Sep 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.6'
+__version__ = '3.0.7'
 
 import sys
 import argparse
@@ -81,7 +83,7 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 _DEBUG = False
 _DEBUG_sup = False
 _DEBUG_r = 'test/test_report'
-_DEBUG_i = 'test/test_out'
+_DEBUG_i = 'test/stats_capture'
 _DEBUG_gp = None  # '8/11,in-frame-rate,out-frame-rate;8/13,in-frame-rate,out-frame-rate'
 _DEBUG_gs = None  # 'in-frame-rate,top-5;out-frame-rate,top-5'
 _DEBUG_gt = None
@@ -243,8 +245,8 @@ def _add_ports(wb, tc_page, t_content, start_i, switch_obj):
         sname = port_num.replace('/', '_')
         brcdapi_log.log('Processing port: ' + port_num, True)
         port_list = [obj.r_port_obj(port_num) for obj in switch_obj_l]
-        sheet = report_port.port_page(wb, tc_page, sname, sheet_index, 'Port: ' + port_num, port_list, _port_stats,
-                                      rt.Port.port_display_tbl, False)
+        sheet = report_port.port_page(wb, '#' + tc_page + '!A1', sname, sheet_index, 'Port: ' + port_num, port_list,
+                                      _port_stats, rt.Port.port_display_tbl, False)
         _sheet_map.update({port_num: sheet})
 
         # Add the port page to the table of contents
@@ -428,7 +430,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
 
         # Create the Worksheet and add it to the table of contents
         max_row = len(switch_obj_l) + 1
-        report_graph.graph(wb, tc_page, sname, sheet_index,
+        report_graph.graph(wb, '#' + tc_page + '!A1', sname, sheet_index,
                            dict(sheet=data_sheet,
                                 title=title,
                                 type=graph_obj['type'],

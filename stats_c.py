@@ -69,16 +69,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.7     | 25 Jul 2022   | Fixed bad reference to args.sec and removed double poll of stats                  |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.8     | 04 Sep 2022   | Fixed reference to fid when -fid is not specified (default)                       |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '25 Jul 2022'
+__date__ = '04 Sep 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.7'
+__version__ = '3.0.8'
 
 import sys
 import os
@@ -245,6 +247,8 @@ def _get_input():
 
     # Condition input
     sec = 'none' if args_s is None else args_s
+    if isinstance(args_fid, str):
+        args_fid = int(args_fid)
 
     # Set up the log file & debug mode
     if not args_nl:
@@ -254,7 +258,7 @@ def _get_input():
     if args_sup:
         brcdapi_log.set_suppress_all()
 
-    return args_ip, args_id, args_pw, sec, int(args_fid), args_p, args_m, brcdapi_file.full_file_name(args_o, '.json')
+    return args_ip, args_id, args_pw, sec, args_fid, args_p, args_m, brcdapi_file.full_file_name(args_o, '.json')
 
 
 def _stats_diff(old_obj, new_obj):

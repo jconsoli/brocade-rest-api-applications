@@ -52,16 +52,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.7     | 28 Apr 2022   | Improved error messages and used new libraries.                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.8     | 04 Sep 2022   | Added module and version number to feedback.                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '04 Sep 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.7'
+__version__ = '3.0.8'
 
 import argparse
 import sys
@@ -118,7 +120,7 @@ def combine_main():
     :return: Exit code
     :rtype: int
     """
-    global _DEBUG
+    global _DEBUG, __version__
 
     # Get and validate user input
     inf, outf, s_flag, log, nl = parse_args()
@@ -127,9 +129,10 @@ def combine_main():
     if not nl:
         brcdapi_log.open_log(log)
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
+    ml.append('combine.py:      ' + __version__)
     ml.append('Directory, -i:   ' + inf)
     ml.append('Output file, -o: ' + outf)
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     # Create project
     proj_obj = brcddb_project.new(inf, datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
@@ -138,14 +141,18 @@ def combine_main():
 
     # Get a list of files - Filter out directories is just to protect the user. It shouldn't be necessary.
     outf = brcdapi_file.full_file_name(outf, '.json')
-    files = brcdapi_file.read_directory(inf)
+    try:
+        files = brcdapi_file.read_directory(inf)
+    except FileExistsError:
+        brcdapi_log.log(['', 'Folder ' + inf + ' does not exist.', ''], echo=True)
     if outf in files:
-        brcdapi_log.log('Combined output file, ' + outf + ', already exists in: ' + inf + '. Processing halted', True)
+        brcdapi_log.log('Combined output file, ' + outf + ', already exists in: ' + inf + '. Processing halted',
+                        echo=True)
         proj_obj.s_error_flag()
     else:
         x = len('.json')
         for file in [f for f in files if len(f) > x and f.lower()[len(f)-x:] == '.json']:
-            brcdapi_log.log('Processing file: ' + file, True)
+            brcdapi_log.log('Processing file: ' + file, echo=True)
             obj = brcdapi_file.read_dump(inf + '/' + file)
             brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
 
@@ -154,8 +161,8 @@ def combine_main():
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
         try:
             brcdapi_file.write_dump(plain_copy, inf + '/' + outf)
-        except FileNotFoundError:
-            brcdapi_log.log(['', 'Folder not found: ' + inf, ''], True)
+        except PermissionError:
+            brcdapi_log.log(['', 'Permission error writing ' + outf, ''], echo=True)
 
     return brcddb_common.EXIT_STATUS_OK
 
