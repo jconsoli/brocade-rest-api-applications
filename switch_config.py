@@ -63,15 +63,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.8     | 25 Jul 2022   | Added module version number to output.                                            |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.9     | 14 Oct 2022   | Fixed case when there is no chassis configuration worksheet.                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
-__date__ = '25 Jul 2022'
+__date__ = '14 Oct 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.8'
+__version__ = '1.0.9'
 
 import argparse
 import sys
@@ -95,11 +97,11 @@ import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = 'xx.xxx.x.xxx'
+_DEBUG_ip = '10.155.2.69'
 _DEBUG_id = 'admin'
-_DEBUG_pw = 'password'
-_DEBUG_sec = None  # 'self'
-_DEBUG_i = 'test'
+_DEBUG_pw = 'Pass@word1!'
+_DEBUG_sec = 'self'
+_DEBUG_i = 'config/sac_test'
 _DEBUG_force = False
 _DEBUG_sup = False
 _DEBUG_echo = True
@@ -140,12 +142,15 @@ def _configure_chassis(session, chassis_d):
     :return: Completion code - see brcddb.common
     :rtype: int
     """
+    if chassis_d is None:
+        return brcddb_common.EXIT_STATUS_OK  # No chassis level changes to make
     for kpi, content in chassis_d.items():
         tl = kpi.split('/')
         content_d = {tl[len(tl)-1]: content} if tl[0] == 'running' else content
         obj = brcdapi_rest.send_request(session, kpi, 'PATCH', content_d)
         if fos_auth.is_error(obj):
-            brcdapi_log.exception(['Error processing ' + kpi + 'Error is: ', fos_auth.formatted_error_msg(obj)], True)
+            brcdapi_log.exception(['Error processing ' + kpi + 'Error is: ', fos_auth.formatted_error_msg(obj)],
+                                  echo=True)
             return brcddb_common.EXIT_STATUS_API_ERROR
 
     return brcddb_common.EXIT_STATUS_OK
@@ -272,10 +277,10 @@ def _create_switch(session, chassis_obj, switch_d, echo):
 
     fid = switch_d['fid']
     buf = 'Creating FID ' + str(fid) + '. This will take about 20 sec per switch + 25 sec per group of 32 ports.'
-    brcdapi_log.log(buf, True)
+    brcdapi_log.log(buf, echo=True)
     base = True if switch_d['switch_type'] == 'base' else False
     ficon = True if switch_d['switch_type'] == 'ficon' else False
-    obj = brcdapi_switch.create_switch(session, fid, base, ficon, echo)
+    obj = brcdapi_switch.create_switch(session, fid, base, ficon, echo=echo)
     if fos_auth.is_error(obj):
         switch_d['err_msgs'].append('Error creating FID ' + str(fid))
         brcdapi_log.exception([switch_d['err_msgs'][len(switch_d['err_msgs']) - 1], fos_auth.formatted_error_msg(obj)],
@@ -315,7 +320,7 @@ def _config_fab_and_switch(session, switch_d, echo):
                 if switch_d[k] != switch_d[k]:
                     buf = 'Invalid characters in banner for FID ' + str(fid) + '. Replaced invalid characters with "-"'
                     switch_d['err_msgs'].append(buf)
-                    brcdapi_log.log(buf, True)
+                    brcdapi_log.log(buf, echo=True)
             sub_content.update({v: v_buf})
     if switch_d['switch_type'] == 'ficon':
         sub_content.update({'in-order-delivery-enabled': True, 'dynamic-load-sharing': 'two-hop-lossless-dls'})
@@ -329,7 +334,8 @@ def _config_fab_and_switch(session, switch_d, echo):
             sub_content.pop('dynamic-load-sharing', None)
             obj = brcdapi_switch.fibrechannel_switch(session, fid, sub_content, None, echo)
             if fos_auth.is_error(obj):
-                brcdapi_log.exception(['Failed to configure FID ' + str(fid), fos_auth.formatted_error_msg(obj)], True)
+                brcdapi_log.exception(['Failed to configure FID ' + str(fid), fos_auth.formatted_error_msg(obj)],
+                                      echo=True)
                 ec = brcddb_common.EXIT_STATUS_API_ERROR
             else:
                 buf = 'Setting "in-order-delivery-enabled" and "dynamic-load-sharing" not supported in this FOS '\
@@ -338,7 +344,7 @@ def _config_fab_and_switch(session, switch_d, echo):
         else:
             ml = ['Failed to set all switch parameters. Error from FOS is:', fos_auth.formatted_error_msg(obj)]
             switch_d['err_msgs'].extend(ml)
-            brcdapi_log.log(ml, True)
+            brcdapi_log.log(ml, echo=True)
 
     # Set the fabric parameters: brocade-fibrechannel-configuration/switch-configuration
     # Allow XISL is enabled by default. If the switch already exists and someone is trying to enable it, there is no
@@ -356,7 +362,7 @@ def _config_fab_and_switch(session, switch_d, echo):
                   fos_auth.formatted_error_msg(obj),
                   'Enabling and disabling of XISLs via the API was not supported until FOS v9.0.',
                   'Unless there are other error messages, all other operations are or will be completed as expected.']
-            brcdapi_log.exception(ml, True)
+            brcdapi_log.exception(ml, echo=True)
             ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     # Build running/brocade-fibrechannel-configuration/fabric
@@ -375,7 +381,7 @@ def _config_fab_and_switch(session, switch_d, echo):
         if fos_auth.is_error(obj):
             switch_d['err_msgs'].append('Failed to set insistent domain id')
             brcdapi_log.exception(['Failed to set insistent domain id for FID ' + str(fid),
-                             fos_auth.formatted_error_msg(obj)], True)
+                             fos_auth.formatted_error_msg(obj)], echo=True)
             ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     return ec
@@ -419,7 +425,7 @@ def _add_remove_ports(session, switch_obj, switch_d, force, echo):
                     ml.append(port)
             ec = brcddb_common.EXIT_STATUS_ERROR
     if len(ml) > 0:
-        brcdapi_log.log(ml, True)
+        brcdapi_log.log(ml, echo=True)
     default_fid = chassis_obj.r_default_switch_fid()
 
     # Remove ports - $ToDo brcdapi_switch.add_ports doesn't remove GE ports
@@ -427,7 +433,7 @@ def _add_remove_ports(session, switch_obj, switch_d, force, echo):
     if fos_auth.is_error(obj):
         ml = ['Error moving ports from FID ' + str('fid') + ' to ' + str(default_fid),
               fos_auth.formatted_error_msg(obj)]
-        brcdapi_log.exception(ml, True)
+        brcdapi_log.exception(ml, echo=True)
         ec = brcddb_common.EXIT_STATUS_ERROR
 
     # Add ports
@@ -436,7 +442,7 @@ def _add_remove_ports(session, switch_obj, switch_d, force, echo):
         if fos_auth.is_error(obj):
             ml = ['Error moving ports from FID ' + from_fid + ' to ' + str(fid),
                   fos_auth.formatted_error_msg(obj)]
-            brcdapi_log.exception(ml, True)
+            brcdapi_log.exception(ml, echo=True)
             ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
@@ -468,7 +474,7 @@ def _bind_address_to_port(session, switch_obj, switch_d, force, echo):
         if fos_auth.is_error(obj):
             ml = ['Errors encountered binding port address for FID ' + str(brcddb_switch.switch_fid(switch_obj)),
                   fos_auth.formatted_error_msg(obj)]
-            brcdapi_log.exception(ml, True)
+            brcdapi_log.exception(ml, echo=True)
             return brcddb_common.EXIT_STATUS_ERROR
 
     return brcddb_common.EXIT_STATUS_OK
@@ -486,7 +492,7 @@ def _enable_switch(session, fid, echo):
     """
     obj = brcdapi_switch.fibrechannel_switch(session, fid, {'is-enabled-state': True}, None, echo)
     if fos_auth.is_error(obj):
-        brcdapi_log.exception(['Failed to enable FID ' + str(fid), fos_auth.formatted_error_msg(obj)], True)
+        brcdapi_log.exception(['Failed to enable FID ' + str(fid), fos_auth.formatted_error_msg(obj)], echo=True)
         return brcddb_common.EXIT_STATUS_API_ERROR
 
     return brcddb_common.EXIT_STATUS_OK
@@ -539,14 +545,14 @@ def _configure_switch(session, proj_obj, switch_d, force, echo):
     chassis_obj = proj_obj.r_chassis_obj(session.get('chassis_wwn'))
     if chassis_obj is None:
         switch_d['err_msgs'].append('Error reading logical switch information from chassis')
-        brcdapi_log.exception(switch_d['err_msgs'][len(switch_d['err_msgs'])-1], True)
+        brcdapi_log.exception(switch_d['err_msgs'][len(switch_d['err_msgs'])-1], echo=True)
         return brcddb_common.EXIT_STATUS_ERROR
     switch_obj = chassis_obj.r_switch_obj_for_fid(fid)
     if switch_obj is None:
         switch_obj = _create_switch(session, chassis_obj, switch_d, echo)
         if switch_obj is None:
             switch_d['err_msgs'].append('Could not read switch data for FID ' + str(fid))
-            brcdapi_log.log(switch_d['err_msgs'][len(switch_d['err_msgs']) - 1], True)
+            brcdapi_log.log(switch_d['err_msgs'][len(switch_d['err_msgs']) - 1], echo=True)
             return brcddb_common.EXIT_STATUS_ERROR
         switch_d.update(created=True)
     else:
@@ -599,7 +605,7 @@ def _print_summary(switch_d_list):
     ml = ['\nSummary', '_______']
     for switch_d in switch_d_list:
         ml.append('\nFID: ' + str(switch_d.get('fid')))
-        ml.append('  Switch Name:            ' + brcddb_switch.best_switch_name(switch_d.get('switch_obj'), True))
+        ml.append('  Switch Name:            ' + brcddb_switch.best_switch_name(switch_d.get('switch_obj'), wwn=True))
         ml.append('  Switch Created:         ' + str(switch_d.get('created')))
         try:
             ml.append('  Ports Added:            ' + str(len(switch_d['ports'].keys())))
@@ -612,7 +618,7 @@ def _print_summary(switch_d_list):
         if len(err_msgs) > 0:
             ml.append('  Error Messages:         ')
             ml.extend(['    ' + buf for buf in err_msgs])
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
 
 def _get_input():
@@ -693,7 +699,7 @@ def pseudo_main():
           'echo, -echo       ' + str(echo)]
     if _DEBUG:
         ml.insert(0, 'WARNING!!! Debug is enabled')
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     # Read in the Workbook, generate the portaddress --bind commands, and configure the switch(es)
     chassis_d, switch_d_list = report_utils.parse_switch_file(file)
@@ -730,20 +736,20 @@ def pseudo_main():
                     buf_l = ['Errors creating switch. Switch name: ' + str(switch_d.get('switch_name')) + ' DID: ' +
                              str(switch_d.get('did'))]
                     buf_l.extend('  ' + b for b in switch_d['err_msgs'])
-                    brcdapi_log.log(buf_l, True)
+                    brcdapi_log.log(buf_l, echo=True)
 
     except BaseException as e:
         buf = 'Programming error encountered. Exception: ' + str(e)
         if isinstance(switch_d, dict) and isinstance(switch_d.get('err_msgs'), list):
             switch_d['err_msgs'].append(buf)
-        brcdapi_log.log(buf, True)
+        brcdapi_log.log(buf, echo=True)
         ec = brcddb_common.EXIT_STATUS_ERROR
 
     # Logout and display a summary report
     if session is not None:
         obj = brcdapi_rest.logout(session)
         if fos_auth.is_error(obj):
-            brcdapi_log.exception(fos_auth.formatted_error_msg(obj), True)
+            brcdapi_log.exception(fos_auth.formatted_error_msg(obj), echo=True)
             ec = brcddb_common.EXIT_STATUS_API_ERROR
     if ip is not None:
         _print_summary(switch_d_list)

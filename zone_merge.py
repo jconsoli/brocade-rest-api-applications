@@ -44,16 +44,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.1.0     | 04 Sep 2022   | Improved error messaging                                                          |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.1     | 14 Oct 2022   | Added extra error checking and improved messaging.                                |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '04 Sep 2022'
+__date__ = '14 Oct 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.1.0'
+__version__ = '1.1.1'
 
 import argparse
 import sys
@@ -80,8 +82,8 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/zone_merge_test'
-_DEBUG_cfg = None
+_DEBUG_i = 'test/zone_merge_even'
+_DEBUG_cfg = 'new_ZONE_CFG'
 _DEBUG_a = False
 _DEBUG_t = False
 _DEBUG_scan = False
@@ -340,7 +342,14 @@ def _get_project(sl, pl, addl_parms):
         brcdapi_log.log('Reading project files', echo=True)
     for sub_d in pl:
         file_name = brcdapi_file.full_file_name(sub_d['project_file'], '.json')
-        obj = brcdapi_file.read_dump(file_name)
+        try:
+            obj = brcdapi_file.read_dump(file_name)
+        except FileExistsError:
+            rl.append('A folder in the path "' + file_name + '" does not exist.')
+            return rl, None
+        except FileNotFoundError:
+            rl.append(file_name + ' does not exist.')
+            return rl, None
         brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
         for fab_obj in [proj_obj.r_fabric_obj(k) for k in obj['_fabric_objs'].keys()]:
             if fab_obj.r_get('zone_merge') is None:  # It should be None. This is just future proofing.
@@ -348,6 +357,8 @@ def _get_project(sl, pl, addl_parms):
         fab_obj = proj_obj.r_fabric_obj(sub_d.get('fab_wwn'))
         if fab_obj is None:
             rl.append('Could not find fabric WWN ' + str(sub_d.get('fab_wwn')) + ' in ' + file_name)
+        elif fab_obj.r_zonecfg_obj(sub_d.get('cfg')) is None:
+            rl.append('Couldn\'t find zone configuration ' + sub_d['cfg'] + ' in ' + file_name)
         else:
             fab_obj.r_get('zone_merge').update(fab_wwn=fab_obj.r_obj_key(), update=False, cfg=sub_d['cfg'])
 
@@ -529,11 +540,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description=buf)
     buf = 'Required. Zone merge data file. See zone_merge_sample.xlsx for details. ".xlsx" is automatically appended.'
     parser.add_argument('-i', help=buf, required=True)
-    buf = 'Optional. Specifies a zone configuration. When not specified, the zone configuration in the "cfg" column '\
-          'of the workbook, specified with the -i option, is updated with the merged zoning database. When specified, '\
-          'instead of updating the zone configuration specified in the workbook, the configuration with this name is '\
-          'updated. If the zone configuration does not exist, it is created. WARNING: When creating a new zone '\
-          'configuration you probably will want to update the workbook with this zone configuration.'
+    buf = 'Optional. Typically used. The specified zone configuration is a merge of all zone configuration defined in '\
+          'the workbook specified with the -i parameter. If the zone configuration does not exist, it is created in '\
+          'all fabrics where the "Update" column in the workbook is "Yes". When this option is not used, only the '\
+          'aliases and zones are copied.'
     parser.add_argument('-cfg', help=buf, required=False)
     buf = 'Optional. No parameters. Activates the zone configuration specified with the -cfg option.'
     parser.add_argument('-a', help=buf, action='store_true', required=False)
@@ -666,6 +676,8 @@ def pseudo_main():
         brcdapi_log.log(_scan_fabrics(proj_obj), echo=True)
         return brcddb_common.EXIT_STATUS_OK
     if len(ml) > 0:
+        ml.insert(0, 'Merge test failed:')
+        ml.insert(0, '')
         brcdapi_log.log(ml, echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
@@ -673,6 +685,7 @@ def pseudo_main():
     ml = _merge_zone_db(proj_obj, cfg_name, a_flag)
     if len(ml) > 0:
         ml.insert(0, 'Merge test failed:')
+        ml.insert(0, '')
         brcdapi_log.log(ml, echo=True)
         ec = brcddb_common.EXIT_STATUS_ERROR
 
@@ -705,5 +718,5 @@ if _DOC_STRING:
     exit(brcddb_common.EXIT_STATUS_OK)
 
 _ec = pseudo_main()
-brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
+brcdapi_log.close_log(['', 'Processing complete. Exit status: ' + str(_ec)], echo=True)
 exit(_ec)
