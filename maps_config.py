@@ -42,15 +42,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.7     | 22 Jun 2022   | Missed a few cases where the full URI should have been used.                      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.8     | 24 Oct 2022   | Improved error messaging and add Control-C to exit                                |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '22 Jun 2022'
+__date__ = '24 Oct 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.7'
+__version__ = '1.0.8'
 
 import argparse
 import brcdapi.fos_auth as brcdapi_auth
@@ -94,7 +96,7 @@ def _get_groups(session, fid):
     """
     group_obj = api_int.get_rest(session, 'running/brocade-maps/group', None, fid)
     if brcdapi_auth.is_error(group_obj):
-        brcdapi_log.log('Failed to get MAPS groups.', True)  # api_int.get_rest() logs detailed error message
+        brcdapi_log.log('Failed to get MAPS groups.', echo=True)  # api_int.get_rest() logs detailed error message
         return None
     # obj.get('name') should never be None. This is just extra caution
     return [obj.get('name') for obj in group_obj.get('group') if obj.get('name') is not None]
@@ -115,7 +117,7 @@ def _get_policy(session, fid, policy=None):
     # Get the policies
     obj = api_int.get_rest(session, 'running/brocade-maps/maps-policy', None, fid)
     if brcdapi_auth.is_error(obj):
-        brcdapi_log.log('Failed to get MAPS policies.', True)  # api_int.get_rest() logs detailed error message
+        brcdapi_log.log('Failed to get MAPS policies.', echo=True)  # api_int.get_rest() logs detailed error message
         return brcddb_common.EXIT_STATUS_API_ERROR, None
 
     # Find the policy to return
@@ -159,12 +161,12 @@ def _create_new_rules(session, fid, new_sfp_rules):
                     buf = d.get('error-message')
                     if buf is not None and buf == 'Rule name is present.' and isinstance(d.get('error-path'), str):
                         brcdapi_log.log('Rule ' + d['error-path'].replace('/rule/name/', '').replace('/', '')
-                                        + ' already exists. Not changed.', True)
+                                        + ' already exists. Not changed.', echo=True)
                     else:
                         er_l.append(d)
             if len(er_l) > 0:
                 brcdapi_log.log('Failed to create rules. API response:' + brcdapi_auth.formatted_error_msg(er_obj),
-                                True)
+                                echo=True)
                 return sum_new_rules  # If we get here, something is really wrong so just bail out
         # rule.get('name') should never be None in the line below. I'm just extra cautious
         sum_new_rules.extend([rule.get('name') for rule in new_rules if rule.get('name') is not None])
@@ -189,7 +191,7 @@ def _rules_to_keep(session, fid, maps_policy):
     # Get all the MAPS rules
     obj = api_int.get_rest(session, 'running/brocade-maps/rule', None, fid)
     if brcdapi_auth.is_error(obj):
-        brcdapi_log.log('Failed to get MAPS rules.', True)  # api_int.get_rest() logs detailed error message
+        brcdapi_log.log('Failed to get MAPS rules.', echo=True)  # api_int.get_rest() logs detailed error message
         return None
 
     # Remove all old SFP rules and add the new rules
@@ -227,8 +229,9 @@ def _create_new_policy(session, fid, policy, rule_list, enable_flag=False):
                                     {'maps-policy': new_content},
                                     fid)
     if brcdapi_auth.is_error(obj):
-        brcdapi_log.log('Failed to set MAPS policy. API response:\n' + brcdapi_auth.formatted_error_msg(obj), True)
-        brcdapi_log.log('This typically occurs when the policy already exists.', True)
+        brcdapi_log.log(['Failed to set MAPS policy. API response:',
+                         brcdapi_auth.formatted_error_msg(obj),
+                         'This typically occurs when the policy already exists.'], echo=True)
         return brcddb_common.EXIT_STATUS_API_ERROR
     return brcddb_common.EXIT_STATUS_OK
 
@@ -254,7 +257,8 @@ def _modify_maps(session, fid, new_sfp_rules, new_policy, old_policy, enable_fla
     # Get the MAPS policy
     ec, policy_obj = _get_policy(session, fid, old_policy)
     if policy_obj is None:
-        brcdapi_log.log('Could not find MAPS policy: ' + 'Active Policy' if old_policy is None else old_policy, True)
+        brcdapi_log.log('Could not find MAPS policy: ' + 'Active Policy' if old_policy is None else old_policy,
+                        echo=True)
         return ec
 
     # Create the new rules and new policy
@@ -354,7 +358,7 @@ def pseudo_main():
         'Activate new policy: ' + 'Yes' if enable_flag else 'No',
         'The \'User Warning: Data Validation ...\' can be ignored.',
         ])
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     # Login
     session = api_int.login(user_id, pw, ip, sec)
@@ -368,19 +372,20 @@ def pseudo_main():
             sfp_rules = list()
         else:
             file = brcdapi_file.full_file_name(file, '.xlsx')
-            brcdapi_log.log('Adding rules can take up to a minute. Please be patient.', True)
+            brcdapi_log.log('Adding rules can take up to a minute. Please be patient.', echo=True)
             _sfp_monitoring_system = ['CURRENT', 'RXP', 'SFP_TEMP', 'TXP', 'VOLTAGE']
             sfp_rules = report_utils.parse_sfp_file_for_rules(file, _get_groups(session, fid))
         if sfp_rules is None:
-            brcdapi_log.log('Error opening or reading ' + file, True)
+            brcdapi_log.log('Error opening or reading ' + file, echo=True)
         else:
             ec = _modify_maps(session, fid, sfp_rules, new_policy, mp, enable_flag)
     except BaseException as e:
-        brcdapi_log.log('Programming error encountered. Exception is: ' + str(e), True)
+        e_buf = str(e, errors='ignore') if isinstance(e, (bytes, str)) else str(type(e))
+        brcdapi_log.log('Programming error encountered. Exception is: ' + e_buf, echo=True)
 
     obj = brcdapi_rest.logout(session)
     if brcdapi_auth.is_error(obj):
-        brcdapi_log.log('Logout failed. API response:\n' + brcdapi_auth.formatted_error_msg(obj), True)
+        brcdapi_log.log('Logout failed. API response:\n' + brcdapi_auth.formatted_error_msg(obj), echo=True)
         ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     return ec
@@ -396,5 +401,5 @@ if _DOC_STRING:
     exit(brcddb_common.EXIT_STATUS_OK)
 
 _ec = pseudo_main()
-brcdapi_log.close_log('Processing Complete. Exit code: ' + str(_ec), False)
+brcdapi_log.close_log('Processing Complete. Exit code: ' + str(_ec), echo=False)
 exit(_ec)

@@ -53,17 +53,21 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.1     | 04 Sep 2022   | Added module and version number to user feedback.                                 |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.2     | 24 Oct 2022   | Added ability to control-C out of data capture.                                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '04 Sep 2022'
+__date__ = '24 Oct 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.1'
+__version__ = '3.1.2'
 
+import http.client
+import signal
 import argparse
 import sys
 import datetime
@@ -80,14 +84,14 @@ import brcddb.brcddb_common as brcddb_common
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _WRITE = True  # Should always be True. Used for debug only. Prevents the output file from being written when False
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_ip = 'xx.xxx.x.79'
-_DEBUG_outf = 'test/sw_xx'
+_DEBUG_ip = 'xx.xxx.x.xx'
+_DEBUG_f = 'test/test'
 _DEBUG_id = 'admin'
 _DEBUG_pw = 'password'
-_DEBUG_s = None  # 'self'
+_DEBUG_s = 'self'
 _DEBUG_sup = False
-_DEBUG_d = True
-_DEBUG_c = None  # '*'
+_DEBUG_d = False
+_DEBUG_c = '*'
 _DEBUG_fid = None
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
@@ -179,53 +183,95 @@ def _kpi_list(session, c_file):
     return rl
 
 
-def parse_args():
+def _get_input():
     """Parses the module load command line
 
-    :return ip_addr: IP address
-    :rtype ip_addr: str
-    :return id: User ID
-    :rtype id: str
-    :return pw: Password
-    :rtype pw: str
-    :return file: Name of output file
-    :rtype file: str
-    :return http_sec: Type of HTTP security
-    :rtype http_sec: str
-    :return suppress_flag: True - suppress all print to STD_OUT
-    :rtype suppress_flag: bool
+    :return ec: Error code
+    :rtype ec: int
+    :return args_ip: IP address
+    :rtype args_ip: str
+    :return args_id: User ID
+    :rtype args_id: str
+    :return args_pw: Password
+    :rtype args_pw: str
+    :return args_f: Name of output file
+    :rtype args_f: str
+    :return args_s: Type of HTTP security. Should be 'none' or 'self'
+    :rtype args_s: str
+    :return args_c: Name of file containing URIs to GET.
+    :rtype args_c: str, None
+    :return args_fid: CSV list of FIDs to capture data for
+    :rtype args_fid: list, None
     """
-    global _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_outf, _DEBUG_s, _DEBUG_sup, _DEBUG_d, _DEBUG_c
+    global _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_f, _DEBUG_s, _DEBUG_sup, _DEBUG_d, _DEBUG_c
     global _DEBUG_fid, _DEBUG_log, _DEBUG_nl, _DEBUG
 
+    ec = brcddb_common.EXIT_STATUS_OK
+
     if _DEBUG:
-        return _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_outf, _DEBUG_s, _DEBUG_sup, _DEBUG_d, _DEBUG_c, \
-               _DEBUG_fid, _DEBUG_log, _DEBUG_nl
-    parser = argparse.ArgumentParser(description='Capture (GET) requests from a chassis')
-    parser.add_argument('-f', help='Output file for captured data', required=True)
-    parser.add_argument('-ip', help='IP address', required=True)
-    parser.add_argument('-id', help='User ID', required=True)
-    parser.add_argument('-pw', help='Password', required=True)
-    parser.add_argument('-s', help='\'CA\' or \'self\' for HTTPS mode.', required=False,)
-    buf = '(Optional) Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. The '\
-          'default is to capture all KPIs required for the report.'
-    parser.add_argument('-c', help=buf, required=False,)
-    buf = '(Optional) CSV list of FIDs to capture logical switch specific data. The default is to automatically '\
-          'determine all logical switch FIDs defined in the chassis.'
-    parser.add_argument('-fid', help=buf, required=False)
-    buf = '(Optional) No parameters. Suppress all library generated output to STD_IO except the exit code. Useful '\
-          'with batch processing'
-    parser.add_argument('-sup', help=buf, action='store_true', required=False)
-    buf = '(Optional) No parameters. When set, a pprint of all content sent and received to/from the API, except '\
-          'login information, is printed to the log.'
-    parser.add_argument('-d', help=buf, action='store_true', required=False)
-    buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log ' \
-          'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-    parser.add_argument('-log', help=buf, required=False, )
-    buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-    parser.add_argument('-nl', help=buf, action='store_true', required=False)
-    args = parser.parse_args()
-    return args.ip, args.id, args.pw, args.f, args.s, args.sup, args.d, args.c, args.fid, args.log, args.nl
+        args_ip, args_id, args_pw, args_f, args_s, args_sup, args_d, args_c, args_fid, args_log, args_nl = \
+            _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_f, _DEBUG_s, _DEBUG_sup, _DEBUG_d, _DEBUG_c, _DEBUG_fid, \
+            _DEBUG_log, _DEBUG_nl
+    else:
+        parser = argparse.ArgumentParser(description='Capture (GET) requests from a chassis')
+        parser.add_argument('-f', help='Output file for captured data', required=True)
+        parser.add_argument('-ip', help='IP address', required=True)
+        parser.add_argument('-id', help='User ID', required=True)
+        parser.add_argument('-pw', help='Password', required=True)
+        parser.add_argument('-s', help='\'CA\' or \'self\' for HTTPS mode.', required=False,)
+        buf = '(Optional) Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. The '\
+              'default is to capture all KPIs required for the report.'
+        parser.add_argument('-c', help=buf, required=False,)
+        buf = '(Optional) CSV list of FIDs to capture logical switch specific data. The default is to automatically '\
+              'determine all logical switch FIDs defined in the chassis.'
+        parser.add_argument('-fid', help=buf, required=False)
+        buf = '(Optional) No parameters. Suppress all library generated output to STD_IO except the exit code. Useful '\
+              'with batch processing'
+        parser.add_argument('-sup', help=buf, action='store_true', required=False)
+        buf = '(Optional) No parameters. When set, a pprint of all content sent and received to/from the API, except '\
+              'login information, is printed to the log.'
+        parser.add_argument('-d', help=buf, action='store_true', required=False)
+        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log ' \
+              'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
+        parser.add_argument('-log', help=buf, required=False, )
+        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
+        parser.add_argument('-nl', help=buf, action='store_true', required=False)
+        args = parser.parse_args()
+
+        args_ip, args_id, args_pw, args_f, args_s, args_sup, args_d, args_c, args_fid, args_log, args_nl = \
+            args.ip, args.id, args.pw, args.f, args.s, args.sup, args.d, args.c, args.fid, args.log, args.nl
+
+    # Set up logging
+    if args_d:
+        brcdapi_rest.verbose_debug = True
+    if args_sup:
+        brcdapi_log.set_suppress_all()
+    if not args_nl:
+        brcdapi_log.open_log(args_log)
+
+    # Is the security method valid?
+    if args_s is None:
+        args_s = 'none'
+    elif args_s != 'self' and args_s != 'none':
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    # User feedback
+    ml = [
+        'capture.py version: ' + __version__,
+        'IP:          ' + brcdapi_util.mask_ip_addr(args_ip, keep_last=True),
+        'ID:          ' + args_id,
+        'security:    ' + args_s + ' UNSUPPORTED HTTPS method!' if ec != brcddb_common.EXIT_STATUS_OK else '',
+        'Output file: ' + args_f,
+        'KPI file:    ' + str(args_c),
+        'FID List:    ' + str(args_fid)
+    ]
+    if _DEBUG:
+        ml.insert(0, 'WARNING!!! Debug is enabled')
+    brcdapi_log.log(ml, echo=True)
+
+
+    return ec, args_ip, args_id, args_pw, brcdapi_file.full_file_name(args_f, '.json'),\
+           'none' if args_s is None else args_s, args_c, None if args_fid is None else args_fid.split(',')
 
 
 def pseudo_main():
@@ -236,29 +282,11 @@ def pseudo_main():
     """
     global __version__
 
-    ip, user_id, pw, outf, sec, s_flag, vd, c_file, fid, log, nl = parse_args()
-    if vd:
-        brcdapi_rest.verbose_debug = True
-    if s_flag:
-        brcdapi_log.set_suppress_all()
-    if not nl:
-        brcdapi_log.open_log(log)
-    if sec is None:
-        sec = 'none'
-    fid_l = None if fid is None else fid.split(',')
-    ml = [
-        'capture.py version: ' + __version__,
-        'IP:          ' + brcdapi_util.mask_ip_addr(ip, keep_last=True),
-        'ID:          ' + user_id,
-        'security:    ' + sec,
-        'Output file: ' + outf,
-        'KPI file:    ' + str(c_file),
-        'FID List:    ' + str(fid)
-    ]
-    if _DEBUG:
-        ml.insert(0, 'WARNING!!! Debug is enabled')
-    brcdapi_log.log(ml, echo=True)
-    outf = brcdapi_file.full_file_name(outf, '.json')
+    signal.signal(signal.SIGINT, brcdapi_rest.control_c)
+
+    ec, ip, user_id, pw, outf, sec, c_file, fid_l = _get_input()
+    if ec != brcddb_common.EXIT_STATUS_OK:
+        return ec
 
     # Create project
     proj_obj = brcddb_project.new("Captured_data", datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -273,16 +301,31 @@ def pseudo_main():
     # Collect the data
     try:
         api_int.get_batch(session, proj_obj, _kpi_list(session, c_file), fid_l)
+    except KeyboardInterrupt:
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        brcdapi_log.log('Processing terminated by user.', echo=True)
+    except RuntimeError:
+        ec = brcddb_common.EXIT_STATUS_API_ERROR
+        brcdapi_log.log('Programming error encountered. See previous message', echo=True)
     except BaseException as e:
-        brcdapi_log.exception('Programming error encountered. Exception is: ' + str(e), echo=True)
+        ec = brcddb_common.EXIT_STATUS_ERROR
+        e_buf = str(e, errors='ignore') if isinstance(e, (bytes, str)) else str(type(e))
+        brcdapi_log.log('Programming error encountered. Exception is: ' + e_buf, echo=True)
 
     # Logout
-    obj = brcdapi_rest.logout(session)
-    if brcdapi_auth.is_error(obj):
-        brcdapi_log.log(brcdapi_auth.formatted_error_msg(obj), echo=True)
+    try:
+        obj = brcdapi_rest.logout(session)
+        if brcdapi_auth.is_error(obj):
+            brcdapi_log.log(['Logout failed. Error is:', brcdapi_auth.formatted_error_msg(obj)], echo=True)
+        else:
+            brcdapi_log.log('Logout succeeded', echo=True)
+    except (http.client.CannotSendRequest, http.client.ResponseNotReady):
+        brcdapi_log.log(['Could not logout. You may need to terminate this session via the CLI',
+                         'mgmtapp --showsessions, mgmtapp --terminate'], echo=True)
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Dump the database to a file
-    if _WRITE:
+    if _WRITE and ec == brcddb_common.EXIT_STATUS_OK:
         brcdapi_log.log('Saving project to: ' + outf, echo=True)
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)

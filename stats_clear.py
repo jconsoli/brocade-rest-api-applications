@@ -32,20 +32,23 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.4     | 28 Apr 2022   | Use new URI formats.                                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.5     | 24 Oct 2022   | Improved error messaging and add Control-C to exit                                |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__date__ = '24 Oct 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
+import http.client
+import signal
 import argparse
 import sys
 import datetime
-
 import brcddb.api.interface as api_int
 import brcddb.brcddb_project as brcddb_project
 import brcdapi.log as brcdapi_log
@@ -129,17 +132,18 @@ def clear_stats(session, switch_obj):
             fid = brcddb_switch.switch_fid(switch_obj)
             content = {stats.get('content'): pl}
             for p in stats.get('ports'):
-                d = dict()
-                d.update({'name': p})
-                d.update({'reset-statistics': 1})
-                pl.append(d)
-            obj = brcdapi_rest.send_request(session,
-                                            'running/brocade-interface/fibrechannel-statistics',
-                                            'PATCH',
-                                            content,
-                                            fid)
+                pl.append({'name': p, 'reset-statistics': 1})
+            try:
+                obj = brcdapi_rest.send_request(session,
+                                                'running/brocade-interface/fibrechannel-statistics',
+                                                'PATCH',
+                                                content,
+                                                fid)
+            except KeyboardInterrupt:
+                ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+                brcdapi_log.log('Processing terminated by user.', echo=True)
             if fos_auth.is_error(obj):
-                brcdapi_log.log(fos_auth.obj_error_detail(obj), True)
+                brcdapi_log.log(fos_auth.obj_error_detail(obj), echo=True)
                 ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
@@ -151,6 +155,8 @@ def pseudo_main():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
+    signal.signal(signal.SIGINT, brcdapi_rest.control_c)
+
     ec = brcddb_common.EXIT_STATUS_OK
 
     # Get the user input
@@ -171,7 +177,7 @@ def pseudo_main():
         'Security:   ' + sec,
         'Surpress:   ' + str(s_flag),
         'FID:        ' + 'Automatic' if fid is None else fid])
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     # Create the project
     proj_obj = brcddb_project.new('Captured_data', datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
@@ -181,12 +187,12 @@ def pseudo_main():
     # Login
     session = api_int.login(user_id, pw, ip, sec, proj_obj)
     if fos_auth.is_error(session):
-        brcdapi_log.log(fos_auth.formatted_error_msg(session), True)
+        brcdapi_log.log(fos_auth.formatted_error_msg(session), echo=True)
         return brcddb_common.EXIT_STATUS_ERROR
 
     # Capture data - stats are cleared on a per port basis so this is needed to determine what the ports are.
     try:  # I always put all code after login in a try/except so that if I have a code bug, I still logout
-        brcdapi_log.log('Capturing data', True)
+        brcdapi_log.log('Capturing data', echo=True)
         api_int.get_batch(session, proj_obj, chassis_uris, list(), fid_list)  # Captured data is put in proj_obj
         chassis_obj = proj_obj.r_chassis_obj(session.get('chassis_wwn'))
 
@@ -196,15 +202,28 @@ def pseudo_main():
             if fid_list is None or fid in fid_list:
                 temp_ec = clear_stats(session, switch_obj)
                 ec = temp_ec if ec != brcddb_common.EXIT_STATUS_OK else ec
-    except:  # Bare because I don't care what happened. I just want to logout.
-        brcdapi_log.exception('Programming error encountered', True)
+    except KeyboardInterrupt:
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        brcdapi_log.log('Processing terminated by user.', echo=True)
+    except RuntimeError:
+        ec = brcddb_common.EXIT_STATUS_API_ERROR
+        brcdapi_log.log('Programming error encountered. See previous message', echo=True)
+    except BaseException as e:
         ec = brcddb_common.EXIT_STATUS_ERROR
+        e_buf = str(e, errors='ignore') if isinstance(e, (bytes, str)) else str(type(e))
+        brcdapi_log.log('Programming error encountered. Exception is: ' + e_buf, echo=True)
 
     # Logout
-    obj = brcdapi_rest.logout(session)
-    if fos_auth.is_error(obj):
-        brcdapi_log.log(fos_auth.formatted_error_msg(obj), True)
-        return brcddb_common.EXIT_STATUS_ERROR
+    try:
+        obj = brcdapi_rest.logout(session)
+        if fos_auth.is_error(obj):
+            brcdapi_log.log(['Logout failed. Error is:', fos_auth.formatted_error_msg(obj)], echo=True)
+        else:
+            brcdapi_log.log('Logout succeeded', echo=True)
+    except (http.client.CannotSendRequest, http.client.ResponseNotReady):
+        brcdapi_log.log(['Could not logout. You may need to terminate this session via the CLI',
+                         'mgmtapp --showsessions, mgmtapp --terminate'], echo=True)
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec
 

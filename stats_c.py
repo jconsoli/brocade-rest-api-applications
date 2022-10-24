@@ -71,17 +71,20 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.8     | 04 Sep 2022   | Fixed reference to fid when -fid is not specified (default)                       |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.9     | 24 Oct 2022   | Improved error messaging and modified Control-C handling                          |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '04 Sep 2022'
+__date__ = '24 Oct 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.8'
+__version__ = '3.0.9'
 
+import http.client
 import sys
 import os
 import signal
@@ -160,9 +163,13 @@ def _wrap_up(exit_code):
         try:
             obj = brcdapi_rest.logout(_session)
             if fos_auth.is_error(obj):
-                brcdapi_log.log(fos_auth.formatted_error_msg(obj), True)
-        except BaseException as e:
-            brcdapi_log.log(['Logout failure. ' + _EXCEPTION_MSG, 'Exception: ' + str(e)], True)
+                brcdapi_log.log(['Logout failed. Error is:', fos_auth.formatted_error_msg(obj)], echo=True)
+            else:
+                brcdapi_log.log('Logout succeeded', echo=True)
+        except (http.client.CannotSendRequest, http.client.ResponseNotReady):
+            brcdapi_log.log(['Could not logout. You may need to terminate this session via the CLI',
+                             'mgmtapp --showsessions, mgmtapp --terminate'], echo=True)
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
         _session = None
 
     try:
@@ -172,12 +179,8 @@ def _wrap_up(exit_code):
         brcddb_copy.brcddb_to_plain_copy(_proj_obj, plain_copy)
         brcdapi_file.write_dump(plain_copy, _out_f)
     except BaseException as e:
-        brcdapi_log.log('Unknown exception: ' + str(e), True)
+        brcdapi_log.log('Unknown exception: ' + str(e) if isinstance(e, (bytes, str)) else str(type(e)), echo=True)
     return ec
-
-
-def _signal_handler(sig, frame):
-    os._exit(_wrap_up())  # Yes, I should call subprocess.Popen() to clean up, but this is easy.
 
 
 def _get_input():
@@ -313,7 +316,7 @@ def pseudo_main():
     global _DEBUG, _DEFAULT_POLL_INTERVAL, _DEFAULT_MAX_SAMPLE, _proj_obj, _session, _out_f, _switch_obj
     global _base_switch_obj, __version__, _uris, _uris_2
 
-    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGINT, brcdapi_rest.control_c)
 
     # Get user input
     ip, user_id, pw, sec, fid, pct, max_p, _out_f = _get_input()
@@ -334,7 +337,7 @@ def pseudo_main():
     else:
         ml.append('Poll Interval: ' + str(pct) + ' (defaulting to ' + str(_MIN_POLL) + ')' if pct < _MIN_POLL else '')
     ml.append('Output File:   ' + _out_f)
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     # Create project
     _proj_obj = brcddb_project.new('Port_Stats', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -344,12 +347,12 @@ def pseudo_main():
     # Login
     _session = brcddb_int.login(user_id, pw, ip, sec, _proj_obj)
     if fos_auth.is_error(_session):
-        brcdapi_log.log(fos_auth.formatted_error_msg(_session), True)
+        brcdapi_log.log(fos_auth.formatted_error_msg(_session), echo=True)
         return brcddb_common.EXIT_STATUS_ERROR
 
     try:  # I always put all code after login in a try/except in case of a code bug or network error, I still logout
         # Capture the initial switch and port information along with the first set of statistics.
-        brcdapi_log.log('Capturing initial data', True)
+        brcdapi_log.log('Capturing initial data', echo=True)
         brcddb_int.get_batch(_session, _proj_obj, _uris, fid)  # Captured data is put in _proj_obj
         chassis_obj = _proj_obj.r_chassis_obj(_session.get('chassis_wwn'))
         if chassis_obj.r_is_vf_enabled():
@@ -359,7 +362,7 @@ def pseudo_main():
         else:
             _base_switch_obj = chassis_obj.r_switch_objects()[0]
         if _base_switch_obj is None:
-            brcdapi_log.log('Switch for FID ' + str(fid) + ' not found. ', True)
+            brcdapi_log.log('Switch for FID ' + str(fid) + ' not found. ', echo=True)
             return _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
         base_switch_wwn = _base_switch_obj.r_obj_key()
         if _base_switch_obj.r_fabric_key() is None:
@@ -386,7 +389,7 @@ def pseudo_main():
             obj = brcddb_int.get_rest(_session, 'running/brocade-interface/fibrechannel', switch_obj, fid)
             if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
-                                True)
+                                echo=True)
                 _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
                 return brcddb_common.EXIT_STATUS_ERROR
             for p in obj.get('fibrechannel'):
@@ -396,7 +399,7 @@ def pseudo_main():
             obj = brcddb_int.get_rest(_session, stats_buf, switch_obj, fid)
             if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
-                                True)
+                                echo=True)
                 _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
                 return brcddb_common.EXIT_STATUS_ERROR
 
@@ -407,8 +410,12 @@ def pseudo_main():
 
         return _wrap_up(brcddb_common.EXIT_STATUS_OK)
 
+    except (KeyboardInterrupt, http.client.CannotSendRequest, http.client.ResponseNotReady):
+        return _wrap_up(brcddb_common.EXIT_STATUS_OK)
     except BaseException as e:
-        brcdapi_log.log(['Error capturing statistics. ' + _EXCEPTION_MSG, 'Exception: ' + str(e)], True)
+        ec = brcddb_common.EXIT_STATUS_ERROR
+        e_buf = str(e) if isinstance(e, (bytes, str)) else str(type(e))
+        brcdapi_log.log(['Error capturing statistics. ' + _EXCEPTION_MSG, 'Exception: ' + e_buf], echo=True)
         return _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
 
 

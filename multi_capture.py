@@ -45,17 +45,20 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.0     | 22 Jun 2022   | Improved error messaging.                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.1     | 24 Oct 2022   | Improved error messaging and add Control-C to exit                                |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '22 Jun 2022'
+__date__ = '24 Oct 2022'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.0'
+__version__ = '3.1.1'
 
+import signal
 import argparse
 import datetime
 import os
@@ -155,6 +158,8 @@ def psuedo_main():
     """
     global _DEBUG
 
+    signal.signal(signal.SIGINT, brcdapi_rest.control_c)
+
     addl_parms_all, addl_parms_capture, addl_parms_report = list(), list(), list()
 
     # Get and parse the input data
@@ -190,7 +195,7 @@ def psuedo_main():
     ml.append('KPI File:      ' + str(kpi_file))
     ml.append('Suppress:      ' + str(s_flag))
     ml.append('Verbose Debug: ' + str(vd))
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     # Read the file with login credentials and perform some basic validation
     ml, switch_parms = list(), list()
@@ -213,6 +218,8 @@ def psuedo_main():
         ml.extend(['',
                    'Invalid login credentials in row ' + str(row) + ' in ' + file,
                    'This typically occurs when cells are formatted with no content. Try deleting any unused rows.'])
+    except KeyboardInterrupt:
+        ml.extend(['', 'Processing terminated with Control-C from keyboard'])
 
     # Create the folder
     if len(ml) == 0:
@@ -223,39 +230,50 @@ def psuedo_main():
         except FileNotFoundError:
             ml.extend(['', folder + ' contains a path that does not exist.'])
     if len(ml) > 0:
-        brcdapi_log.log(ml, True)
+        brcdapi_log.log(ml, echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Kick off all the data captures
-    pid_l = list()
-    for temp_l in switch_parms:
-        params = ['python.exe', 'capture.py'] + temp_l + addl_parms_capture + addl_parms_all
-        if _DEBUG:
-            brcdapi_log.log(' '.join(params), True)
-        pid_l.append(subprocess.Popen(params))
+    try:
+        pid_l = list()
+        for temp_l in switch_parms:
+            params = ['python.exe', 'capture.py'] + temp_l + addl_parms_capture + addl_parms_all
+            if _DEBUG:
+                brcdapi_log.log(' '.join(params), echo=True)
+            pid_l.append(subprocess.Popen(params))
 
-    # Below waits for all processes to complete before generating the report.
-    pid_done = [p.wait() for p in pid_l]
-    for i in range(0, len(pid_done)):
-        brcdapi_log.log('Completed switch capture at index ' + str(i) + '. Ending status: ' + str(pid_done[i]), True)
+        # Below waits for all processes to complete before generating the report.
+        pid_done = [p.wait() for p in pid_l]
+        for i in range(0, len(pid_done)):
+            brcdapi_log.log('Completed switch capture at index ' + str(i) + '. Ending status: ' + str(pid_done[i]),
+                            echo=True)
+    except KeyboardInterrupt:
+        brcdapi_log.log(['Processing terminating with Control-C from keyboard.',
+                         'WARNING: This module starts other capture sessions which must be terminated individually'],
+                        echo=True)
+
 
     # Combine the captured data
-    brcdapi_log.log('Combining captured data. This may take several seconds', True)
-    params = ['python.exe', 'combine.py', '-i', folder, '-o', 'combined.json'] + addl_parms_all
-    if _DEBUG:
-        brcdapi_log.log('DEBUG: ' + ' '.join(params), True)
-    ec = subprocess.Popen(params).wait()
-    brcdapi_log.log('Combine completed with status: ' + str(ec), True)
-
-    # Generate the report
-    if report_flag and ec == brcddb_common.EXIT_STATUS_OK:
-        brcdapi_log.log('Data collection complete. Generating report.', True)
-        buf = folder + '/report_' + date_str + '.xlsx'
-        params = ['python.exe', 'report.py', '-i', folder + '/combined.json', '-o', buf]
-        params.extend(addl_parms_report + addl_parms_all)
+    try:
+        brcdapi_log.log('Combining captured data. This may take several seconds', echo=True)
+        params = ['python.exe', 'combine.py', '-i', folder, '-o', 'combined.json'] + addl_parms_all
         if _DEBUG:
-            brcdapi_log.log('DEBUG: ' + ' '.join(params), True)
+            brcdapi_log.log('DEBUG: ' + ' '.join(params), echo=True)
         ec = subprocess.Popen(params).wait()
+        brcdapi_log.log('Combine completed with status: ' + str(ec), echo=True)
+
+        # Generate the report
+        if report_flag and ec == brcddb_common.EXIT_STATUS_OK:
+            brcdapi_log.log('Data collection complete. Generating report.', echo=True)
+            buf = folder + '/report_' + date_str + '.xlsx'
+            params = ['python.exe', 'report.py', '-i', folder + '/combined.json', '-o', buf]
+            params.extend(addl_parms_report + addl_parms_all)
+            if _DEBUG:
+                brcdapi_log.log('DEBUG: ' + ' '.join(params), echo=True)
+            ec = subprocess.Popen(params).wait()
+    except KeyboardInterrupt:
+        brcdapi_log.log('Processing terminating with Control-C from keyboard.', echo=True)
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec
 
