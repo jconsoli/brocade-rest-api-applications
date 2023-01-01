@@ -1,5 +1,12 @@
 # brocade-rest-api-applications
 
+**Updates 01 Jan 2023**
+
+* Replaced hard-coded best practice table with ability to read best practices from a Workbook
+* Added ability to generate CLI commands in zone_restore.py
+* Additional summaries in port_count.py
+* Added POD reserve to switch_config.py
+
 **Updates: 17 July 2021**
 
 * Help message improvements
