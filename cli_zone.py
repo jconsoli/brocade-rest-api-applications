@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2020, 2021, 2022 Jack Consoli.  All rights reserved.
+# Copyright 2020, 2021, 2022, 2023 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -77,15 +77,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.4     | 28 Apr 2022   | Relocated libraries.                                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.5     | 01 Jan 2023   | Improved error messaging                                                          |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__copyright__ = 'Copyright 2020, 2021, 2022, 2023 Jack Consoli'
+__date__ = '01 Jan 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.4'
+__version__ = '3.0.5'
 
 import argparse
 import brcdapi.log as brcdapi_log
@@ -99,14 +101,14 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False
-_DEBUG_ip = 'xx.xxx.x.xxx'
+_DEBUG_ip = 'xx.xxx.xx.xx'
 _DEBUG_id = 'admin'
-_DEBUG_pw = 'Password'
-_DEBUG_sec = 'none'
-_DEBUG_cli = 'test/zone_test_1.txt'
+_DEBUG_pw = 'password'
+_DEBUG_sec = 'self'
+_DEBUG_cli = 'test/cli.txt'
 _DEBUG_fid = 1
 _DEBUG_t = False
-_DEBUG_f = True
+_DEBUG_f = False
 _DEBUG_b = True
 _DEBUG_sup = False
 _DEBUG_d = False
@@ -173,7 +175,7 @@ def _format_fault(obj, line_num, file_content):
     try:
         buf = str(file_content[line_num])
     except BaseException as e:
-        buf = 'Unknown exception: ' + str(e)
+        buf = 'Unknown exception: ' + str(e, errors='ignore') if isinstance(e, (bytes, str)) else str(type(e))
     msg_l = [
         '',
         'Line:    ' + str(line_num + 1),
@@ -224,7 +226,7 @@ def pseudo_main():
     ml.append('Test flag:   ' + str(t_flag))
     ml.append('Force flag:  ' + str(f_flag))
     ml.append('Bulk flag:   ' + str(b_flag))
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     # Read in the CLI file, condition the input strings and send it
     ml = list()
@@ -235,7 +237,7 @@ def pseudo_main():
     except PermissionError:
         ml.extend(['', 'You do not have permission to read ' + cli_file])
     if len(ml) > 0:
-        brcdapi_log.log(ml, True)
+        brcdapi_log.log(ml, echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     content.update(changes=brcddb_util.parse_cli(file_contents))
@@ -252,7 +254,7 @@ def pseudo_main():
                 total_changes += 1
             if obj.get('fail'):
                 total_failures += 1
-                brcdapi_log.log(_format_fault(obj, i, file_contents), True)
+                brcdapi_log.log(_format_fault(obj, i, file_contents), echo=True)
                 ec = brcddb_common.EXIT_STATUS_ERROR
             if obj.get('io'):
                 total_io += 1
@@ -264,7 +266,7 @@ def pseudo_main():
         'Total Failures : ' + str(total_failures),
         'Total I/O      : ' + str(total_io)
     ]
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     return ec
 
@@ -279,5 +281,5 @@ if _DOC_STRING:
     exit(brcddb_common.EXIT_STATUS_OK)
 
 _ec = pseudo_main()
-brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec))
+brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec), echo=True)
 exit(_ec)

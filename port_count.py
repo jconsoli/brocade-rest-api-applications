@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2022 Jack Consoli.  All rights reserved.
+# Copyright 2022, 2023 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -26,16 +26,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.1     | 25 Jul 2022   | Added UCS counter                                                                 |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.2     | 01 Jan 2023   | Added additional summaries and totals.                                            |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2022 Jack Consoli'
-__date__ = '25 Jul 2022'
+__copyright__ = 'Copyright 2022, 2023 Jack Consoli'
+__date__ = '01 Jan 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 import argparse
 import copy
@@ -56,8 +58,8 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/mh'
-_DEBUG_o = 'test/test_pc'
+_DEBUG_i = 'test/test_pc_in'
+_DEBUG_o = 'test/test_pc_out'
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
@@ -97,6 +99,12 @@ for _fc4_k, _fc4_d in _fc4_types.items():
         for _key in _fc4_d.keys():
             _d1.update({_key: copy.copy(_speed)})
 
+_border = excel_fonts.border_type('thin')
+_wrap = excel_fonts.align_type('wrap')
+_wrap_center = excel_fonts.align_type('wrap_center')
+_text_font = excel_fonts.font_type('std')
+_bold_font = excel_fonts.font_type('bold')
+_hdr_font = excel_fonts.font_type('hdr_1')
 
 def _sheet_for_report(wb, sheet_index, sname, stitle):
     """Creates a work sheet with margins and header
@@ -110,12 +118,7 @@ def _sheet_for_report(wb, sheet_index, sname, stitle):
     :param stitle: Sheet title
     :type stitle: str
     """
-    global _speed_keys
-
-    # Initialize local variables
-    border = excel_fonts.border_type('thin')
-    alignment = excel_fonts.align_type('wrap')
-    hdr_1_font = excel_fonts.font_type('hdr_1')
+    global _speed_keys, _border, _wrap, _wrap_center, _hdr_font
 
     # Create the worksheet
     sheet = wb.create_sheet(index=sheet_index, title=sname)
@@ -127,14 +130,16 @@ def _sheet_for_report(wb, sheet_index, sname, stitle):
     row = col = 1
     for col_width in (5, 30):
         sheet.column_dimensions[xl_util.get_column_letter(col)].width = col_width
-        excel_util.cell_update(sheet, row, col, None, font=hdr_1_font, align=alignment, border=border)
+        excel_util.cell_update(sheet, row, col, None, font=_hdr_font, align=_wrap, border=_border)
         col += 1
     sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
     sheet['A1'] = stitle
     for i in _speed_keys:
         sheet.column_dimensions[xl_util.get_column_letter(col)].width = 6
-        excel_util.cell_update(sheet, row, col, i, font=hdr_1_font, align=alignment, border=border)
+        excel_util.cell_update(sheet, row, col, i, font=_hdr_font, align=_wrap, border=_border)
         col += 1
+    sheet.column_dimensions[xl_util.get_column_letter(col)].width = 8
+    excel_util.cell_update(sheet, row, col, 'Total', font=_hdr_font, align=_wrap_center, border=_border)
 
     return sheet
 
@@ -147,14 +152,10 @@ def _summary_sheet(wb, summary_l):
     :param summary_l: List of fabric dictionaries. See fab_sum_l in _create_report()
     :type summary_l: list()
     """
-    global _speed, _speed_keys, _fc4_types
+    global _speed, _speed_keys, _fc4_types, _border, _wrap, _text_font, _bold_font
 
     # Initialize local variables
     sheet = _sheet_for_report(wb, 0, 'Summary', 'Summary')
-    border = excel_fonts.border_type('thin')
-    alignment = excel_fonts.align_type('wrap')
-    text_font = excel_fonts.font_type('std')
-    bold_font = excel_fonts.font_type('bold')
     total_sum = list()
     row = 2
 
@@ -190,7 +191,7 @@ def _summary_sheet(wb, summary_l):
         # Add the FC4 type header
         row, col = row + 1, 1
         sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-        excel_util.cell_update(sheet, row, col, fc4_type, font=bold_font, align=alignment, border=border)
+        excel_util.cell_update(sheet, row, col, fc4_type, font=_bold_font, align=_wrap, border=_border)
         row += 1
         type_start_row = row
 
@@ -203,48 +204,45 @@ def _summary_sheet(wb, summary_l):
 
             # Add the brand name to the worksheet
             col = 2
-            excel_util.cell_update(sheet, row, col, str(brand), font=text_font, align=alignment, border=border)
+            excel_util.cell_update(sheet, row, col, str(brand), font=_text_font, align=_wrap, border=_border)
 
             # Add each speed within the brand
             for speed in _speed_keys:
                 col += 1
                 val = 0 if len(brand_d[speed]) == 0 else '=' + '+'.join(brand_d[speed])
-                excel_util.cell_update(sheet, row, col, val, font=text_font, align=alignment, border=border)
-
+                excel_util.cell_update(sheet, row, col, val, font=_text_font, align=_wrap, border=_border)
+            buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
+            excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
             row += 1
 
         # Add the sub-total for each FC4 type
         type_end_row, col = row, 2
         row += 1
         total_sum.append(row)
-        excel_util.cell_update(sheet, row, col, 'sub-total', font=text_font, align=alignment, border=border)
+        excel_util.cell_update(sheet, row, col, 'sub-total', font=_text_font, align=_wrap, border=_border)
         for k3 in range(0, len(_speed_keys)):
             col += 1
             col_letter = xl_util.get_column_letter(col)
             buf = '=sum(' + col_letter + str(type_start_row) + ':' + col_letter + str(type_end_row) + ')'
-            excel_util.cell_update(sheet, row, col, buf, font=text_font, align=alignment, border=border)
+            excel_util.cell_update(sheet, row, col, buf, font=_text_font, align=_wrap, border=_border)
+        buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
+        excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
         row += 1
 
     # Add a project summary
     row, col = row + 1, 1
     sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-    excel_util.cell_update(sheet, row, col, 'Project total', font=bold_font, align=alignment)
+    excel_util.cell_update(sheet, row, col, 'Project total', font=_bold_font, align=_wrap)
     buf = '=$' + str(total_sum.pop(0))
     for i in total_sum:
         buf += '+$' + str(i)
     col += 2
     for k3 in range(0, len(_speed_keys)):
-        excel_util.cell_update(sheet, row, col, buf.replace('$', xl_util.get_column_letter(col)), font=bold_font,
-                               align=alignment, border=border)
+        excel_util.cell_update(sheet, row, col, buf.replace('$', xl_util.get_column_letter(col)), font=_bold_font,
+                               align=_wrap, border=_border)
         col += 1
-
-    # The total online ports
-    buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(2+len(_speed_keys)) + str(row) + ')'
-    row, col = row + 2, 1
-    sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-    excel_util.cell_update(sheet, row, col, 'Total Online Ports', font=bold_font, align=alignment)
-    col += 2
-    excel_util.cell_update(sheet, row, col, buf, font=bold_font, align=alignment)
+    buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col-1) + str(row) + ')'
+    excel_util.cell_update(sheet, row, col, buf, font=_bold_font, align=_wrap, border=_border)
 
 
 def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
@@ -263,21 +261,15 @@ def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
     :return rd: Fabric level dictionary. See fab_sum_l in _create_report()
     :rtype rd: dict
     """
-    global _speed_keys, _fc4_types
-
-    # Initialize local variables
-    border = excel_fonts.border_type('thin')
-    alignment = excel_fonts.align_type('wrap')
-    text_font = excel_fonts.font_type('std')
-    bold_font = excel_fonts.font_type('bold')
+    global _speed_keys, _fc4_types, _border, _wrap, _text_font, _bold_font
 
     switch_sum = list()  # A list of row numbers for each type summary
-    rd = dict()
+    rd = collections.OrderedDict()
     col = 1
 
     # Add the sub-header. Typically the switch name
     sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=2+len(_speed_keys))
-    excel_util.cell_update(sheet, row, col, sub_hdr, font=excel_fonts.font_type('hdr_2'), align=alignment)
+    excel_util.cell_update(sheet, row, col, sub_hdr, font=excel_fonts.font_type('hdr_2'), align=_wrap)
     row += 1
 
     # The report is a list of ports based on the FC4 type (ISL, target, initiator, and unknown) associated with the
@@ -291,7 +283,7 @@ def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
             continue  # When I wrote this, d0 should never be None. This is just future proofing.
         col, row = 1, row + 1
         rd.update({k0: dict()})
-        excel_util.cell_update(sheet, row, col, str(k0), font=bold_font, align=alignment)
+        excel_util.cell_update(sheet, row, col, str(k0), font=_bold_font, align=_wrap)
         sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
         row += 1
         type_start_row = row  # Used for the formula in the type sub-total
@@ -301,41 +293,45 @@ def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
             for k2, d2 in d1.items():  # Brand
                 col = 2
                 buf = str(k1).upper() + ', ' + _fc4_types[k0][k2]['h']
-                excel_util.cell_update(sheet, row, col, buf, font=text_font, align=alignment, border=border)
+                excel_util.cell_update(sheet, row, col, buf, font=_text_font, align=_wrap, border=_border)
                 brand_d = dict()
                 rd[k0].update({buf: brand_d})
-                col += 1
 
                 for k3 in _speed_keys:  # Login speed
-                    excel_util.cell_update(sheet, row, col, d2[k3], font=text_font, align=alignment, border=border)
-                    brand_d.update({k3: xl_util.get_column_letter(col) + str(row)})
                     col += 1
+                    excel_util.cell_update(sheet, row, col, d2[k3], font=_text_font, align=_wrap, border=_border)
+                    brand_d.update({k3: xl_util.get_column_letter(col) + str(row)})
+                buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
+                excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
                 row += 1
 
         # Add the sub-total for each FC4 type
         type_end_row, row, col = row, row + 1, 2
         switch_sum.append(row)
-        excel_util.cell_update(sheet, row, col, 'sub-total', font=text_font, align=alignment, border=border)
+        excel_util.cell_update(sheet, row, col, 'sub-total', font=_text_font, align=_wrap, border=_border)
         for k3 in range(0, len(_speed_keys)):
             col += 1
             col_letter = xl_util.get_column_letter(col)
             buf = '=sum(' + col_letter + str(type_start_row) + ':' + col_letter + str(type_end_row) + ')'
-            excel_util.cell_update(sheet, row, col, buf, font=text_font, align=alignment, border=border)
+            excel_util.cell_update(sheet, row, col, buf, font=_text_font, align=_wrap, border=_border)
+        buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
+        excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
         row += 1
 
     # Add the totals for the switch
     row, col = row + 1, 1
-    excel_util.cell_update(sheet, row, col, 'Switch total', font=bold_font, align=alignment)
+    excel_util.cell_update(sheet, row, col, 'Switch total', font=_bold_font, align=_wrap)
     sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
     buf = '=$' + str(switch_sum.pop(0))
     for i in switch_sum:
         buf += '+$' + str(i)
-    col += 1
-    for k3 in range(0, len(_speed_keys)):
-        col += 1
+    col += 2
+    for col in range(col, len(_speed_keys)+col):
         col_letter = xl_util.get_column_letter(col)
-        excel_util.cell_update(sheet, row, col, buf.replace('$', col_letter), font=bold_font, align=alignment,
-                               border=border)
+        excel_util.cell_update(sheet, row, col, buf.replace('$', col_letter), font=_bold_font, align=_wrap,
+                               border=_border)
+    buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col-1) + str(row) + ')'
+    excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
 
     return row, rd
 
@@ -350,13 +346,10 @@ def _create_report(proj_obj, file_name):
     :return: Exit code
     :rtype: int
     """
-    global _speed_keys, _fc4_types
+    global _speed_keys, _fc4_types, _border, _wrap, _bold_font, _text_font
 
     wb = xl.Workbook()
     sheet_index = 0
-    border = excel_fonts.border_type('thin')
-    alignment = excel_fonts.align_type('wrap')
-    bold_font = excel_fonts.font_type('bold')
     ec = brcddb_common.EXIT_STATUS_OK
     fab_sum_l = list()  # Used to reference cells for summaries and totals. A list of dictionaries as follows:
     """
@@ -387,39 +380,125 @@ def _create_report(proj_obj, file_name):
         # Create the fabric sheet
         sname = excel_util.valid_sheet_name.sub('', brcddb_fabric.best_fab_name(fab_obj).replace(' ', '_'))[:22] + \
                 '_' + str(sheet_index)
-        sheet = _sheet_for_report(wb, sheet_index, sname, brcddb_fabric.best_fab_name(fab_obj, wwn=False))
+        fab_name = brcddb_fabric.best_fab_name(fab_obj, wwn=False)
+        sheet = _sheet_for_report(wb, sheet_index, sname, fab_name)
         row = 3
 
         # Set up the tracker for the summary sheet
         fab_sum = list()  # A list of row numbers for each type summary
 
         # Add the switches
-        switch_l = list()
-        fab_d = dict(sheet=sname, switch_l=switch_l)
+        switch_l, fab_switch_ref_d = list(), collections.OrderedDict()
+        fab_d = dict(sheet=sname, switch_l=switch_l, fab_switch_ref_d=fab_switch_ref_d)
         for switch_obj in fab_obj.r_switch_objects():
-            switch_d = switch_obj.r_get('switch_d')
-            row, switch_d = _update_switch_in_fab_sheet(row,
-                                                        sheet,
-                                                        brcddb_switch.best_switch_name(switch_obj, wwn=True),
-                                                        switch_d)
+            row, cell_d = _update_switch_in_fab_sheet(row,
+                                                      sheet,
+                                                      brcddb_switch.best_switch_name(switch_obj, wwn=True),
+                                                      switch_obj.r_get('switch_d'))
             fab_sum.append(row)
-            switch_l.append(switch_d)
+            switch_l.append(cell_d)
             row += 2
         fab_sum_l.append(fab_d)
 
         # Add the summary totals for the fabric
-        row, col = row + 1, 1
-        excel_util.cell_update(sheet, row, col, 'Fabric total', font=bold_font, align=alignment)
+        # row, col = row + 1, 1
+        # excel_util.cell_update(sheet, row, col, 'Fabric total', font=_bold_font, align=_wrap)
+        # sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
+        # buf = '=$' + str(fab_sum.pop(0))
+        # for i in fab_sum:
+        #     buf += '+$' + str(i)
+        # col += 2
+        # for col in range(col, len(_speed_keys)+col):
+        #     col_letter = xl_util.get_column_letter(col)
+        #     excel_util.cell_update(sheet, row, col, buf.replace('$', col_letter), font=_bold_font, align=_wrap,
+        #                            border=_border)
+        # sheet_index += 1
+
+        # Add the header for the fabric summary at the bottom of the page.
+        col = 1
+        excel_util.cell_update(sheet, row, col, 'Fabric total', font=_bold_font, align=_wrap)
         sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-        buf = '=$' + str(fab_sum.pop(0))
-        for i in fab_sum:
-            buf += '+$' + str(i)
-        col += 1
-        for k3 in _speed_keys:
+
+        # Adding the same level of detail to the the fabric section as is with switches was an after thought. Creating a
+        # dict that matches the switch dict with a list of switch references kept it simple.
+        cell_d_l = fab_d['switch_l']
+        if len(cell_d_l) > 0:
+            cell_d = cell_d_l[0]
+            for k, switch_type_d in cell_d.items():
+                fab_type_d = dict()
+                fab_switch_ref_d.update({k: fab_type_d})
+                for k0, switch_ref_d in switch_type_d.items():
+                    fab_ref_d = dict()
+                    fab_type_d.update({k0: fab_ref_d})
+                    for k1, cell in switch_ref_d.items():
+                        fab_ref_d.update({k1: '=' + cell})
+
+        # Get the remaining switch cell references for the fabric
+        if len(cell_d_l) > 1:
+            for cell_d in cell_d_l[1:]:
+                for k, switch_type_d in cell_d.items():
+                    fab_type_d = fab_switch_ref_d[k]
+                    for k0, switch_ref_d in switch_type_d.items():
+                        fab_ref_d = fab_type_d[k0]
+                        for k1, cell in switch_ref_d.items():
+                            fab_ref_d[k1] += '+' + cell
+
+        # Add the fabric summaries to the worksheet
+
+        # fab_total_d is a list of cell references to be added together for the fabric total
+        fab_total_d = collections.OrderedDict()
+        for k in _speed_keys:
+            fab_total_d.update({k: list()})
+
+        # Fill in the fabric section
+        for k, fab_type_d in fab_switch_ref_d.items():
+            row, col = row+2, 1
+            excel_util.cell_update(sheet, row, col, str(k), font=_bold_font, align=_wrap)
+            sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
+            row, col = row+1, 2
+            start_row = row
+            for k0, cell_d in fab_type_d.items():
+                excel_util.cell_update(sheet, row, col, str(k0), font=_text_font, align=_wrap, border=_border)
+                for buf in [cell_d[k1] for k1 in _speed_keys]:
+                    col += 1
+                    excel_util.cell_update(sheet, row, col, buf, font=_text_font, align=_wrap, border=_border)
+                buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
+                excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
+                row, col = row+1, 2
+
+            # Add the sub-total
+            row, col = row+1, 2
+            excel_util.cell_update(sheet, row, col, 'fabric sub-total', font=_text_font, align=_wrap, border=_border)
+            for speed_k in _speed_keys:
+                col += 1
+                col_letter = xl_util.get_column_letter(col)
+                buf = '=sum(' + col_letter + str(start_row) + ':' + col_letter + str(row-1) + ')'
+                excel_util.cell_update(sheet, row, col, buf, font=_text_font, align=_wrap, border=_border)
+                fab_total_d[speed_k].append(col_letter + str(row))
+            buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
+            excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
+
+        # Add the fabric total
+        row, col = row+2, 1
+        excel_util.cell_update(sheet, row, col, 'Fabric total', font=_bold_font, align=_wrap)
+        sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
+        col = 2
+        for k, fab_ref_d in fab_total_d.items():
             col += 1
-            col_letter = xl_util.get_column_letter(col)
-            excel_util.cell_update(sheet, row, col, buf.replace('$', col_letter), font=bold_font, align=alignment,
-                                   border=border)
+            buf = '=' + fab_ref_d[0] + '+' + '+'.join(fab_ref_d[1:])
+            excel_util.cell_update(sheet, row, col, buf, font=_text_font, align=_wrap, border=_border)
+        buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
+        excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
+        #     # sum_d.update({k: sub_sum_d})
+        #     # excel_util.cell_update(sheet, row, col, str(k), font=_bold_font, align=_wrap)
+        #     for buf, sub_d in switch_d[k].items():
+        #         col = 2
+        #         for k0, cell in sub_d.items():
+        #             sub_sum_d.update({k0: 0})
+        #         excel_util.cell_update(sheet, row, col, buf, font=_text_font, align=_wrap, border=_border)
+        #     buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
+        #     excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
+
         sheet_index += 1
 
     # Add a summary sheet

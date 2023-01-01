@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2021, 2022 Jack Consoli.  All rights reserved.
+# Copyright 2021, 2022, 2023 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -30,16 +30,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.3     | 25 Jul 2022   | Added ability to activate a zone configuration.                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.4     | 01 Jan 2023   | Added ability to generate CLI commands                                            |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '25 Jul 2022'
+__copyright__ = 'Copyright 2021, 2022, 2023 Jack Consoli'
+__date__ = '01 Jan 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 import argparse
 import brcdapi.log as brcdapi_log
@@ -59,11 +61,12 @@ _DEBUG_ip = 'xx.xxx.xx.xx'
 _DEBUG_id = 'admin'
 _DEBUG_pw = 'password'
 _DEBUG_sec = 'self'
-_DEBUG_i = 'test/test_30'
+_DEBUG_i = '_capture_2022_10_23_08_20_34/combined'
 _DEBUG_fid = 128
-_DEBUG_wwn = 'xx:xx:xx:xx:xx:xx:xx:xx'
+_DEBUG_wwn = '10:00:c4:f5:7c:2d:a6:20'
 _DEBUG_a = False
 _DEBUG_scan = False
+_DEBUG_cli = 'test/cli'
 _DEBUG_sup = False
 _DEBUG_d = False
 _DEBUG_log = '_logs'
@@ -94,6 +97,14 @@ _control_tables = {
     },
 }
 
+_MAX_ZONE_MEM = 4
+_MAX_LINES = 20
+_cli_hdr_0 = ['########################################################',
+              '#                                                      #']
+_cli_hdr_1 = ['#                                                      #',
+              '########################################################',
+              '']
+
 
 def _scan_fabrics(proj_obj):
     """Scan the project for each fabric and list the fabric WWN, FID , and zone configurations
@@ -103,7 +114,6 @@ def _scan_fabrics(proj_obj):
     :return: Status code
     :rtype: int
     """
-
     ec = brcddb_common.EXIT_STATUS_OK
 
     # Prepare the fabric display
@@ -128,6 +138,101 @@ def _scan_fabrics(proj_obj):
     return ec
 
 
+def _cli_commands(fab_obj):
+    """Generate CLI commands
+
+    :param fab_obj: Fabric object
+    :type fab_obj: brcddb.classes.fabric.FabricObj
+    :return: Status code
+    :rtype: int
+    """
+    global _cli_hdr_0, _cli_hdr_1
+
+    ec, rl = brcddb_common.EXIT_STATUS_OK, list()
+    control_l = (
+        dict(disp='#                 Aliases                              #',
+             cmd='alicreate',
+             add='aliadd',
+             obj_l=fab_obj.r_alias_objects(),
+             zone_flag=False),
+        dict(disp='#                 Zones                                #',
+             cmd='zonecreate',
+             add='zoneadd',
+             obj_l=fab_obj.r_zone_objects(),
+             zone_flag=True),
+        dict(disp='#           Zone Configurations                        #',
+             cmd='cfgcreate',
+             add='cfgadd',
+             obj_l=fab_obj.r_zonecfg_objects(),
+             zone_flag=False)
+    )
+
+    # Generate the CLI commands
+    for control_d in control_l:
+
+        # Add the header
+        rl.extend(_cli_hdr_0)
+        rl.append(control_d['disp'])
+        rl.extend(_cli_hdr_1)
+
+        line = 0
+        for obj in control_d['obj_l']:
+            if obj.r_obj_key() == '_effective_zone_cfg':
+                continue
+
+            # Figure out what the command parameters are
+            buf, add_buf, name_start, name_end, add_mem_buf = control_d['cmd'], control_d['add'], ' "', '", ', ''
+            mem_l = obj.r_members()
+            if control_d['zone_flag']:
+                zone_type = obj.r_type()
+                if zone_type == brcddb_common.ZONE_TARGET_PEER:
+                    continue
+                if zone_type == brcddb_common.ZONE_USER_PEER:
+                    # Add a line space if necessary
+                    if line >= _MAX_LINES:
+                        rl.append('')
+                        line = 0
+                    else:
+                        line += 1
+                    name_start = ' --peerzone "'
+                    name_end = '" -members '
+                    rl.append(buf + name_start + obj.r_obj_key() + '" -principal "' + ';'.join(obj.r_pmembers()) + '"')
+                    buf = add_buf + name_start + obj.r_obj_key() + name_end
+                else:
+                    buf += name_start + obj.r_obj_key() + name_end
+            else:
+                buf += name_start + obj.r_obj_key() + name_end
+
+            # Add the members
+            mem_len = len(mem_l)
+            i, x = 0, min(_MAX_ZONE_MEM, mem_len)
+
+            # Add a line space if necessary
+            if line >= _MAX_LINES:
+                rl.append('')
+                line = 0
+            else:
+                line += 1
+
+            rl.append(buf + '"' + ';'.join(mem_l[i:x]) + '"')
+            i = x
+            while i < mem_len:
+                x = i + min(_MAX_ZONE_MEM, mem_len)
+
+                # Add a line space if necessary
+                if line >= _MAX_LINES:
+                    rl.append('')
+                    line = 0
+                else:
+                    line += 1
+
+                rl.append(add_buf + name_start + obj.r_obj_key() + name_end + '"' + ';'.join(mem_l[i:x]) + '"')
+                i = x
+        rl.append('')
+
+    return rl
+
+
 def parse_args():
     """Parses the module load command line
     
@@ -135,18 +240,19 @@ def parse_args():
     :rtype: str
     """
     global _DEBUG, _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_fid, _DEBUG_i, _DEBUG_wwn, _DEBUG_a,\
-        _DEBUG_scan, _DEBUG_d, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
+        _DEBUG_scan, _DEBUG_cli, _DEBUG_d, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_fid, _DEBUG_i, _DEBUG_wwn, _DEBUG_a, _DEBUG_scan,\
-               _DEBUG_d, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
+        return _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_sec, _DEBUG_fid, _DEBUG_i, _DEBUG_wwn, _DEBUG_a, _DEBUG_scan, \
+               _DEBUG_cli, _DEBUG_d, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
     buf = 'Sets the zone database to that of a previous capture. Although typically used to restore a zone database, '\
           'this module can be used to set the zone database to that of any fabric.'
     parser = argparse.ArgumentParser(description=buf)
-    parser.add_argument('-ip', help='Optional with -scan, otherwise required. IP address', required=False)
-    parser.add_argument('-id', help='Optional with -scan, otherwise required. User ID', required=False)
-    parser.add_argument('-pw', help='Optional with -scan, otherwise required. Password', required=False)
-    parser.add_argument('-s', help='\'CA\' or \'self\' for HTTPS mode.', required=False,)
+    buf = 'Required unless generating CLI output, -cli, or scanning, -scan. '
+    parser.add_argument('-ip', help=buf + 'IP address', required=False)
+    parser.add_argument('-id', help=buf + 'User ID', required=False)
+    parser.add_argument('-pw', help=buf + 'Password', required=False)
+    parser.add_argument('-s', help='(Optional) "none" for HTTP, default, or "self" for HTTPS mode.', required=False,)
     buf = 'Optional with -scan, otherwise required. Fabric ID of logical switch whose DB is be restored from the '\
           'fabric specified with the -wwn parameter.'
     parser.add_argument('-fid', help=buf, required=False)
@@ -163,6 +269,8 @@ def parse_args():
     buf = 'Optional. No parameters. Scan switch if login credentials supplied and captured data file for fabric '\
           'information.'
     parser.add_argument('-scan', help=buf, action='store_true', required=False)
+    buf = 'Optional. Name of file for CLI commands. When specified, -ip, -id, -pw, and -s are ignored.'
+    parser.add_argument('-cli', help=buf, required=False)
     buf = 'Optional. Suppress all output to STD_IO except the exit code and argument parsing errors. Useful with '\
           'batch processing where only the exit status code is desired. Messages are still printed to the log file'\
           '. No operands.'
@@ -176,8 +284,8 @@ def parse_args():
     buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
     parser.add_argument('-nl', help=buf, action='store_true', required=False)
     args = parser.parse_args()
-    return args.ip, args.id, args.pw, args.s, args.fid, args.i, args.wwn, args.a, args.scan, args.d, args.sup,\
-        args.log, args.nl
+    return args.ip, args.id, args.pw, args.s, args.fid, args.i, args.wwn, args.a, args.scan, args.cli, args.d, \
+           args.sup, args.log, args.nl
 
 
 def _get_input():
@@ -197,6 +305,8 @@ def _get_input():
     :rtype t_flag: bool
     :return scan_flag: Scan flag. If True, scan files and switches for fabric information
     :rtype scan_flag: bool
+    :return cli_file: Name of file for CLI commands
+    :rtype cli_file: None, str
     :return addl_parms: Additional parameters (logging and debug flags) to pass to multi_capture.py
     :rtype addl_parms: list
     """
@@ -207,7 +317,7 @@ def _get_input():
     addl_parms = list()
 
     # Get and validate the user input
-    ip, user_id, pw, sec, fid, cfile, wwn, zone_cfg, scan_flag, d_flag, s_flag, log, nl = parse_args()
+    ip, user_id, pw, sec, fid, cfile, wwn, zone_cfg, scan_flag, cli_file, d_flag, s_flag, log, nl = parse_args()
     if s_flag:
         addl_parms.append('-sup')
         brcdapi_log.set_suppress_all()
@@ -224,22 +334,23 @@ def _get_input():
     if isinstance(fid, int):
         buf = ' INVALID. Must be an integer in the range of 1-128' if fid < 0 or fid > 128 else ''
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    ml.append('zone_merge.py version: ' + __version__)
-    ml.append('IP address, -ip:       ' + brcdapi_util.mask_ip_addr(ip))
-    ml.append('ID, -id:               ' + str(user_id))
-    ml.append('HTTPS, -s:             ' + str(sec))
-    ml.append('FID, -fid:             ' + str(fid) + buf)
-    ml.append('Input file, -i:        ' + cfile)
-    ml.append('WWN, -wwn:             ' + str(wwn))
-    ml.append('Activate zone cfg, -a: ' + str(zone_cfg))
-    ml.append('Scan, -scan:           ' + str(scan_flag))
+    ml.append('zone_restore.py version: ' + __version__)
+    ml.append('IP address, -ip:         ' + brcdapi_util.mask_ip_addr(ip))
+    ml.append('ID, -id:                 ' + str(user_id))
+    ml.append('HTTPS, -s:               ' + str(sec))
+    ml.append('FID, -fid:               ' + str(fid) + buf)
+    ml.append('Input file, -i:          ' + cfile)
+    ml.append('WWN, -wwn:               ' + str(wwn))
+    ml.append('Activate zone cfg, -a:   ' + str(zone_cfg))
+    ml.append('Scan, -scan:             ' + str(scan_flag))
+    ml.append('CLI file, -cli:          ' + str(cli_file))
     brcdapi_log.log(ml, echo=True)
     if len(buf) > 0:
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     if sec is None:
         sec = 'none'
     ml = list()
-    if not scan_flag:
+    if cli_file is None and not scan_flag:
         if ip is None:
             ml.append('  IP address (-ip)')
         if user_id is None:
@@ -258,7 +369,10 @@ def _get_input():
             brcdapi_log.log(ml, echo=True)
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    return ec, ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, scan_flag, addl_parms
+    cfile = brcdapi_file.full_file_name(cfile, '.json')
+    cli_file = brcdapi_file.full_file_name(cli_file, '.txt')
+
+    return ec, ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, scan_flag, addl_parms, cli_file
 
 
 def pseudo_main():
@@ -270,24 +384,36 @@ def pseudo_main():
     global __version__
     global _DEBUG_id, _DEBUG_pw, _DEBUG_ip
 
-    ec, ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, scan_flag, addl_parms = _get_input()
+    ec, ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, scan_flag, addl_parms, cli_file = _get_input()
 
     if ec != brcddb_common.EXIT_STATUS_OK:
         return ec
 
     # Read the project file
-    proj_obj = brcddb_project.read_from(brcdapi_file.full_file_name(cfile, '.json'))
+    proj_obj = brcddb_project.read_from(cfile)
     if proj_obj is None:
         return brcddb_common.EXIT_STATUS_ERROR
-    fab_obj = None
-    if not scan_flag:
-        fab_obj = proj_obj.r_fabric_obj(wwn)
-        if fab_obj is None:
-            brcdapi_log.log(wwn + ' does not exist in ' + cfile + '. Try using the -scan option', echo=True)
-            return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
+    fab_obj = proj_obj.r_fabric_obj(wwn)
     if scan_flag:
         return _scan_fabrics(proj_obj)
+    elif fab_obj is None:
+        brcdapi_log.log(wwn + ' does not exist in ' + cfile + '. Try using the -scan option', echo=True)
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    if isinstance(cli_file, str):
+        try:
+            with open(cli_file, 'w') as f:
+                f.write('\n'.join(_cli_commands(fab_obj)))
+            f.close()
+        except FileNotFoundError:
+            brcdapi_log.log(['', 'Folder in path ' + cli_file + ' does not exist.', ''], echo=True)
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        except PermissionError:
+            brcdapi_log.log(['', 'Permission error writing ' + cli_file + '.', ''], echo=True)
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+        return ec
 
     # Login
     session = api_int.login(user_id, pw, ip, sec, proj_obj)

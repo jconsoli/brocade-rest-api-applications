@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2021, 2022 Jack Consoli.  All rights reserved.
+# Copyright 2021, 2022, 2023 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -46,16 +46,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.1.1     | 14 Oct 2022   | Added extra error checking and improved messaging.                                |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.2     | 01 Jan 2023   | Fixed incorrect row number in error message.                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '14 Oct 2022'
+__copyright__ = 'Copyright 2021, 2022, 2023 Jack Consoli'
+__date__ = '01 Jan 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.1.1'
+__version__ = '1.1.2'
 
 import argparse
 import sys
@@ -83,9 +85,9 @@ import brcddb.util.util as brcddb_util
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
 _DEBUG_i = 'test/zone_merge_even'
-_DEBUG_cfg = 'new_ZONE_CFG'
+_DEBUG_cfg = None
 _DEBUG_a = False
-_DEBUG_t = False
+_DEBUG_t = True
 _DEBUG_scan = False
 _DEBUG_cli = False
 _DEBUG_sup = False
@@ -649,7 +651,7 @@ def _get_input():
             else:
                 pl.append(sub_d)
                 if not scan_flag and not gen_util.is_wwn(sub_d.get('fab_wwn'), full_check=True):
-                    ml.append('fab_wwn is not a valid WWN in row ' + str(i+1))
+                    ml.append('fab_wwn is not a valid WWN in row ' + str(i+2))
     if len(ml) > 0:
         brcdapi_log.log(ml, echo=True)
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR

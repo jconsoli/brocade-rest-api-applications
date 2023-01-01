@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2020, 2021, 2022 Jack Consoli.  All rights reserved.
+# Copyright 2020, 2021, 2022, 2023 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -45,16 +45,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.7     | 04 Sep 2022   | Fixed table of contents hyper link                                                |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.8     | 01 Jan 2023   | Removed reliance on bp_tables                                                     |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '04 Sep 2022'
+__copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
+__date__ = '01 Jan 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.7'
+__version__ = '3.0.8'
 
 import sys
 import argparse
@@ -76,7 +78,6 @@ import brcddb.util.file as brcddb_file
 import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.util.search as brcddb_search
-import brcddb.app_data.bp_tables as bp_tables
 import brcddb.report.graph as report_graph
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
@@ -107,11 +108,11 @@ _port_stats = (
 
 # Case methods for _get_ports(). See _port_match
 def _e_ports(switch_obj):
-    return [p.r_obj_key() for p in brcddb_search.match_test(switch_obj.r_port_objects(), bp_tables.is_e_port)]
+    return [p.r_obj_key() for p in brcddb_search.match_test(switch_obj.r_port_objects(), brcddb_search.e_ports)]
 
 
 def _f_ports(switch_obj):
-    return [p.r_obj_key() for p in brcddb_search.match_test(switch_obj.r_port_objects(), bp_tables.is_f_port)]
+    return [p.r_obj_key() for p in brcddb_search.match_test(switch_obj.r_port_objects(), brcddb_search.f_ports)]
 
 
 def _all(switch_obj):
@@ -549,7 +550,7 @@ def _graphs(switch_obj, single_port_graph_in, stats_graph_in, graph_type):
                         to_graph.update(parms=[port_obj.r_obj_key() for port_obj in max_ports])
 
                 elif 'eport' in temp_l[0].lower().replace('-', ''):
-                    port_list = brcddb_search.match_test(switch_obj.r_port_objects, bp_tables.is_e_port)
+                    port_list = brcddb_search.match_test(switch_obj.r_port_objects, brcddb_search.e_ports)
                     if len(port_list) == 0:
                         ml.append('No E-Ports found')
                     to_graph.update(parms=[port_obj.r_obj_key() for port_obj in port_list])
