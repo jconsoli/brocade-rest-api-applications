@@ -68,15 +68,17 @@ Version Control::
     | 1.1.0     | 01 Jan 2023   | Added POD license reserve for ports added to fixed port switches. Used revised    |
     |           |               | keys returned from brcddb.report.utils.parse_switch_file                          |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.1     | 14 Jan 2023   | Made port moves more efficient when configuring multiple logical switches.        |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
-__date__ = '01 Jan 2023'
+__copyright__ = 'Copyright 2020, 2021, 2022, 2023 Jack Consoli'
+__date__ = '14 Jan 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.1.0'
+__version__ = '1.1.1'
 
 import argparse
 import sys
@@ -99,16 +101,16 @@ import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = 'xx.xxx.xx.xx'
+_DEBUG = True  # When True, use _DEBUG_xxx instead of passed arguments
+_DEBUG_ip = '10.144.72.15'
 _DEBUG_id = 'admin'
-_DEBUG_pw = 'password'
+_DEBUG_pw = 'AdminPassw0rd!'
 _DEBUG_s = 'self'
-_DEBUG_i = 'test/Fixed_Port_Switch'
+_DEBUG_i = 'test/sc_4'
 _DEBUG_force = False
 _DEBUG_sup = False
 _DEBUG_echo = True
-_DEBUG_d = True
+_DEBUG_d = False
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
@@ -156,14 +158,15 @@ def _configuration_checks(switch_d_list):
 
         # Does the banner contain any invalid characters?
         banner = gen_util.get_key_val(switch_d, _fc_switch+'fibrechannel-switch/banner')
-        v_banner = gen_util.valid_banner.sub('-', banner)
-        if banner != v_banner:
-            # Fix and report the issue. Note that by appending the error to switch_d rather than rl allows the script
-            # to continue running. This isn't a big enough problem to halt processing.
-            gen_util.add_to_obj(switch_d, _fc_switch+'fibrechannel-switch/banner', v_banner)
-            buf = 'Invalid characters in banner for FID on ' + switch_d['switch_info']['sheet_name'] +\
-                  '. Replaced invalid characters with "-"'
-            switch_d['err_msgs'].append(buf)
+        if banner is not None:
+            v_banner = gen_util.valid_banner.sub('-', banner)
+            if banner != v_banner:
+                # Fix and report the issue. Note that by appending the error to switch_d rather than rl allows the
+                # script to continue running. This isn't a big enough problem to halt processing.
+                gen_util.add_to_obj(switch_d, _fc_switch+'fibrechannel-switch/banner', v_banner)
+                buf = 'Invalid characters in banner for FID on ' + switch_d['switch_info']['sheet_name'] +\
+                      '. Replaced invalid characters with "-"'
+                switch_d['err_msgs'].append(buf)
 
     # Check for > 1 base switch
     if len(base_l) > 1:
@@ -242,8 +245,7 @@ def _ports_to_move(switch_obj, switch_d, force):
             port_obj = chassis_obj.r_port_obj(port)
             if port_obj is None:
                 switch_d['not_found_port_l'].append(port)
-            elif not force and port_obj.r_get('fibrechannel/operational-status') is not None and \
-                    port_obj.r_get('fibrechannel/operational-status') == 2:
+            elif not force and port_obj.r_is_online():
                 switch_d['online_port_l'].append(brcddb_port.best_port_name(port_obj, True) + ', ' +
                                                 brcddb_port.port_best_desc(port_obj))
             else:
@@ -257,8 +259,7 @@ def _ports_to_move(switch_obj, switch_d, force):
             port_obj = chassis_obj.r_port_obj(port)  # Make sure the port is present in the chassis
             if port_obj is None:
                 switch_d['not_found_port_l'].append(port)
-            elif port_obj.r_get('fibrechannel/operational-status') is not None and \
-                    port_obj.r_get('fibrechannel/operational-status') == 2:
+            elif port_obj.r_is_online():
                 switch_d['online_port_l'].append(port)
             elif switch_obj.r_port_obj(port) is None:  # Make sure the port isn't already in the switch
                 switch_d['add_port_l'].append(port)
@@ -422,7 +423,7 @@ def _ficon_config(session, switch_obj, switch_d, echo):
     return ec
 
 
-def _add_remove_ports(session, chassis_obj, switch_d_l, echo):
+def _add_ports(session, chassis_obj, switch_d_l, echo):
     """Add and remove ports from a logical switch
 
     :param session: Session object, or list of session objects, returned from brcdapi.fos_auth.login()
@@ -437,24 +438,10 @@ def _add_remove_ports(session, chassis_obj, switch_d_l, echo):
     :rtype: int
     """
     ec = brcddb_common.EXIT_STATUS_OK
-    default_fid = chassis_obj.r_default_switch_fid()
 
     for switch_d in switch_d_l:
         fid = switch_d['switch_info']['fid']
         switch_obj = chassis_obj.r_switch_obj_for_fid(fid)
-
-        # Remove ports - $ToDo brcdapi_switch.add_ports() doesn't remove GE ports
-        switch_d['remove_port_l'] = [p for p in switch_d['remove_port_l'] if switch_obj.r_port_obj(p) is not None]
-        obj = brcdapi_switch.add_ports(session, default_fid, fid, i_ports=switch_d['remove_port_l'], echo=echo)
-        if fos_auth.is_error(obj):
-            buf = 'Error moving ports from FID ' + str('fid') + ' to ' + str(default_fid)
-            switch_d['err_msgs'].append(buf)
-            brcdapi_log.exception(['switch_d:',
-                                   pprint.pformat(switch_d),
-                                   buf,
-                                   fos_auth.formatted_error_msg(obj)],
-                                  echo=True)
-            ec = brcddb_common.EXIT_STATUS_ERROR
 
         # Figure out what FID all the port to move are in so they can be moved by groups for each FID
         from_fid_d = dict()
@@ -482,8 +469,45 @@ def _add_remove_ports(session, chassis_obj, switch_d_l, echo):
     return ec
 
 
+def _remove_ports(session, chassis_obj, switch_d_l, echo):
+    """Add and remove ports from a logical switch
+
+    :param session: Session object, or list of session objects, returned from brcdapi.fos_auth.login()
+    :type session: dict
+    :param chassis_obj: Chassis object
+    :type chassis_obj: brcddb.classes.chassis.ChassisObj
+    :param switch_d_l: List of switch object as returned from report_utils.parse_switch_file()
+    :type switch_d_l: list
+    :param echo: If True, echo switch configuration details to STD_OUT
+    :type echo: bool
+    :return: Ending status. See brcddb.common
+    :rtype: int
+    """
+    ec = brcddb_common.EXIT_STATUS_OK
+    default_fid = chassis_obj.r_default_switch_fid()
+
+    for switch_d in switch_d_l:
+        fid = switch_d['switch_info']['fid']
+        switch_obj = chassis_obj.r_switch_obj_for_fid(fid)
+
+        # Remove ports - $ToDo brcdapi_switch.add_ports() doesn't remove GE ports
+        port_l = [p for p in switch_d['remove_port_l'] if switch_obj.r_port_obj(p) is not None]
+        obj = brcdapi_switch.add_ports(session, default_fid, fid, i_ports=port_l, echo=echo)
+        if fos_auth.is_error(obj):
+            buf = 'Error moving ports from FID ' + str('fid') + ' to ' + str(default_fid)
+            switch_d['err_msgs'].append(buf)
+            brcdapi_log.exception(['switch_d:',
+                                   pprint.pformat(switch_d),
+                                   buf,
+                                   fos_auth.formatted_error_msg(obj)],
+                                  echo=True)
+            ec = brcddb_common.EXIT_STATUS_ERROR
+
+    return ec
+
+
 def _configure_ports(session, chassis_obj, switch_d_l, echo):
-    """Configure the ports. In this version, only bind and reserve is supported.
+    """Configure the ports. In this version, only bind, port name, and reserve is supported.
 
     :param session: Session object, or list of session objects, returned from brcdapi.fos_auth.login()
     :type session: dict
@@ -539,6 +563,25 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
                           fos_auth.formatted_error_msg(obj)]
                     brcdapi_log.exception(ml, echo=True)
                     ec = brcddb_common.EXIT_STATUS_ERROR
+
+        # Name the ports
+        content = [{'name': d1['port'], 'user-friendly-name': d1['port_name']} for d1 in
+                   [d0 for d0 in port_d.values() if isinstance(d0.get('port_name'), str) and len(d0['port_name']) > 0]]
+        if len(content) > 0:
+            brcdapi_log.log('Naming ' + str(len(content)) + ' ports.', echo)
+            obj = brcdapi_rest.send_request(session,
+                                            'running/brocade-interface/fibrechannel',
+                                            'PATCH',
+                                            {'fibrechannel': content},
+                                            fid)
+            if fos_auth.is_error(obj):
+                buf = 'Error naming ports for FID ' + str(fid)
+                switch_d['err_msgs'].append(buf)
+                ml = [buf,
+                      fos_auth.formatted_error_msg(obj),
+                      'port_d:',
+                      pprint.pformat(port_d)]
+                brcdapi_log.exception(ml, echo=True)
 
     return ec
 
@@ -639,7 +682,7 @@ def _get_input():
         buf = '(Optional) "self" for HTTPS mode. "none", for HTTP, is the default.'
         parser.add_argument('-s', help=buf, required=False,)
         parser.add_argument('-i', help='(Required) File name of Excel Workbook to read.', required=True)
-        buf = '(Optional) No parameters. If specified, move ports even if they are online'
+        buf = '(Optional) No parameters. If specified, move ports even if they are online.'
         parser.add_argument('-force', help=buf, action='store_true', required=False)
         buf = '(Optional) Suppress all library generated output to STD_IO except the exit code. Useful with batch ' \
               'processing'
@@ -741,14 +784,11 @@ def pseudo_main():
                 switch_obj = chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid'])
                 if switch_obj is not None:  # Alert was posted during switch creation time if the switch wasn't created
                     ec_l.append(method(session, switch_obj, switch_d, echo))
-                    # temp_ec = _configure_switch(session, chassis_obj, switch_d, echo)
-                    # if temp_ec != brcddb_common.EXIT_STATUS_OK and ec != brcddb_common.EXIT_STATUS_OK:
-                    #     ec = temp_ec
 
         # Figure out what ports to add or remove. It doesn't make sense to move ports to the default logical switch that
         # will be moved to another logical switch. I didn't think of this until after the code was written. To minimize
-        # changes to working code, I just built a list of all ports that will be added to some logical switch,
-        # all_add_l, and removed them from the remove_port_l list.
+        # changes to working code, I just built a list of all ports that will be added to a logical switch, all_add_l,
+        # and removed them from the remove_port_l list.
         all_add_l = list()
         for switch_d in switch_d_list:
             _ports_to_move(chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid']), switch_d, force)
@@ -756,11 +796,23 @@ def pseudo_main():
         for switch_d in switch_d_list:
             switch_d['remove_port_l'] = [p for p in switch_d['remove_port_l'] if p not in all_add_l]
 
-        # Add/Remove ports and re-read the chassis and logical switch data to pick up the switch(es) we just created.
-        ec_l.append(_add_remove_ports(session, chassis_obj, switch_d_list, echo))
-        session.pop('chassis_wwn', None)
-        api_int.get_batch(session, proj_obj, _basic_capture_kpi_l, None)
-        chassis_obj = proj_obj.r_chassis_obj(session.get('chassis_wwn'))
+        # Add ports, re-read chassis to pick up the changes, then do it again for ports to move to the default switch
+
+        """ NOTE: _add_ports() must be called first. This is because when configuring multiple logical switches, the
+        ports to be removed from one logical switch may be moved to another logical switch rather than the default
+        logical switch. Moving ports is time consuming. The logic in this module is to create and configure one logical
+        switch at a time. Rather than move ports out of the logical switch being worked on to the default logical switch
+        only to later more them from the default logical switch to another logical switch, all logical switches are
+        created with their ports. This means that after creating all the logical switches, ports to be removed from an
+        individual logical switch may have been moved to another logical switch. The logic herein operates on a per
+        logical switch just as _add_ports() does. Any port to be removed is moved to the default switch so each port to
+        be removed is checked to see if it wasn't already moved to another logical switch."""
+
+        for method in (_add_ports, _remove_ports):
+            ec_l.append(method(session, chassis_obj, switch_d_list, echo))
+            session.pop('chassis_wwn', None)
+            api_int.get_batch(session, proj_obj, _basic_capture_kpi_l, None)
+            chassis_obj = proj_obj.r_chassis_obj(session.get('chassis_wwn'))
 
         # Configure the ports, then enable the switch and ports
         for method in (_configure_ports, _enable_switch_and_ports):
