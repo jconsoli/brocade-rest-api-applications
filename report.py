@@ -57,16 +57,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.0     | 01 Jan 2023   | Added shebang line. Added read of best practice tables.                           |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.1     | 21 Jan 2023   | Added input string to description so it's added to the report.                    |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '01 Jan 2023'
+__date__ = '21 Jan 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.0'
+__version__ = '3.1.1'
 
 import argparse
 import brcddb.brcddb_project as brcddb_project
@@ -81,11 +83,11 @@ import brcddb.brcddb_fabric as brcddb_fabric
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/test_alias_out'
+_DEBUG_i = 'Lab_217/capture_217'
 _DEBUG_o = 'test/test_report'
 _DEBUG_bp = 'bp'
 _DEBUG_sup = False
-_DEBUG_sfp = None  # 'sfp_rules_r10'
+_DEBUG_sfp = 'sfp_rules_r10'
 _DEBUG_iocp = None
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
@@ -100,23 +102,6 @@ def _custom_report(proj_obj, options):
     :param options: As passed in via the shell
     :type options: str, None
     """
-    return
-
-    ml = ['']
-    for fabric_obj in proj_obj.r_fabric_objects():
-        ml.extend(['', '# ' + brcddb_fabric.best_fab_name(fabric_obj, fid=True), ''])
-        row = 0
-        for alias_obj in fabric_obj.r_alias_objects():
-            for alert_obj in alias_obj.r_alert_objects():
-                if alert_obj.alert_num() == al.ALERT_NUM.ALIAS_INITIATOR_UPPER:
-                    name = alias_obj.r_obj_key()
-                    ml.append('zoneobjectrename "' + name + '", "' + name.lower() + '"')
-                    if row >= 19:
-                        ml.append('')
-                        row = 0
-                    else:
-                        row += 1
-    brcdapi_log.log(ml, echo=True)
     return
 
 
@@ -185,14 +170,14 @@ def _get_input():
           'Custom, -c:           ' + str(args_c)]
     if _DEBUG:
         ml.insert(0, 'WARNING!!! Debug is enabled')
-    brcdapi_log.log(ml, echo=True)
 
     return brcdapi_file.full_file_name(args_i, '.json'), \
            brcdapi_file.full_file_name(args_o, '.xlsx'), \
            brcdapi_file.full_file_name(args_bp, '.xlsx'), \
            brcdapi_file.full_file_name(args_sfp, '.xlsx'), \
            args_iocp, \
-           args_c
+           args_c, \
+           ml
 
 
 def pseudo_main():
@@ -204,7 +189,8 @@ def pseudo_main():
     global _DEBUG, __version__
 
     # Get and validate user input
-    inf, outf, bp_rules, sfp_rules, iocp, custom_parms = _get_input()
+    inf, outf, bp_rules, sfp_rules, iocp, custom_parms, ml = _get_input()
+    brcdapi_log.log(ml, echo=True)
 
     # Get the project object
     try:
@@ -217,6 +203,7 @@ def pseudo_main():
         return brcddb_common.EXIT_STATUS_ERROR
     if proj_obj is None:
         return brcddb_common.EXIT_STATUS_ERROR
+    proj_obj.s_description('\n'.join(ml))
 
     # Perform all pre-processing (parse IOCPs, build references, ...)
     brcdapi_log.log('Building cross references', echo=True)
