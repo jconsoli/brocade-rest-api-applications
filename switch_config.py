@@ -101,10 +101,10 @@ import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = True  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = '10.144.72.15'
+_DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
+_DEBUG_ip = 'xx.xxx.xx.xx'
 _DEBUG_id = 'admin'
-_DEBUG_pw = 'AdminPassw0rd!'
+_DEBUG_pw = 'password'
 _DEBUG_s = 'self'
 _DEBUG_i = 'test/sc_4'
 _DEBUG_force = False
