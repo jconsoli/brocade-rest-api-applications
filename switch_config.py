@@ -70,15 +70,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.1.1     | 14 Jan 2023   | Made port moves more efficient when configuring multiple logical switches.        |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.2     | 11 Feb 2023   | Added port naming configuration                                                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '14 Jan 2023'
+__date__ = '11 Feb 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.1.1'
+__version__ = '1.1.2'
 
 import argparse
 import sys
@@ -106,7 +108,7 @@ _DEBUG_ip = 'xx.xxx.xx.xx'
 _DEBUG_id = 'admin'
 _DEBUG_pw = 'password'
 _DEBUG_s = 'self'
-_DEBUG_i = 'test/sc_4'
+_DEBUG_i = 'test/gsh'
 _DEBUG_force = False
 _DEBUG_sup = False
 _DEBUG_echo = True
@@ -114,14 +116,16 @@ _DEBUG_d = False
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
-_fc_switch = 'running/brocade-fibrechannel-switch/'
-_fc_config = 'running/brocade-fibrechannel-configuration/'
-_fc_ficon = 'running/brocade-ficon/'
+_fc_switch = 'running/brocade-fibrechannel-switch/fibrechannel-switch'
+_fc_switch_config = 'running/brocade-fibrechannel-configuration/switch-configuration'
+_fc_switch_port = 'running/brocade-fibrechannel-configuration/port-configuration'
+_fc_ficon_cup = 'running/brocade-ficon/cup'
 _basic_capture_kpi_l = [
     # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface.get_chassis()
-    _fc_switch + 'fibrechannel-switch',
-    _fc_config + 'switch-configuration',
-    _fc_ficon + 'cup',
+    _fc_switch,
+    _fc_switch_config,
+    _fc_switch_port,
+    _fc_ficon_cup,
     'running/brocade-interface/fibrechannel',
 ]
 
@@ -138,7 +142,7 @@ def _configuration_checks(switch_d_list):
 
     # Note: duplicate FID checking is done in brcddb.report.utils.parse_switch_file() so there is no need to do it here.
     for switch_d in switch_d_list:
-        switch_did = gen_util.get_key_val(switch_d, _fc_switch+'fibrechannel-switch/domain-id')
+        switch_did = gen_util.get_key_val(switch_d, _fc_switch+'/domain-id')
 
         if switch_d['switch_info']['switch_type'] == 'base':
             base_l.append(switch_d)  # Used to check for, and report if necessary, duplicate base switches
@@ -157,13 +161,13 @@ def _configuration_checks(switch_d_list):
             rl.insert(rl_index, buf)
 
         # Does the banner contain any invalid characters?
-        banner = gen_util.get_key_val(switch_d, _fc_switch+'fibrechannel-switch/banner')
+        banner = gen_util.get_key_val(switch_d, _fc_switch+'/banner')
         if banner is not None:
             v_banner = gen_util.valid_banner.sub('-', banner)
             if banner != v_banner:
                 # Fix and report the issue. Note that by appending the error to switch_d rather than rl allows the
                 # script to continue running. This isn't a big enough problem to halt processing.
-                gen_util.add_to_obj(switch_d, _fc_switch+'fibrechannel-switch/banner', v_banner)
+                gen_util.add_to_obj(switch_d, _fc_switch+'/banner', v_banner)
                 buf = 'Invalid characters in banner for FID on ' + switch_d['switch_info']['sheet_name'] +\
                       '. Replaced invalid characters with "-"'
                 switch_d['err_msgs'].append(buf)
@@ -321,9 +325,8 @@ def _fiberchannel_switch(session, switch_obj, switch_d, echo):
 
     # Set switch configuration parameters for brocade-fibrechannel-switch/fibrechannel-switch.
     sub_content = dict()
-    url = _fc_switch+'fibrechannel-switch'
-    prefix = url.replace('running/', '') + '/'
-    api_d = gen_util.get_key_val(switch_d, url)
+    prefix = _fc_switch.replace('running/', '') + '/'
+    api_d = gen_util.get_key_val(switch_d, _fc_switch)
     if isinstance(api_d, dict):
         for k, v in api_d.items():
             current_v = switch_obj.r_get(prefix+k)
@@ -348,7 +351,7 @@ def _fiberchannel_switch(session, switch_obj, switch_d, echo):
 def _switch_config(session, switch_obj, switch_d, echo):
     """Set the fabric parameters: brocade-fibrechannel-configuration/switch-configuration. See _fiberchannel_switch()
     for input and output parameter definitions."""
-    global _fc_config
+    global _fc_switch_config, _fc_switch_port
 
     # Load common use stuff into local variables
     ec = brcddb_common.EXIT_STATUS_OK
@@ -357,31 +360,31 @@ def _switch_config(session, switch_obj, switch_d, echo):
 
     # Set the fabric parameters: brocade-fibrechannel-configuration/switch-configuration
     sub_content = dict()
-    url = _fc_config+'switch-configuration'
-    prefix = url.replace('running/', '') + '/'
-    api_d = gen_util.get_key_val(switch_d, url)
-    if isinstance(api_d, dict):
-        for k, v in api_d.items():
-            current_v = switch_obj.r_get(prefix+k)
-            if v is not None:
-                if type(current_v) != type(v) or current_v != v:  # We're only sending changes (PATCH)
-                    sub_content.update({k: v})
-    if len(sub_content) > 0:
-        obj = brcdapi_rest.send_request(session,
-                                        url,
-                                        'PATCH',
-                                        {'switch-configuration': sub_content},
-                                        fid)
-        if fos_auth.is_error(obj):
-            buf = 'Failed to configure switch-configuration parameters for FID ' + str(fid)
-            switch_d['err_msgs'].append(buf)
-            brcdapi_log.exception([buf,
-                                   'Sheet: ' + switch_d['switch_info']['sheet_name'],
-                                   fos_auth.formatted_error_msg(obj),
-                                   'switch_d:',
-                                   pprint.pformat(switch_d)],
-                                  echo=True)
-            ec = brcddb_common.EXIT_STATUS_API_ERROR
+    for url in (_fc_switch_config, _fc_switch_port):
+        prefix = url.replace('running/', '') + '/'
+        api_d = gen_util.get_key_val(switch_d, url)
+        if isinstance(api_d, dict):
+            for k, v in api_d.items():
+                current_v = switch_obj.r_get(prefix+k)
+                if v is not None:
+                    if type(current_v) != type(v) or current_v != v:  # We're only sending changes (PATCH)
+                        sub_content.update({k: v})
+        if len(sub_content) > 0:
+            obj = brcdapi_rest.send_request(session,
+                                            url,
+                                            'PATCH',
+                                            {url.split('/').pop(): sub_content},
+                                            fid)
+            if fos_auth.is_error(obj):
+                buf = 'Failed to configure switch-configuration parameters for FID ' + str(fid)
+                switch_d['err_msgs'].append(buf)
+                brcdapi_log.exception([buf,
+                                       'Sheet: ' + switch_d['switch_info']['sheet_name'],
+                                       fos_auth.formatted_error_msg(obj),
+                                       'switch_d:',
+                                       pprint.pformat(switch_d)],
+                                      echo=True)
+                ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     return ec
 
@@ -389,7 +392,7 @@ def _switch_config(session, switch_obj, switch_d, echo):
 def _ficon_config(session, switch_obj, switch_d, echo):
     """Set the fabric parameters: brocade-fibrechannel-configuration/switch-configuration. See _fiberchannel_switch()
     for input and output parameter definitions."""
-    global _fc_ficon
+    global _fc_ficon_cup
 
     # Load common use stuff into local variables
     ec = brcddb_common.EXIT_STATUS_OK
@@ -398,9 +401,8 @@ def _ficon_config(session, switch_obj, switch_d, echo):
 
     # Set the fabric parameters: brocade-fibrechannel-configuration/switch-configuration
     sub_content = dict()
-    url = _fc_ficon+'cup'
-    prefix = url.replace('running/', '') + '/'
-    api_d = gen_util.get_key_val(switch_d, url)
+    prefix = _fc_ficon_cup.replace('running/', '') + '/'
+    api_d = gen_util.get_key_val(switch_d, _fc_ficon_cup)
     if isinstance(api_d, dict):
         for k, v in api_d.items():
             current_v = switch_obj.r_get(prefix+k)
@@ -408,7 +410,7 @@ def _ficon_config(session, switch_obj, switch_d, echo):
                 if type(current_v) != type(v) or current_v != v:  # We're only sending changes (PATCH)
                     sub_content.update({k: v})
     if len(sub_content) > 0:
-        obj = brcdapi_rest.send_request(session, url, 'PATCH', dict(cup=sub_content), fid)
+        obj = brcdapi_rest.send_request(session, _fc_ficon_cup, 'PATCH', dict(cup=sub_content), fid)
         if fos_auth.is_error(obj):
             buf = 'Failed to configure FICON parameters for FID ' + str(fid)
             switch_d['err_msgs'].append(buf)
@@ -566,7 +568,7 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
 
         # Name the ports
         content = [{'name': d1['port'], 'user-friendly-name': d1['port_name']} for d1 in
-                   [d0 for d0 in port_d.values() if isinstance(d0.get('port_name'), str) and len(d0['port_name']) > 0]]
+                   [d0 for d0 in port_d.values() if isinstance(d0.get('port_name'), str)]]
         if len(content) > 0:
             brcdapi_log.log('Naming ' + str(len(content)) + ' ports.', echo)
             obj = brcdapi_rest.send_request(session,
@@ -785,10 +787,15 @@ def pseudo_main():
                 if switch_obj is not None:  # Alert was posted during switch creation time if the switch wasn't created
                     ec_l.append(method(session, switch_obj, switch_d, echo))
 
-        # Figure out what ports to add or remove. It doesn't make sense to move ports to the default logical switch that
-        # will be moved to another logical switch. I didn't think of this until after the code was written. To minimize
-        # changes to working code, I just built a list of all ports that will be added to a logical switch, all_add_l,
-        # and removed them from the remove_port_l list.
+        """ NOTE: _add_ports() must be called first. This was done for efficiency. Moving ports is time consuming. When
+        configuring multiple switches, if a port is needed in another logical switch there is no point in moving it from
+        the switch being worked on to the default switch only to later have to move it to another logical switch. Ports
+        are added by moving them from whatever logical switch they are in to the one where they are needed. By adding
+        ports to all logical switches first, only ports not used in any of the logical switches being created are moved
+        to the default switch.
+        
+        I didn't think of this until after the code was written. To minimize changes to working code, I just built a
+        list of all ports that will be added to a logical switch, all_add_l, and removed them from the remove_port_l."""
         all_add_l = list()
         for switch_d in switch_d_list:
             _ports_to_move(chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid']), switch_d, force)
@@ -797,16 +804,6 @@ def pseudo_main():
             switch_d['remove_port_l'] = [p for p in switch_d['remove_port_l'] if p not in all_add_l]
 
         # Add ports, re-read chassis to pick up the changes, then do it again for ports to move to the default switch
-
-        """ NOTE: _add_ports() must be called first. This is because when configuring multiple logical switches, the
-        ports to be removed from one logical switch may be moved to another logical switch rather than the default
-        logical switch. Moving ports is time consuming. The logic in this module is to create and configure one logical
-        switch at a time. Rather than move ports out of the logical switch being worked on to the default logical switch
-        only to later more them from the default logical switch to another logical switch, all logical switches are
-        created with their ports. This means that after creating all the logical switches, ports to be removed from an
-        individual logical switch may have been moved to another logical switch. The logic herein operates on a per
-        logical switch just as _add_ports() does. Any port to be removed is moved to the default switch so each port to
-        be removed is checked to see if it wasn't already moved to another logical switch."""
 
         for method in (_add_ports, _remove_ports):
             ec_l.append(method(session, chassis_obj, switch_d_list, echo))

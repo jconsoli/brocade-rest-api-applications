@@ -28,16 +28,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.2     | 01 Jan 2023   | Added additional summaries and totals.                                            |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.3     | 11 Feb 2023   | Added login summaries.                                                            |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2022, 2023 Jack Consoli'
-__date__ = '01 Jan 2023'
+__date__ = '11 Feb 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import argparse
 import copy
@@ -58,7 +60,7 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/test_pc_in'
+_DEBUG_i = 'test/180604'
 _DEBUG_o = 'test/test_pc_out'
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
@@ -144,9 +146,11 @@ def _sheet_for_report(wb, sheet_index, sname, stitle):
     return sheet
 
 
-def _summary_sheet(wb, summary_l):
+def _summary_sheet(proj_obj, wb, summary_l):
     """Creates a summary sheet
 
+    :param proj_obj: Project object
+    :type proj_obj: brcddb.classes.project.ProjectObj
     :param wb: openpyxl workbook object
     :type wb: Workbook
     :param summary_l: List of fabric dictionaries. See fab_sum_l in _create_report()
@@ -243,6 +247,13 @@ def _summary_sheet(wb, summary_l):
         col += 1
     buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col-1) + str(row) + ')'
     excel_util.cell_update(sheet, row, col, buf, font=_bold_font, align=_wrap, border=_border)
+
+    # Add a login summary
+    row, col = row + 2, 1
+    excel_util.cell_update(sheet, row, col, 'Total Logins', font=_bold_font, align=_wrap, border=_border)
+    sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+    col += 2
+    excel_util.cell_update(sheet, row, col, len(proj_obj.r_login_keys()), font=_bold_font, align=_wrap, border=_border)
 
 
 def _update_switch_in_fab_sheet(row, sheet, sub_hdr, switch_d):
@@ -400,20 +411,6 @@ def _create_report(proj_obj, file_name):
             row += 2
         fab_sum_l.append(fab_d)
 
-        # Add the summary totals for the fabric
-        # row, col = row + 1, 1
-        # excel_util.cell_update(sheet, row, col, 'Fabric total', font=_bold_font, align=_wrap)
-        # sheet.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col+1)
-        # buf = '=$' + str(fab_sum.pop(0))
-        # for i in fab_sum:
-        #     buf += '+$' + str(i)
-        # col += 2
-        # for col in range(col, len(_speed_keys)+col):
-        #     col_letter = xl_util.get_column_letter(col)
-        #     excel_util.cell_update(sheet, row, col, buf.replace('$', col_letter), font=_bold_font, align=_wrap,
-        #                            border=_border)
-        # sheet_index += 1
-
         # Add the header for the fabric summary at the bottom of the page.
         col = 1
         excel_util.cell_update(sheet, row, col, 'Fabric total', font=_bold_font, align=_wrap)
@@ -489,27 +486,20 @@ def _create_report(proj_obj, file_name):
             excel_util.cell_update(sheet, row, col, buf, font=_text_font, align=_wrap, border=_border)
         buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
         excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
-        #     # sum_d.update({k: sub_sum_d})
-        #     # excel_util.cell_update(sheet, row, col, str(k), font=_bold_font, align=_wrap)
-        #     for buf, sub_d in switch_d[k].items():
-        #         col = 2
-        #         for k0, cell in sub_d.items():
-        #             sub_sum_d.update({k0: 0})
-        #         excel_util.cell_update(sheet, row, col, buf, font=_text_font, align=_wrap, border=_border)
-        #     buf = '=sum(C' + str(row) + ':' + xl_util.get_column_letter(col) + str(row) + ')'
-        #     excel_util.cell_update(sheet, row, col+1, buf, font=_text_font, align=_wrap, border=_border)
 
         sheet_index += 1
 
     # Add a summary sheet
-    _summary_sheet(wb, fab_sum_l)
+    _summary_sheet(proj_obj, wb, fab_sum_l)
 
     try:
         wb.save(file_name)
     except PermissionError:
         buf = 'Write access permission for ' + file_name + ' denied. This typically occurs when the file is open'
-        brcdapi_log.log(['', buf], True)
+        brcdapi_log.log(['', buf], echo=True)
         ec = brcddb_common.EXIT_STATUS_USER_ERROR
+    except FileExistsError:
+        brcdapi_log.log(['', 'The folder in the path for ' + file_name + ' does not exist.'], echo=True)
 
     return ec
 
@@ -561,16 +551,16 @@ def psuedo_main():
     ml.append('Version:  ' + __version__)
     ml.append('In file:  ' + inf)
     ml.append('Out file: ' + outf)
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     # Get a project object
     try:
         proj_obj = brcddb_project.read_from(inf)
     except FileNotFoundError:
-        brcdapi_log.log(['', inf + ' not found.'], True)
+        brcdapi_log.log(['', inf + ' not found.'], echo=True)
         return brcddb_common.EXIT_STATUS_USER_ERROR
     if proj_obj is None:
-        brcdapi_log.log(['', 'Unknown error reading: ' + inf], True)
+        brcdapi_log.log(['', 'Unknown error reading: ' + inf], echo=True)
         return brcddb_common.EXIT_STATUS_ERROR
     brcddb_project.build_xref(proj_obj)
     brcddb_project.add_custom_search_terms(proj_obj)
@@ -641,9 +631,9 @@ def psuedo_main():
 #
 ###################################################################
 if _DOC_STRING:
-    brcdapi_log.close_log('_DOC_STRING is True. No processing', True)
+    print('_DOC_STRING is True. No processing')
     exit(0)
 
 _ec = psuedo_main()
-brcdapi_log.close_log(['', 'All processing complete. Exit code: ' + str(_ec)])
+brcdapi_log.close_log(['', 'All processing complete. Exit code: ' + str(_ec)], echo=True)
 exit(_ec)

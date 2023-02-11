@@ -59,40 +59,47 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.1     | 21 Jan 2023   | Added input string to description so it's added to the report.                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.2     | 11 Feb 2023   | Added zone groups, -g, options.                                                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '21 Jan 2023'
+__date__ = '11 Feb 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.1'
+__version__ = '3.1.2'
 
 import argparse
-import brcddb.brcddb_project as brcddb_project
 import brcdapi.log as brcdapi_log
 import brcdapi.file as brcdapi_file
+import brcdapi.excel_util as excel_util
+import brcdapi.gen_util as gen_util
+import brcdapi.port as brcdapi_port
+import brcddb.brcddb_project as brcddb_project
 import brcddb.apps.report as brcddb_report
 import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_bp as brcddb_bp
 import brcddb.app_data.alert_tables as al
 import brcddb.util.iocp as brcddb_iocp
-import brcddb.brcddb_fabric as brcddb_fabric
+import brcddb.util.obj_convert as brcddb_conv
+import brcddb.brcddb_port as brcddb_port
+import brcddb.util.search as brcddb_search
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'Lab_217/capture_217'
+_DEBUG_i = '_capture_2023_01_29_10_21_27/sw_2_217'
 _DEBUG_o = 'test/test_report'
-_DEBUG_bp = 'bp'
+_DEBUG_bp = None  # 'bp'
 _DEBUG_sup = False
-_DEBUG_sfp = 'sfp_rules_r10'
+_DEBUG_sfp = None  # 'sfp_rules_r10'
 _DEBUG_iocp = None
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 _DEBUG_c = None
-
+_DEBUG_group = None  # 'test/group'
 
 def _custom_report(proj_obj, options):
     """Modified as needed for custom reports. Intended for programmers customizing this script
@@ -102,7 +109,137 @@ def _custom_report(proj_obj, options):
     :param options: As passed in via the shell
     :type options: str, None
     """
+
     return
+
+
+def _filter_wwn(obj, filter_val, search):
+    """Returns a list of login objects in obj"""
+    return brcddb_conv.obj_extract(
+        brcddb_search.match_test(
+            brcddb_conv.obj_extract(obj, 'LoginObj'),
+            dict(k='_obj_key', t=search, v=filter_val, i=True)),
+        'PortObj')
+
+
+def _filter_alias(obj, filter_val, search):
+    """Returns a list of alias objects in obj"""
+    return brcddb_conv.obj_extract(
+        brcddb_search.match_test(
+            brcddb_conv.obj_extract(obj, 'AliasObj'),
+            dict(k='_obj_key', t=search, v=filter_val, i=True)),
+        'PortObj'
+    )
+
+
+def _filter_switch_port(obj, filter_val, search):
+    """Returns a list of port objects for the switch(es) and port(s) specified in filter_val"""
+    switch_l, rl = list(), list()
+    tl = filter_val.split(';') if isinstance(filter_val, str) else list()
+    if len(tl) >= 2:
+        for switch in tl[0].split(','):
+            switch_l.extend([obj.r_switch_obj(switch)] if gen_util.is_wwn(switch)
+                            else brcddb_project.switch_obj_for_user_name(obj, switch, match_type=search))
+        port_l = brcdapi_port.port_range_to_list(tl[1])
+        for switch_obj in switch_l:
+            rl.extend([switch_obj.r_port_obj(p) for p in port_l if switch_obj.r_port_obj(p) is not None])
+    else:
+        brcdapi_log.exception('Invalid filter_val. Type: ' + str(type(filter_val)) + ', Val: ' + str(filter_val),
+                              echo=True)
+
+    return rl
+
+
+def _filter_switch_port_name(obj, filter_val, search):
+    """Returns a list of port objects for the switch(es) and port(s) specified in filter_val"""
+    switch_l, rl = list(), list()
+    tl = filter_val.split(';') if isinstance(filter_val, str) else list()
+    if len(tl) >= 2:
+        for switch in tl[0].split(','):
+            switch_l.extend([obj.r_switch_obj(switch)] if gen_util.is_wwn(switch)
+                            else brcddb_project.switch_obj_for_user_name(obj, switch))
+        for switch_obj in switch_l:
+            for name in tl[1].split(','):
+                rl.extend(brcddb_port.port_objects_for_name(switch_obj, name, search=search))
+    else:
+        brcdapi_log.exception('Invalid filter_val. Type: ' + str(type(filter_val)) + ', Val: ' + str(filter_val),
+                              echo=True)
+
+    return rl
+
+
+def _filter_zone(obj, filter_val, search):
+    """Returns a list of alias objects in obj"""
+    return brcddb_conv.obj_extract(
+        brcddb_search.match_test(
+            brcddb_conv.obj_extract(obj, 'ZoneObj'),
+            dict(k='_obj_key', t=search, v=filter_val, i=True)),
+        'PortObj'
+    )
+
+
+_group_filter_list = {'WWN': _filter_wwn,
+                      'Alias': _filter_alias,
+                      'switch;port': _filter_switch_port,
+                      'switch;port_name': _filter_switch_port_name,
+                      'Zone': _filter_zone}
+
+
+def _groups(proj_obj, file):
+    """Modified as needed for custom reports. Intended for programmers customizing this script
+
+    :param proj_obj: Project object
+    :type proj_obj: brcddb.classes.project.ProjectObj
+    :param file: Name of group definition workbook
+    :type file: str, None
+    :return: Dictionary whose key is the group name and the value is a list of login objects
+    :rtype: dict
+    """
+    ml, group_d = list(), dict()
+    if file is None:
+        return group_d
+
+    # Read the workbook
+    try:
+        al = excel_util.read_workbook(file, dm=3, sheets='parameters')[0]['al']
+        if len(al) < 2:
+            ml.append('No Filters defined in ' + file)
+    except (IndexError, KeyError):
+        ml.append('"parameters" sheet not found in ' + file)
+    except FileNotFoundError:
+        ml.append('File not found: ' + file)
+    except FileExistsError:
+        ml.append('The path, folder, does not exist: ' + file)
+    if len(ml) > 0:
+        brcdapi_log.log(ml, echo=True)
+        return group_d
+
+    # Find the column headers
+    col_d = excel_util.find_headers(al[0])
+    for key in ('Group', 'Filter', 'Operand', 'Operator'):
+        if key not in col_d:
+            ml.append(key + ' missing in ' + file)
+    if len(ml) > 0:
+        brcdapi_log.log(ml, echo=True)
+        return group_d
+
+    # Figure out what's in each group
+    row = 1
+    for row_l in al[1:]:
+        row += 1
+        group, g_filter, operand, operator =\
+            row_l[col_d['Group']], row_l[col_d['Filter']], row_l[col_d['Operand']], row_l[col_d['Operator']]
+        if not isinstance(group, str) or len(group) == 0:
+            continue
+        if not isinstance(g_filter, str) or g_filter not in _group_filter_list:
+            ml.append('Unknown Filter, ' + str(g_filter) + ', at row ' + str(row))
+        group_l = group_d.get(group)
+        if group_l is None:
+            group_l = list()
+            group_d.update({group: group_l})
+        group_l.extend(_group_filter_list[g_filter](proj_obj, operand, operator))
+
+    return group_d
 
 
 def _get_input():
@@ -120,10 +257,12 @@ def _get_input():
     :rtype c: str, None
     """
     global _DEBUG, _DEBUG_i, _DEBUG_o, _DEBUG_bp, _DEBUG_sfp, _DEBUG_sup, _DEBUG_iocp, _DEBUG_log, _DEBUG_nl, _DEBUG_c
+    global _DEBUG_group, __version__
 
     if _DEBUG:
-        args_i, args_o, args_bp, args_sfp, args_sup, args_iocp, args_log, args_nl, args_c =\
-            _DEBUG_i, _DEBUG_o, _DEBUG_bp, _DEBUG_sfp, _DEBUG_sup, _DEBUG_iocp, _DEBUG_log, _DEBUG_nl, _DEBUG_c
+        args_i, args_o, args_bp, args_sfp, args_group, args_sup, args_iocp, args_log, args_nl, args_c =\
+            _DEBUG_i, _DEBUG_o, _DEBUG_bp, _DEBUG_sfp, _DEBUG_group, _DEBUG_sup, _DEBUG_iocp, _DEBUG_log, _DEBUG_nl, \
+            _DEBUG_c
     else:
         parser = argparse.ArgumentParser(description='Create a general report in Excel.')
         buf = 'Required. Name of input file generated by capture.py, combine.py, or multi_capture.py. Extension '\
@@ -136,6 +275,10 @@ def _get_input():
               'applications.maps_config. This is useful for checking SFPs against the new recommended MAPS rules '\
               'before implementing them or filling in missing rules. ".xlsx" is automatically appended.'
         parser.add_argument('-sfp', help=buf, required=False)
+        buf = 'Optional. Name of Excel file containing group definitions. When specified, creates a zone sheet for '\
+              'each group. Although intended for storage enclosures, any group can be defined. See groups.xlsx for an '\
+              'example.'
+        parser.add_argument('-group', help=buf, required=False)
         buf = 'Optional. For FICON environments only. Name of folder with IOCP files. All files in this folder must '\
               'be IOCP files (build I/O configuration statements from HCD) and must begin with the CEC serial number'\
               ' followed by \'_\'. Leading 0s are not required. Example, for a CEC with serial number '\
@@ -152,8 +295,8 @@ def _get_input():
         parser.add_argument('-nl', help=buf, action='store_true', required=False)
         parser.add_argument('-c', help='(Optional) Custom parameter to be used with _custom_report()', required=False)
         args = parser.parse_args()
-        args_i, args_o, args_bp, args_sfp, args_sup, args_iocp, args_log, args_nl, args_c =\
-            args.i, args.o, args.bp, args.sfp, args.sup, args.iocp, args.log, args.nl, args.c
+        args_i, args_o, args_bp, args_sfp, args_group, args_sup, args_iocp, args_log, args_nl, args_c =\
+            args.i, args.o, args.bp, args.sfp, args.group, args.sup, args.iocp, args.log, args.nl, args.c
 
     # Set up log file and debug
     if args_sup:
@@ -175,6 +318,7 @@ def _get_input():
            brcdapi_file.full_file_name(args_o, '.xlsx'), \
            brcdapi_file.full_file_name(args_bp, '.xlsx'), \
            brcdapi_file.full_file_name(args_sfp, '.xlsx'), \
+           brcdapi_file.full_file_name(args_group, '.xlsx'), \
            args_iocp, \
            args_c, \
            ml
@@ -186,10 +330,8 @@ def pseudo_main():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _DEBUG, __version__
-
     # Get and validate user input
-    inf, outf, bp_rules, sfp_rules, iocp, custom_parms, ml = _get_input()
+    inf, outf, bp_rules, sfp_rules, group_file, iocp, custom_parms, ml = _get_input()
     brcdapi_log.log(ml, echo=True)
 
     # Get the project object
@@ -215,7 +357,7 @@ def pseudo_main():
     brcddb_bp.best_practice(bp_rules, sfp_rules, al.AlertTable.alertTbl, proj_obj)
 
     # Generate the report
-    brcddb_report.report(proj_obj, outf)
+    brcddb_report.report(proj_obj, outf, _groups(proj_obj, group_file))
     _custom_report(proj_obj, custom_parms)
     return brcddb_common.EXIT_STATUS_ERROR if proj_obj.r_is_any_error() else brcddb_common.EXIT_STATUS_OK
 
