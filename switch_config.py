@@ -72,15 +72,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.1.2     | 11 Feb 2023   | Added port naming configuration                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.3     | 26 Mar 2023   | Fixed exception error _print_summary()                                            |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '11 Feb 2023'
+__date__ = '26 Mar 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.1.2'
+__version__ = '1.1.3'
 
 import argparse
 import sys
@@ -643,7 +645,7 @@ def _print_summary(chassis_obj, switch_d_list):
             if len(switch_d['err_msgs']) > 0:
                 ml.append('  Error Messages:         ')
                 ml.extend(['    ' + buf for buf in switch_d['err_msgs']])
-        except:
+        except (AttributeError, KeyError):
             brcdapi_log.exception(['Malformed "switch_d":', pprint.pformat(switch_d)], echo=True)
     brcdapi_log.log(ml, echo=True)
 
