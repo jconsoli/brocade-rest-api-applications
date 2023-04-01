@@ -38,16 +38,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.4     | 11 Feb 2023   | Added 9.1.x branches                                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.5     | 01 Apr 2023   | Added some previously missed 9.1.x branches                                       |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
-__date__ = '11 Feb 2023'
+__date__ = '01 Apr 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.4'
+__version__ = '3.1.5'
 
 import argparse
 import brcdapi.log as brcdapi_log
@@ -71,10 +73,6 @@ _DEBUG_r = 'test/test_compare_report'
 _DEBUG_sup = False
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
-
-# Debug
-_DEBUG_R = False
-_DEBUG_W = False
 
 _key_conv_tbl = dict()  # List of API keys converted to human readable format for report display
 _generic_table_add = (  # Key to add to _key_conv_tbl that are simple key/values in brcddb.app_data.report_tables
@@ -191,11 +189,12 @@ _control_tables = dict(
         '/fibrechannel/enabled-state': dict(skip=True),  # Deprecated
         '/fibrechannel/average-(receive|transmit)-frame-size': dict(skip=True),
         '/fibrechannel/average-(receive|transmit)-buffer-usage': dict(skip=True),
-        '/fibrechannel-statistics/(time-generated|class-3-frames)': dict(skip=True),
+        '/fibrechannel-statistics/time-(generated|refreshed)': dict(skip=True),
+        '/fibrechannel-statistics/(tx|rx)-peak-frame': dict(skip=True),
+        '/fibrechannel-statistics/class-3-frames': dict(skip=True),
         '/fibrechannel-statistics/(in|out)-(rate|octets|frames)': dict(skip=True),
         '/fibrechannel-statistics/(in|out)-(frame|max-frame|peak)-rate': dict(skip=True),
         '/fibrechannel-statistics/frames-processing-required': dict(skip=True),  # What is this?
-        '/fibrechannel-statistics/fibrechannel-statistics time-refreshed': dict(skip=True),
         '/media-rdp/temperature': dict(lt=5, gt=5),
         '/media-rdp/current': dict(lt=0.2, gt=0.2),
         '/media-rdp/(r|t)x-power': dict(lt=15, gt=15),
@@ -207,6 +206,7 @@ _control_tables = dict(
         '/media-rdp/remote-media-voltage': dict(lt=20, gt=20),
         '/media-rdp/remote-media-(voltage|temperature|tx-bias|tx-power|rx-power)-alert/(high|low)-(warning|alarm)':
             dict(skip=True),  # These remote media values aren't always valid
+        'media-rdp/last-poll-time': dict(skip=True),  # Poll time?
     },
     AlertObj={
         '/msg_tbl': dict(skip=True),
@@ -719,9 +719,9 @@ def _new_report(c, b_proj_obj, c_proj_obj, c_obj, r_name):
     :param c: Total number of changes. Typically the number of changes returned from brcddb.util.compare.compare()
     :type c: int
     :param b_proj_obj: Project object for base (project we are comparing against). Typically the older project.
-    :type b_proj_obj: brcddb.classes.project.ProjectObj
+    :type b_proj_obj: brcddb.classes.project.ProjectObj, None
     :param c_proj_obj: Comparison project object. Typically the newer project.
-    :type c_proj_obj: brcddb.classes.project.ProjectObj
+    :type c_proj_obj: brcddb.classes.project.ProjectObj, None
     :param c_obj: Change object returned from brcddb.util.compare.compare()
     :type c_obj: dict
     :param r_name: Name of Excel workbook file
@@ -779,9 +779,6 @@ def pseudo_main():
     """
     global _generic_table_add, _key_conv_tbl, _control_tables
 
-    # Debug
-    global _DEBUG_W, _DEBUG_R
-
     # Get and validate the user inputs.
     bf, cf, rf, s_flag, log, nl = parse_args()
     if s_flag:
@@ -800,17 +797,26 @@ def pseudo_main():
 
     # Read the projects to compare and build the cross references
     ml = list()
-    b_proj_obj = brcddb_project.read_from(bf)
-    c_proj_obj = brcddb_project.read_from(cf)
-    if b_proj_obj is None:
-        ml.append('Missing or invalid base project.')
-    if c_proj_obj is None:
-        ml.append('Missing or invalid compare project.')
+    input_file_d = dict(b=dict(file=bf, t='-b'), c=dict(file=cf, t='-c'))
+    for d in input_file_d.values():
+        try:
+            d.update(obj=brcddb_project.read_from(d['file']))
+            if d['obj'] is None:
+                ml.append('Error reading ' + d['file'] + '. Check previous messages in the log for details.')
+            else:
+                brcddb_project.build_xref(d['obj'])
+        except FileNotFoundError:
+            ml.append('File ' + d['file'] + ' not found.')
+        except FileExistsError:
+            ml.append('A folder in the path ' + d['file'] + ' does not exist.')
+        except PermissionError:
+            ml.append('Permission error reading: ' + d['file'] + '.')
+        except BaseException as e:
+            ml.append('File ' + d['file'] + ' is not a valid JSON formatted file. Error messages is:')
+            ml.append(str(e, errors='ignore') if isinstance(e, (bytes, str)) else str(type(e)))
     if len(ml) > 0:
         brcdapi_log.log(ml, True)
         return brcddb_common.EXIT_STATUS_ERROR
-    brcddb_project.build_xref(b_proj_obj)
-    brcddb_project.build_xref(c_proj_obj)
 
     # Build out the key conversion tables. Used in _format_disp()
     for k, v in brcddb_rt.Port.port_display_tbl.items():
@@ -830,19 +836,15 @@ def pseudo_main():
 
     # Compare the two projects
     brcdapi_log.log('Please wait. The comparison may take several seconds', True)
-    if _DEBUG_R:
-        debug_d = brcdapi_file.read_dump('debug_file.json')
-        c, compare_obj = debug_d.get('c'), debug_d.get('compare_obj')
-    else:
-        c, compare_obj = brcddb_compare.compare(b_proj_obj, c_proj_obj, None, _control_tables)
-
-    # Debug
-    if _DEBUG_W:
-        brcdapi_log.log('c = ' + str(c), echo=True)
-        brcdapi_file.write_dump(dict(c=c, compare_obj=compare_obj), 'debug_file.json')
+    c, compare_obj = brcddb_compare.compare(input_file_d['b']['obj'], input_file_d['c']['obj'], None, _control_tables)
 
     brcdapi_log.log('Writing report: ' + rf, echo=True)
-    _new_report(c, b_proj_obj, c_proj_obj, _project_scrub(compare_obj), rf)
+    try:
+        _new_report(c, input_file_d['b']['obj'], input_file_d['c']['obj'], _project_scrub(compare_obj), rf)
+    except FileExistsError:
+        ml.append('The path, folder, does not exist: ' + rf)
+    except PermissionError:
+        brcdapi_log.log('Permission error writing ' + rf + '. This usually happens when the file is open.')
 
     return brcddb_common.EXIT_STATUS_OK
 
