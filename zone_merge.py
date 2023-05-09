@@ -48,16 +48,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.1.2     | 01 Jan 2023   | Fixed incorrect row number in error message.                                      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.3     | 09 May 2023   | Added detailed merge report. Fix zone mismatch. Abort zone trans on unknown error |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2021, 2022, 2023 Jack Consoli'
-__date__ = '01 Jan 2023'
+__date__ = '09 May 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.1.2'
+__version__ = '1.1.3'
 
 import argparse
 import sys
@@ -69,6 +71,7 @@ import collections
 import brcdapi.log as brcdapi_log
 import brcdapi.fos_auth as fos_auth
 import brcdapi.brcdapi_rest as brcdapi_rest
+import brcdapi.zone as brcdapi_zone
 import brcdapi.util as brcdapi_util
 import brcdapi.file as brcdapi_file
 import brcdapi.excel_util as excel_util
@@ -84,10 +87,10 @@ import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/zone_merge_even'
-_DEBUG_cfg = None
+_DEBUG_i = 'sac_zone/zone_merge_230428'
+_DEBUG_cfg = 'ZS_SAC_PROD_EVEN'
 _DEBUG_a = False
-_DEBUG_t = True
+_DEBUG_t = False
 _DEBUG_scan = False
 _DEBUG_cli = False
 _DEBUG_sup = False
@@ -207,7 +210,8 @@ def _patch_zone_db(proj_obj, eff_cfg):
             return rl
 
         # Send the changes to the switch
-        brcdapi_log.log('Sending zone updates to ' + brcddb_fabric.best_fab_name(fab_obj, wwn=True), echo=True)
+        brcdapi_log.log('Sending zone updates to ' + brcddb_fabric.best_fab_name(fab_obj, wwn=True, fid=True),
+                        echo=True)
         try:
             obj = api_zone.replace_zoning(session, base_fab_obj, fid)
             if fos_auth.is_error(obj):
@@ -218,8 +222,11 @@ def _patch_zone_db(proj_obj, eff_cfg):
                     obj = api_zone.enable_zonecfg(session, None, fid, eff_cfg)
                     if fos_auth.is_error(obj):
                         rl.append(fos_auth.formatted_error_msg(obj))
-        except:
-            rl.append('Software fault in api_zone.replace_zoning()')
+        except BaseException as e:
+            brcdapi_log.log('Unexpected error. Aborting zone transaction. Current zone state unknown.', echo=True)
+            brcdapi_zone.abort(session, fid)
+            rl.append('Software fault in api_zone.replace_zoning(). Fault detail:')
+            rl.append(str(e))
 
         # Logout
         obj = brcdapi_rest.logout(session)
@@ -367,7 +374,7 @@ def _get_project(sl, pl, addl_parms):
     return rl, proj_obj
 
 
-def _merge_aliases(change_d, base_fab_obj, add_fab_obj):
+def _merge_aliases(change_d, base_fab_obj, add_fab_obj, zl):
     """Merges the aliases from two fabrics
 
     :param change_d: Dictionary of alias changes as returned from brcddb.util.compare.compare()
@@ -376,6 +383,8 @@ def _merge_aliases(change_d, base_fab_obj, add_fab_obj):
     :type base_fab_obj: brcddb.classes.fabric.FabricObj
     :param add_fab_obj: brcddb fabric object with the aliases to be added to base_fab_obj
     :type add_fab_obj: brcddb.classes.fabric.FabricObj
+    :param zl: Running list of zone changes
+    :type zl: list
     :return: Error message list. If empty, no errors encountered
     :rtype: list
     """
@@ -383,68 +392,69 @@ def _merge_aliases(change_d, base_fab_obj, add_fab_obj):
     rl = list()
     if change_d is None:
         return rl
-    base_fab_name = brcddb_fabric.best_fab_name(base_fab_obj, True)
-    add_fab_name = brcddb_fabric.best_fab_name(add_fab_obj, True)
+    base_fab_name = brcddb_fabric.best_fab_name(base_fab_obj, wwn=True, fid=True)
+    add_fab_name = brcddb_fabric.best_fab_name(add_fab_obj, wwn=True, fid=True)
+    zl.extend(['', 'Alias Changes:', '  From: ' + add_fab_name, '  To:   ' + base_fab_name])
 
     # Add what needs to be added or report differences
     for alias, change_obj in change_d.items():
         change_type = change_obj.get('r')
         if change_type is None or change_type == 'Changed':  # This is a simple pass/fail. No need to look further
             rl.append('Alias ' + alias + ' in ' + base_fab_name + ' does not match the same alias in ' + add_fab_name)
+            zl.append('  Fault: ' + alias + ' (Membership list does not match)')
+            ml = [d['c'] for d in gen_util.convert_to_list(change_obj.get('_members')) if len(d['c']) > 0]
+            zl.append('    From: ' + ', '.join(ml))
+            ml = [d['b'] for d in gen_util.convert_to_list(change_obj.get('_members')) if len(d['b']) > 0]
+            zl.append('    To:   ' + ', '.join(ml))
         elif change_type == 'Added':
             add_obj = add_fab_obj.r_alias_obj(change_obj['c'])
-            base_fab_obj.s_add_alias(alias, add_obj.r_members())
+            ml = add_obj.r_members()
+            base_fab_obj.s_add_alias(alias, ml)
+            zl.append('  Add: ' + alias + ' (' + ', '.join(ml) + ')')
 
     return rl
 
 
-def _merge_zones(change_d, base_fab_obj, add_fab_obj):
-    """Merges the zones from two fabrics
-
-    :param change_d: Dictionary of alias changes as returned from brcddb.util.compare.compare()
-    :type change_d: dict
-    :param base_fab_obj: brcddb fabric object for the fabric we are adding the zones from add_fab_obj to
-    :type base_fab_obj: brcddb.classes.fabric.FabricObj
-    :param add_fab_obj: brcddb fabric object with the zones to be added to base_fab_obj
-    :type add_fab_obj: brcddb.classes.fabric.FabricObj
-    :return: Error message list. If empty, no errors encountered
-    :rtype: list
-    """
+def _merge_zones(change_d, base_fab_obj, add_fab_obj, zl):
+    """Merges the zones from two fabrics. See _merge_aliases() for parameter definitions"""
     # Basic prep
     rl = list()
     if change_d is None:
         return rl
-    base_fab_name = brcddb_fabric.best_fab_name(base_fab_obj, True)
-    add_fab_name = brcddb_fabric.best_fab_name(add_fab_obj, True)
+    base_fab_name = brcddb_fabric.best_fab_name(base_fab_obj, wwn=True, fid=True)
+    add_fab_name = brcddb_fabric.best_fab_name(add_fab_obj, wwn=True, fid=True)
+    zl.extend(['', 'Zone Changes:', '  From: ' + add_fab_name, '  To:   ' + base_fab_name])
 
     # Add what needs to be added or report differences
     for zone, change_obj in change_d.items():
         change_type = change_obj.get('r')
         if change_type is None or change_type == 'Changed':  # This is a simple pass/fail. No need to look further
             rl.append('Zone ' + zone + ' in ' + base_fab_name + ' does not match the same zone in ' + add_fab_name)
+            zl.append('  Fault: ' + zone + ' (Membership list does not match)')
+            ml = [d['c'] for d in gen_util.convert_to_list(change_obj.get('_members')) if len(d['c']) > 0]
+            zl.append('    From: ' + ', '.join(ml))
+            ml = [d['b'] for d in gen_util.convert_to_list(change_obj.get('_members')) if len(d['b']) > 0]
+            zl.append('    To:   ' + ', '.join(ml))
         elif change_type == 'Added':
             add_obj = add_fab_obj.r_zone_obj(zone)
-            base_fab_obj.s_add_zone(zone, add_obj.r_type(), add_obj.r_members(), add_obj.r_pmembers())
+            ml, pl = add_obj.r_members(), add_obj.r_pmembers()
+            base_fab_obj.s_add_zone(zone, add_obj.r_type(), ml, pl)
+            zl.append('  Add: ' + zone)
+            zl.extend(['    ' + b for b in ml])
+            zl.extend(['    (Peer Principal) ' + b for b in pl])
 
     return rl
 
 
-def _merge_zone_cfgs(change_d, base_fab_obj, add_fab_obj):
-    """Merges the zone configurations from two fabrics
-
-    :param change_d: Dictionary of alias changes as returned from brcddb.util.compare.compare()
-    :type change_d: dict
-    :param base_fab_obj: brcddb fabric object for the fabric we are adding the zones from add_fab_obj to
-    :type base_fab_obj: brcddb.classes.fabric.FabricObj
-    :param add_fab_obj: brcddb fabric object with the zones to be added to base_fab_obj
-    :type add_fab_obj: brcddb.classes.fabric.FabricObj
-    :return: Error message list. If empty, no errors encountered
-    :rtype: list
-    """
+def _merge_zone_cfgs(change_d, base_fab_obj, add_fab_obj, zl):
+    """Merges the zone configurations from two fabrics. See _merge_aliases() for parameter definitions"""
     # Basic prep
     rl = list()
     if change_d is None:
         return rl
+    base_fab_name = brcddb_fabric.best_fab_name(base_fab_obj, wwn=True, fid=True)
+    add_fab_name = brcddb_fabric.best_fab_name(add_fab_obj, wwn=True, fid=True)
+    zl.extend(['', 'Zone Configuration Changes:', '  From: ' + add_fab_name, '  To:   ' + base_fab_name])
 
     # Add what needs to be added or report differences
     for zonecfg, change_obj in change_d.items():
@@ -452,7 +462,10 @@ def _merge_zone_cfgs(change_d, base_fab_obj, add_fab_obj):
             change_type = change_obj.get('r')
             if isinstance(change_type, str) and change_type == 'Added':
                 add_obj = add_fab_obj.r_zonecfg_obj(zonecfg)
-                base_fab_obj.s_add_zonecfg(zonecfg, add_obj.r_members())
+                ml = add_obj.r_members()
+                base_fab_obj.s_add_zonecfg(zonecfg, ml)
+                zl.append('  Add: ' + zonecfg)
+                zl.extend(['    ' + b for b in ml])
 
     return rl
 
@@ -464,7 +477,7 @@ _merge_case['_zonecfg_objs'] = _merge_zone_cfgs
 
 
 def _merge_zone_db(proj_obj, new_zone_cfg, a_flag):
-    """Merges the zones for the fabrics specified in fab_csv
+    """Merges the zones for the fabrics specified with -i
 
     :param proj_obj: Project object
     :type proj_obj: brcddb.classes.project.ProjectObj
@@ -474,8 +487,10 @@ def _merge_zone_db(proj_obj, new_zone_cfg, a_flag):
     :type a_flag: bool
     :return rl: Error message list. If empty, no errors encountered
     :rtype rl: list
+    :return zl: Zone merge report in lists of text messages to print
+    :rtype zl: list
     """
-    rl, fab_l, base_fab_obj, new_zonecfg_obj = list(), list(), None, None
+    rl, zl, fab_l, base_fab_obj, new_zonecfg_obj = list(), list(), list(), None, None
 
     # Find a fabric to start with, base_fab_obj, and get a list of the remaining fabrics to add to it.
     for fab_obj in proj_obj.r_fabric_objects():
@@ -489,7 +504,6 @@ def _merge_zone_db(proj_obj, new_zone_cfg, a_flag):
                 if isinstance(zd['cfg'], str):
                     zonecfg_obj = fab_obj.r_zonecfg_obj(zd['cfg'])
                     if zonecfg_obj is not None:
-                        # zonecfg_obj = fab_obj.s_add_zonecfg(new_zone_cfg)
                         mem_l = zonecfg_obj.r_members()
                 if isinstance(new_zone_cfg, str):
                     new_zonecfg_obj = base_fab_obj.s_add_zonecfg(new_zone_cfg, mem_l)
@@ -501,13 +515,25 @@ def _merge_zone_db(proj_obj, new_zone_cfg, a_flag):
     if len(fab_l) < 1:
         rl.append('Could not find any fabrics to merge. Must have at least 2.')
     if len(rl) > 0:
-        return rl
+        return rl, zl
+
+    # The compare utility checks lists 1 for 1 (each item at each index must match) so sort all membership lists
+    for obj_l in [base_fab_obj.r_alias_objects(), base_fab_obj.r_zone_objects(), base_fab_obj.r_zonecfg_objects()]:
+        for obj in obj_l:
+            obj.s_sort_members()
+
 
     # Merge the individual zone items
     for fab_obj in fab_l:
+
+        # The compare utility checks lists 1 for 1 (each item at each index must match) so sort all membership lists
+        for obj_l in [fab_obj.r_alias_objects(), fab_obj.r_zone_objects(), fab_obj.r_zonecfg_objects()]:
+            for obj in obj_l:
+                obj.s_sort_members()
+
         change_count, change_d = brcddb_compare.compare(base_fab_obj, fab_obj, brcddb_control_tbl=_control_tables)
         for local_key, action in _merge_case.items():
-            rl.extend(action(change_d.get(local_key), base_fab_obj, fab_obj))
+            rl.extend(action(change_d.get(local_key), base_fab_obj, fab_obj, zl))
 
         # Add the zones to the merged zone configuration
         zd = fab_obj.r_get('zone_merge')  # zd should never be None. This is just future proofing.
@@ -522,7 +548,7 @@ def _merge_zone_db(proj_obj, new_zone_cfg, a_flag):
         base_fab_obj.s_del_eff_zonecfg()
         base_fab_obj.s_add_eff_zonecfg(new_zonecfg_obj.r_members())
 
-    return rl
+    return rl, zl
 
 
 def parse_args():
@@ -537,6 +563,7 @@ def parse_args():
     if _DEBUG:
         return _DEBUG_i, _DEBUG_cfg, _DEBUG_a, _DEBUG_t, _DEBUG_scan, _DEBUG_cli, _DEBUG_d, _DEBUG_sup, _DEBUG_log, \
                _DEBUG_nl
+
     buf = 'The zone_merge utility merges the zone databases from two or more fabrics by reading the zone database from'\
           ' a project file or a live switch.'
     parser = argparse.ArgumentParser(description=buf)
@@ -684,7 +711,8 @@ def pseudo_main():
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Merge the zones logically
-    ml = _merge_zone_db(proj_obj, cfg_name, a_flag)
+    ml, rl = _merge_zone_db(proj_obj, cfg_name, a_flag)
+    brcdapi_log.log(['Detailed Zone Merge Report'] + rl)
     if len(ml) > 0:
         ml.insert(0, 'Merge test failed:')
         ml.insert(0, '')
@@ -692,20 +720,16 @@ def pseudo_main():
         ec = brcddb_common.EXIT_STATUS_ERROR
 
     else:
-        # Make the changes
-        ml.append('Zone merge test succeeded')
-        if not t_flag:
-            tl = _patch_zone_db(proj_obj, cfg_name if a_flag else None)
-            if len(tl) > 0:
+        brcdapi_log.log('Zone merge test succeeded', echo=True)
+        if not t_flag:  # Make the changes
+            ml = _patch_zone_db(proj_obj, cfg_name if a_flag else None)
+            brcdapi_log.log(['Zone merge complete: ' + str(len(ml)) + ' errors.'] + ml, echo=True)
+            if len(ml) > 0:
                 ec = brcddb_common.EXIT_STATUS_ERROR
-            else:
-                ml.append('Zone merge complete: 0 errors.')
-            ml.extend(tl)
+        if len(ml) == 0 and cli_flag:
+            brcdapi_log.log(_zone_cli(proj_obj), echo=True)
 
-    if cli_flag:
-        ml.extend(_zone_cli(proj_obj))
-
-    brcdapi_log.log(ml, echo=True)
+    brcdapi_log.log(['', 'Check the log for "Detailed Zone Merge Report" for details'], echo=True)
 
     return ec
 

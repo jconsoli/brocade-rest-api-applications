@@ -40,16 +40,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.5     | 01 Apr 2023   | Added some previously missed 9.1.x branches                                       |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.6     | 09 May 2023   | Added filters for new 9.1 leaves. Changed Tx/Rx power from 15 to 25, fixed alias  |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2020, 2021, 2022 Jack Consoli'
-__date__ = '01 Apr 2023'
+__copyright__ = 'Copyright 2020, 2021, 2022, 2023 Jack Consoli'
+__date__ = '09 May 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.5'
+__version__ = '3.1.6'
 
 import argparse
 import brcdapi.log as brcdapi_log
@@ -67,8 +69,8 @@ import brcddb.app_data.report_tables as brcddb_rt
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_bf = '_capture_2023_01_27_17_53_35/combined'
-_DEBUG_cf = '_capture_2023_01_29_10_21_27/combined'
+_DEBUG_bf = 'test/start'
+_DEBUG_cf = 'test/end'
 _DEBUG_r = 'test/test_compare_report'
 _DEBUG_sup = False
 _DEBUG_log = '_logs'
@@ -190,6 +192,7 @@ _control_tables = dict(
         '/fibrechannel/average-(receive|transmit)-frame-size': dict(skip=True),
         '/fibrechannel/average-(receive|transmit)-buffer-usage': dict(skip=True),
         '/fibrechannel-statistics/time-(generated|refreshed)': dict(skip=True),
+        '/fibrechannel-statistics/total-(up|down|offline)-time': dict(skip=True),
         '/fibrechannel-statistics/(tx|rx)-peak-frame': dict(skip=True),
         '/fibrechannel-statistics/class-3-frames': dict(skip=True),
         '/fibrechannel-statistics/(in|out)-(rate|octets|frames)': dict(skip=True),
@@ -197,9 +200,10 @@ _control_tables = dict(
         '/fibrechannel-statistics/frames-processing-required': dict(skip=True),  # What is this?
         '/media-rdp/temperature': dict(lt=5, gt=5),
         '/media-rdp/current': dict(lt=0.2, gt=0.2),
-        '/media-rdp/(r|t)x-power': dict(lt=15, gt=15),
+        '/media-rdp/(r|t)x-power': dict(lt=25, gt=25),
         '/media-rdp/voltage': dict(lt=20, gt=20),
         '/media-rdp/power-on-time': dict(skip=True),
+        '/media-rdp/remote-media-signal-loss/(up|down)-stream': dict(lt=25, gt=25),
         '/media-rdp/remote-media-temperature': dict(lt=5, gt=5),
         '/media-rdp/remote-media-current': dict(lt=0.2, gt=0.2),
         '/media-rdp/remote-media-(r|t)x-power': dict(lt=20, gt=20),
@@ -300,15 +304,15 @@ def _content_append(obj, content):
 
 
 def _fabric_name(p_obj, wwn, flag=True):
-    return brcddb_fabric.best_fab_name(p_obj.r_fabric_obj(wwn), flag)
+    return brcddb_fabric.best_fab_name(p_obj.r_fabric_obj(wwn), wwn=flag, fid=flag)
 
 
 def _chassis_name(p_obj, wwn, flag=True):
-    return brcddb_chassis.best_chassis_name(p_obj.r_chassis_obj(wwn), flag)
+    return brcddb_chassis.best_chassis_name(p_obj.r_chassis_obj(wwn), wwn=flag)
 
 
 def _switch_name(p_obj, wwn, flag=True):
-    return brcddb_switch.best_switch_name(p_obj.r_switch_obj(wwn), flag)
+    return brcddb_switch.best_switch_name(p_obj.r_switch_obj(wwn), wwn=flag, did=True)
 
 
 def _basic_add_to_content(obj, b_obj, c_obj, content):
@@ -355,7 +359,8 @@ def _zoneobj_add_to_content(obj, b_obj, c_obj, content):
     if obj is not None:
         for k, v in obj.items():
             buf = str(k)
-            for mem_d in gen_util.convert_to_list(v.get('_members')):
+            mem_d_l = v['_members'] if '_members' in v else [v] if isinstance(v, dict) else list()
+            for mem_d in mem_d_l:
                 _content_append(dict(font='std', align='wrap', disp=(buf, mem_d['b'], mem_d['c'], mem_d['r'])), content)
                 buf = ''
             for mem_d in gen_util.convert_to_list(v.get('_pmembers')):
@@ -369,8 +374,10 @@ def _switch_add_to_content(obj, b_obj, c_obj, content):
     """Same as _basic_add_to_content() except obj is a list of switch change objects"""
     start = len(content)
     for change_obj in [t_obj for t_obj in obj if t_obj.get('r') is not None]:
-        b_buf = brcddb_switch.best_switch_name(b_obj.r_project_obj().r_switch_obj(change_obj.get('b')), True)
-        c_buf = brcddb_switch.best_switch_name(c_obj.r_project_obj().r_switch_obj(change_obj.get('c')), True)
+        b_buf = brcddb_switch.best_switch_name(b_obj.r_project_obj().r_switch_obj(change_obj.get('b')),
+                                               wwn=True, did=True)
+        c_buf = brcddb_switch.best_switch_name(c_obj.r_project_obj().r_switch_obj(change_obj.get('c')),
+                                               wwn=True, did=True)
         _content_append(dict(font='std', align='wrap', disp=('', b_buf, c_buf, change_obj.get('r'))), content)
     if len(content) == start:
         content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
@@ -382,8 +389,8 @@ def _fabric_add_to_content(obj, b_obj, c_obj, content):
     if obj is not None:
         proj_obj = obj.r_project_obj()
         for k, v in obj.items():
-            b_buf = brcddb_fabric.best_fab_name(proj_obj.r_fabric_obj(v.get('b')), True)
-            c_buf = brcddb_fabric.best_fab_name(proj_obj.r_fabric_obj(v.get('c')), True)
+            b_buf = brcddb_fabric.best_fab_name(proj_obj.r_fabric_obj(v.get('b')), wwn=True, fid=True)
+            c_buf = brcddb_fabric.best_fab_name(proj_obj.r_fabric_obj(v.get('c')), wwn=True, fid=True)
             _content_append(dict(font='std', align='wrap', disp=('', b_buf, c_buf, v.get('r'))), content)
     if len(content) == start:
         content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
@@ -396,7 +403,7 @@ def _null(obj, b_obj, c_obj, content):
 
 _action_table = dict(
     _fabric_objs=dict(
-        _alias_objs=dict(t='Aliases', f=_zoneobj_add_to_content),
+        _alias_objs=dict(t='Aliases', f=_alias_add_to_content),
         _eff_zone_objs=dict(t='Zones in effective zones configuration', f=_basic_add_to_content),
         _fdmi_node_objs=dict(t='FDMI Nodes', f=_alias_add_to_content),
         _fdmi_port_objs=dict(t='FDMI Ports', f=_alias_add_to_content),
@@ -442,9 +449,9 @@ def _api_added_compares(obj, k, fk, content):
             if k == 'b':
                 _content_append(dict(font='std', align='wrap', disp=_format_disp(fk, obj)), content)
             elif k not in ('c', 'r'):
-                brcdapi_log.exception('Unknown element: ' + str(t_obj), True)
+                brcdapi_log.exception('Unknown element: ' + str(t_obj), echo=True)
         else:
-            brcdapi_log.exception('Unknown type: ' + str(type(t_obj)), True)
+            brcdapi_log.exception('Unknown type: ' + str(type(t_obj)), echo=True)
 
     elif isinstance(obj, (list, tuple)):
         fk.append(k)
@@ -458,7 +465,7 @@ def _api_added_compares(obj, k, fk, content):
                     _api_added_compares(n_obj, k1, fk.copy(), content)
 
     else:
-        brcdapi_log.exception('Unknown type: ' + str(type(obj)), True)
+        brcdapi_log.exception('Unknown type: ' + str(type(obj)), echo=True)
 
 
 def _project_page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj):
@@ -499,11 +506,13 @@ def _project_page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj):
     content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Switches Added:')])
     for obj in [d for d in c_obj['_switch_objs'].values() if d['r'] == 'Added']:
         content.append(dict(font='std', align='wrap',
-                            disp=brcddb_switch.best_switch_name(c_proj_obj.r_switch_obj(obj.get('c')), True)))
+                            disp=brcddb_switch.best_switch_name(c_proj_obj.r_switch_obj(obj.get('c')),
+                                                                wwn=True, did=True)))
     content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Switches Removed:')])
     for obj in [d for d in c_obj['_switch_objs'].values() if d['r'] == 'Removed']:
         content.append(dict(font='std', align='wrap',
-                            disp=brcddb_switch.best_switch_name(b_proj_obj.r_switch_obj(obj.get('b')), True)))
+                            disp=brcddb_switch.best_switch_name(b_proj_obj.r_switch_obj(obj.get('b')),
+                                                                wwn=True, did=True)))
 
     # Add chassis changes
     content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Chassis Added:')])
@@ -632,7 +641,7 @@ def _chassis_ts(o, k):  # Similar to _fabric_ts()
 
 def _switch_ts(o, k):  # Similar to _fabric_ts()
     obj = o.r_switch_obj(k)
-    return brcddb_switch.best_switch_name(obj, True), brcddb_switch.best_switch_name(obj, False)
+    return brcddb_switch.best_switch_name(obj, True), brcddb_switch.best_switch_name(obj)
 
 
 _main_pages = dict(  # 's': sheet name. 't': sheet title. 'n': method to return object name
@@ -793,7 +802,7 @@ def pseudo_main():
     ml.append('    Base file:    ' + bf)
     ml.append('    Compare file: ' + cf)
     ml.append('    Report file:  ' + rf)
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
 
     # Read the projects to compare and build the cross references
     ml = list()
@@ -815,7 +824,7 @@ def pseudo_main():
             ml.append('File ' + d['file'] + ' is not a valid JSON formatted file. Error messages is:')
             ml.append(str(e, errors='ignore') if isinstance(e, (bytes, str)) else str(type(e)))
     if len(ml) > 0:
-        brcdapi_log.log(ml, True)
+        brcdapi_log.log(ml, echo=True)
         return brcddb_common.EXIT_STATUS_ERROR
 
     # Build out the key conversion tables. Used in _format_disp()
@@ -835,16 +844,16 @@ def pseudo_main():
                     _key_conv_tbl.update({k: v})
 
     # Compare the two projects
-    brcdapi_log.log('Please wait. The comparison may take several seconds', True)
+    brcdapi_log.log('Please wait. The comparison may take several seconds', echo=True)
     c, compare_obj = brcddb_compare.compare(input_file_d['b']['obj'], input_file_d['c']['obj'], None, _control_tables)
 
     brcdapi_log.log('Writing report: ' + rf, echo=True)
     try:
         _new_report(c, input_file_d['b']['obj'], input_file_d['c']['obj'], _project_scrub(compare_obj), rf)
     except FileExistsError:
-        ml.append('The path, folder, does not exist: ' + rf)
+        brcdapi_log.log('The path, folder, does not exist: ' + rf, echo=True)
     except PermissionError:
-        brcdapi_log.log('Permission error writing ' + rf + '. This usually happens when the file is open.')
+        brcdapi_log.log('Permission error writing ' + rf + '. This usually happens when the file is open.', echo=True)
 
     return brcddb_common.EXIT_STATUS_OK
 
@@ -859,5 +868,5 @@ if _DOC_STRING:
     exit(0)
 
 _ec = pseudo_main()
-brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec))
+brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
 exit(_ec)

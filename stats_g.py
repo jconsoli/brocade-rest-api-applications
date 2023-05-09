@@ -47,16 +47,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.0.8     | 01 Jan 2023   | Removed reliance on bp_tables                                                     |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.0.9     | 09 May 2023   | Added option detail to output. Disabled warnings on disabled ports                |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '01 Jan 2023'
+__date__ = '09 May 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.8'
+__version__ = '3.0.9'
 
 import sys
 import argparse
@@ -84,9 +86,9 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 _DEBUG = False
 _DEBUG_sup = False
 _DEBUG_r = 'test/test_report'
-_DEBUG_i = 'test/stats_capture'
-_DEBUG_gp = None  # '8/11,in-frame-rate,out-frame-rate;8/13,in-frame-rate,out-frame-rate'
-_DEBUG_gs = None  # 'in-frame-rate,top-5;out-frame-rate,top-5'
+_DEBUG_i = 'test/test_out'
+_DEBUG_gp = '12/29,class3-out-discards,bb-credit-zero'
+_DEBUG_gs = 'class3-out-discards,top-5;bb-credit-zero,top-5'
 _DEBUG_gt = None
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
@@ -152,10 +154,10 @@ def _ports(proj_obj, port):
                     # switch_wwn has to match port_obj.r_switch_key() so this test is future proofing
                     r.append(port_obj.r_obj_key())
         else:
-            brcdapi_log.log(_invalid_port_ref + port, True)
+            brcdapi_log.log(_invalid_port_ref + port, echo=True)
     else:
         if switch_obj.r_port_obj(port) is None:
-            brcdapi_log.log('Port ' + port + ' not found', True)
+            brcdapi_log.log('Port ' + port + ' not found', echo=True)
         else:
             return list(port)
     return list()  # If we get here, something went wrong
@@ -212,7 +214,7 @@ def _get_parameters(parms):
     for p in parms.split(','):
         v = r_map.get(p)
         if v is None:
-            brcdapi_log.log(_invalid_parm_ref + p, True)
+            brcdapi_log.log(_invalid_parm_ref + p, echo=True)
         else:
             r.append(v)
     return r
@@ -244,7 +246,7 @@ def _add_ports(wb, tc_page, t_content, start_i, switch_obj):
         # Create the port page
         port_num = port_obj.r_obj_key()
         sname = port_num.replace('/', '_')
-        brcdapi_log.log('Processing port: ' + port_num, True)
+        brcdapi_log.log('Processing port: ' + port_num, echo=True)
         port_list = [obj.r_port_obj(port_num) for obj in switch_obj_l]
         sheet = report_port.port_page(wb, '#' + tc_page + '!A1', sname, sheet_index, 'Port: ' + port_num, port_list,
                                       _port_stats, rt.Port.port_display_tbl, False)
@@ -264,7 +266,7 @@ def _add_ports(wb, tc_page, t_content, start_i, switch_obj):
         sheet_index += 1
 
 
-def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
+def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
     """Add the individual port pages to the workbook
 
     Note: If there is a way to add multiple lines to a graph that aren't in neighboring columns, I haven't figured out
@@ -279,8 +281,8 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
     :param t_content: Table of contents
     :type t_content: list
     :param start_i: Starting index (where first port goes)
-    :param switch_obj: Base switch object
-    :type switch_obj: brcddb.classes.switch.SwitchObj
+    :param base_switch_obj: Base switch object
+    :type base_switch_obj: brcddb.classes.switch.SwitchObj
     :param graph_list: List of graph dictionaries, see graph in _write_report() for details
     :type graph_list: list, tuple
     :return: List of warnings or errors.
@@ -289,12 +291,12 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
     global _sheet_map
 
     ml = list()
-    proj_obj = switch_obj.r_project_obj()
+    proj_obj = base_switch_obj.r_project_obj()
     switch_obj_l = [proj_obj.r_switch_obj(wwn) for wwn in proj_obj.r_get('switch_list')]
     if _DEBUG:
         switch_obj_l = switch_obj_l[:6]
-    if len(switch_obj_l) < 1:
-        brcdapi_log('Nothing to graph. No data collected.', True)
+    if len(switch_obj_l) < 2:
+        brcdapi_log.log('Nothing to graph. No data collected.', echo=True)
         return ml
     sheet_index = start_i
     last_disp = {'font': 'std', 'align': 'wrap'}
@@ -306,19 +308,18 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
 
         # Create the graph data page and figure out the common graphing request
         sname = 'graph_' + str(graph_num)
-        brcdapi_log.log('Processing graph for: ' + sname, True)
+        brcdapi_log.log('Processing graph for: ' + sname, echo=True)
         data_sheet = wb.create_sheet(title=sname + '_data')
         data_sheet.page_setup.paperSize = data_sheet.PAPERSIZE_LETTER
         data_sheet.page_setup.orientation = data_sheet.ORIENTATION_LANDSCAPE
-        port = graph_obj.get('port')
-        stat = graph_obj.get('stat')
+        port, stat = graph_obj.get('port'), graph_obj.get('stat')
         y_name = 'Programming error. Neither port or stat specified.'
-        title = ''
-        last_time = ''
+        title, last_time = '', ''
 
         if port is not None:
 
             # Set up the title and chart references
+            switch_obj = switch_obj_l[0]
             port_obj = switch_obj.r_port_obj(port)
             if port_obj is None:
                 ml.append('Statistics for port ' + port + ' were not collected. Skipping.')
@@ -358,7 +359,9 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
             for port_obj in [obj.r_port_obj(port) for obj in switch_obj_l]:
                 x = None if port_obj is None else port_obj.r_get('fibrechannel-statistics/time-generated')
                 if x is None:
-                    brcdapi_log.log('Port ' + port + ' appears to have gone off line after ' + last_time, True)
+                    buf = 'Port ' + port + ' appears to have gone off line after ' + str(last_time)
+                    buf += '. Switch: ' + port_obj.r_switch_obj().r_obj_key()
+                    brcdapi_log.log(buf, echo=True)
                     break
                 last_time = x
                 data_sheet['A' + str(row)] = datetime.datetime.fromtimestamp(x).strftime('%H:%M:%S')
@@ -379,8 +382,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
                 col_ref = y_name
 
             # Find all the time stamps, reference sheets, and columns
-            tl = list()
-            rl = list()
+            tl, rl = list(), list()
             for port in gen_util.convert_to_list(graph_obj.get('parms')):
                 port_obj = switch_obj_l[0].r_port_obj(port)
                 if port_obj is None:
@@ -405,7 +407,9 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
                     for port_obj in [obj.r_port_obj(port) for obj in switch_obj_l]:
                         x = port_obj.r_get('fibrechannel-statistics/time-generated')
                         if x is None:
-                            brcdapi_log.log('Port ' + port + ' appears to have gone off line after ' + last_time, True)
+                            buf = 'Port ' + port + ' appears to have gone off line after ' + str(last_time)
+                            buf += '. Switch: ' + port_obj.r_switch_obj().r_obj_key()
+                            brcdapi_log.log(buf, echo=True)
                             break
                         last_time = x
                         tl.append(datetime.datetime.fromtimestamp(x).strftime('%H:%M:%S'))
@@ -426,7 +430,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, switch_obj, graph_list):
                         col += 1
 
         else:
-            brcdapi_log.exception(y_name, True)
+            brcdapi_log.exception(y_name, echo=True)
             continue
 
         # Create the Worksheet and add it to the table of contents
@@ -515,23 +519,17 @@ def _graphs(switch_obj, single_port_graph_in, stats_graph_in, graph_type):
                 if 'top-' in temp_l[0].lower() or 'avg-' in temp_l[0].lower():
                     n = int(temp_l[0].split('-')[1])
                     switch_obj_l = [o for o in switch_obj.r_project_obj().r_switch_objects() if '-' in o.r_obj_key()]
-                    port_total_d = dict()
-                    port_peak_d = dict()
-                    port_obj_l = list()
+                    port_total_d, port_peak_d, port_obj_l = dict(), dict(), list()
                     for port_obj in switch_obj_l.pop(0).r_port_objects():
                         port_stat = port_obj.r_get(statistic)
-                        if port_stat is None:
-                            ml.append(statistic + ' not found for port ' + port_obj.r_obj_key())
-                        else:
+                        if port_stat is not None:
                             port_total_d.update({port_obj.r_obj_key(): port_stat})
                             port_peak_d.update({port_obj.r_obj_key(): port_stat})
                             port_obj_l.append(port_obj)
                     for switch_obj in switch_obj_l:
                         for port_obj in switch_obj.r_port_objects():
                             port_stat = port_obj.r_get(statistic)
-                            if port_stat is None:
-                                ml.append(statistic + ' not found for port ' + port_obj.r_obj_key())
-                            else:
+                            if port_stat is not None:
                                 port_key = port_obj.r_obj_key()
                                 if port_key in port_total_d:
                                     port_total_d[port_key] += port_stat
@@ -588,7 +586,7 @@ def _write_report(switch_obj, report, graph_list, ml):
     """
 
     # Get the project and set up the workbook
-    brcdapi_log.log('Generating Report: ' + report + '. This may take several seconds', True)
+    brcdapi_log.log('Generating Report: ' + report + '. This may take several seconds', echo=True)
     proj_obj = switch_obj.r_project_obj()
     wb = excel_util.new_report()
 
@@ -626,7 +624,7 @@ def _write_report(switch_obj, report, graph_list, ml):
     # Add the table of contents and save the report.
     report_utils.title_page(wb, None, tc_page, 0, title, t_content, (12, 22, 16, 10, 64))
     ml.append('Saving the report.')
-    brcdapi_log.log(ml, True)
+    brcdapi_log.log(ml, echo=True)
     excel_util.save_report(wb, report)
 
     return brcddb_common.EXIT_STATUS_OK
@@ -720,14 +718,15 @@ def pseudo_main():
     report, in_f, single_port_graph_in, stats_graph_in, graph_type = _get_input()
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append(os.path.basename(__file__) + ' version: ' + __version__)
-    ml.append('Report:     ' + report)
-    ml.append('Input file: ' + in_f)
-    ml.append('Port graph: ' + str(single_port_graph_in))
-    ml.append('Stat graph: ' + str(stats_graph_in))
-    ml.append('Graph type: ' + str(graph_type))
-    brcdapi_log.log(ml, True)
+    ml.append('Report, -r:      ' + report)
+    ml.append('Input file, -i:  ' + in_f)
+    ml.append('Port graph, -gp: ' + str(single_port_graph_in))
+    ml.append('Stat graph, -gs: ' + str(stats_graph_in))
+    ml.append('Graph type, -gt: ' + str(graph_type))
+    brcdapi_log.log(ml, echo=True)
 
     # Read in the previously collected data
+    brcdapi_log.log('Reading ' + in_f, echo=True)
     obj = brcddb_file.read_dump(in_f)
     if obj is None:
         return brcddb_common.EXIT_STATUS_ERROR
@@ -745,6 +744,7 @@ def pseudo_main():
         brcddb_fabric.zone_analysis(base_switch_obj.r_fabric_obj())  # Determines what zones each login participates in
 
     graph_list, msg_list = _graphs(base_switch_obj, single_port_graph_in, stats_graph_in, graph_type)
+    brcdapi_log.log('Writing ' + report)
     return _write_report(base_switch_obj, report, graph_list, msg_list)
 
 
@@ -758,5 +758,5 @@ if _DOC_STRING:
     exit(brcddb_common.EXIT_STATUS_OK)
 
 _ec = pseudo_main()
-brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
+brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec), echo=True)
 exit(_ec)

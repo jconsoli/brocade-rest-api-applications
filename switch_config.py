@@ -74,15 +74,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.1.3     | 26 Mar 2023   | Fixed exception error _print_summary()                                            |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.4     | 09 May 2023   | Fixed HTTP (not HTTPS) bug and attempt to write switch config to port config      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '26 Mar 2023'
+__date__ = '09 May 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.1.3'
+__version__ = '1.1.4'
 
 import argparse
 import sys
@@ -106,11 +108,11 @@ import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = 'xx.xxx.xx.xx'
+_DEBUG_ip = '10.155.2.139'
 _DEBUG_id = 'admin'
-_DEBUG_pw = 'password'
+_DEBUG_pw = 'Pass@word1!'
 _DEBUG_s = 'self'
-_DEBUG_i = 'test/gsh'
+_DEBUG_i = 'test/switch_config'
 _DEBUG_force = False
 _DEBUG_sup = False
 _DEBUG_echo = True
@@ -361,8 +363,8 @@ def _switch_config(session, switch_obj, switch_d, echo):
     brcdapi_log.log('Configuring FID: ' + str(fid), echo=echo)
 
     # Set the fabric parameters: brocade-fibrechannel-configuration/switch-configuration
-    sub_content = dict()
     for url in (_fc_switch_config, _fc_switch_port):
+        sub_content = dict()
         prefix = url.replace('running/', '') + '/'
         api_d = gen_util.get_key_val(switch_d, url)
         if isinstance(api_d, dict):
@@ -620,6 +622,13 @@ def _enable_switch_and_ports(session, chassis_obj, switch_d_l, echo):
                 brcdapi_log.exception([buf, fos_auth.formatted_error_msg(obj)], echo=True)
                 ec = brcddb_common.EXIT_STATUS_API_ERROR
 
+        # Enable ports  LEFT OFF HERE
+        # Also note that ports may be enabled automatically after enabling the switch
+        # Forgot what;s in switch_d to indicate ports should be enabled
+        # No port should be enabled until this method is called and I don't think that's the case.
+        # if enable_ports_flag:
+        #     brcdapi_port.enable_port(session, fid, port_list)
+
     return ec
 
 
@@ -717,7 +726,7 @@ def _get_input():
           'File, -i:         ' + args_i,
           'IP address, -ip:  ' + brcdapi_util.mask_ip_addr(args_ip),
           'ID, -id:          ' + str(args_id),
-          's, -s:            ' + args_s,
+          's, -s:            ' + str(args_s),
           'force, -force     ' + str(args_force),
           'echo, -echo       ' + str(args_echo)]
     if _DEBUG:
@@ -806,7 +815,6 @@ def pseudo_main():
             switch_d['remove_port_l'] = [p for p in switch_d['remove_port_l'] if p not in all_add_l]
 
         # Add ports, re-read chassis to pick up the changes, then do it again for ports to move to the default switch
-
         for method in (_add_ports, _remove_ports):
             ec_l.append(method(session, chassis_obj, switch_d_list, echo))
             session.pop('chassis_wwn', None)

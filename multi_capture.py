@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2019, 2020, 2021, 2022 Jack Consoli.  All rights reserved.
+# Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -47,16 +47,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.1     | 24 Oct 2022   | Improved error messaging and add Control-C to exit                                |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.2     | 09 May 2023   | Added -bp parameter for report.                                                   |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '24 Oct 2022'
+__copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
+__date__ = '09 May 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.1'
+__version__ = '3.1.2'
 
 import signal
 import argparse
@@ -77,6 +79,7 @@ _DEBUG_sfp = 'sfp_rules_r10'
 _DEBUG_iocp = None  # 'test_iocp'
 _DEBUG_r = False
 _DEBUG_c = None
+_DEBUG_bp = 'bp'
 _DEBUG_sup = False  # If true, all logging to STD_OUT is suppressed
 _DEBUG_d = None
 _DEBUG_log = '_logs'
@@ -107,12 +110,12 @@ def parse_args():
     :return nl: No log. When True, a log file is not created.
     :rtype nl: bool
     """
-    global _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_sup, _DEBUG_d, _DEBUG_log, \
-        _DEBUG_nl
+    global _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_bp, _DEBUG_sup, _DEBUG_d, _DEBUG_log
+    global _DEBUG_nl
 
     if _DEBUG:
-        return _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_sup, _DEBUG_d, _DEBUG_log,\
-               _DEBUG_nl
+        return _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_bp, _DEBUG_sup, _DEBUG_d, \
+               _DEBUG_log, _DEBUG_nl
     buf = 'Capture all report data from multiple chassis and optionally generate a report.'
     parser = argparse.ArgumentParser(description=buf)
     buf = 'Required. Excel file of switch login credentials. See multi_capture_example.xlsx. ".xlsx" is automatically '\
@@ -123,10 +126,11 @@ def parse_args():
           ' name. A file named combined.json, output of combine.py, and report.xlsx, output of report.py, is '\
           'added to this folder.'
     parser.add_argument('-f', help=buf, required=False)
-    buf = 'Optional. Name of the Excel Workbook with SFP thresholds. This is the same file used as input to '\
-          'applications.maps_config. This is useful for checking SFPs against the new recommended MAPS rules before '\
-          'implementing them or filling in missing rules. Only used if -r is specified. If no extension is specified, '\
-          '".xlsx" is automatically appended.'
+    buf = 'Optional. Name of the Excel Workbook with best practice checks. This parameter is passed to report.py if '\
+          '-r is specified. Otherwise it is not used. ".xlsx" is automatically appended.'
+    parser.add_argument('-bp', help=buf, required=False)
+    buf = 'Optional. Name of the Excel Workbook with SFP thresholds. This parameter is passed to report.py if -r is ' \
+          'specified. Otherwise it is not used. ".xlsx" is automatically appended.'
     parser.add_argument('-sfp', help=buf, required=False)
     buf = 'Optional. Name of folder with IOCP files. All files in this folder must be IOCP files (build I/O '\
           'configuration statements from HCD) and must begin with the CEC serial number followed by \'_\'. Leading 0s '\
@@ -147,7 +151,7 @@ def parse_args():
     buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
     parser.add_argument('-nl', help=buf, action='store_true', required=False)
     args = parser.parse_args()
-    return args.i, args.f, args.sfp, args.iocp, args.r, args.c, args.sup, args.d, args.log, args.nl
+    return args.i, args.f, args.sfp, args.iocp, args.r, args.c, args.bp, args.sup, args.d, args.log, args.nl
 
 
 def psuedo_main():
@@ -165,7 +169,7 @@ def psuedo_main():
     # Get and parse the input data
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append(os.path.basename(__file__) + ' version: ' + __version__)
-    in_file, folder, sfp, iocp, report_flag, kpi_file, s_flag, vd, log, nl = parse_args()
+    in_file, folder, sfp, iocp, report_flag, kpi_file, bp_file, s_flag, vd, log, nl = parse_args()
     if kpi_file is not None:
         addl_parms_capture.extend(['-c', kpi_file])
     if vd:
@@ -189,18 +193,21 @@ def psuedo_main():
         ml.append('Output Folder: (Automatic) ' + folder)
     else:
         ml.append('Output Folder: ' + folder)
-    ml.append('SFP:           ' + str(sfp))
-    ml.append('IOCP:          ' + str(iocp))
-    ml.append('Report:        ' + str(report_flag))
-    ml.append('KPI File:      ' + str(kpi_file))
-    ml.append('Suppress:      ' + str(s_flag))
-    ml.append('Verbose Debug: ' + str(vd))
+    ml.append('SFP, -sfp:           ' + str(sfp))
+    ml.append('Best Practices, -bp: ' + str(bp_file))
+    ml.append('IOCP, -iocp:         ' + str(iocp))
+    ml.append('Report, -r:          ' + str(report_flag))
+    ml.append('KPI File, -c:        ' + str(kpi_file))
+    ml.append('Suppress, -sup:      ' + str(s_flag))
+    ml.append('Verbose Debug, -d:   ' + str(vd))
     brcdapi_log.log(ml, echo=True)
 
     # Read the file with login credentials and perform some basic validation
     ml, switch_parms = list(), list()
     if sfp is not None:
         addl_parms_report.extend(['-sfp', sfp])
+    if bp_file is not None:
+        addl_parms_report.extend(['-bp', bp_file])
     file = brcdapi_file.full_file_name(in_file, '.xlsx')
     row = 1
     try:
