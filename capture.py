@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2020, 2021, 2022 Jack Consoli.  All rights reserved.
+# Copyright 2020, 2021, 2022, 2023 Jack Consoli.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -55,16 +55,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.2     | 24 Oct 2022   | Added ability to control-C out of data capture.                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.3     | 27 May 2023   | Enabled brocade-maps/dashboard-xxx collection                                     |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '24 Oct 2022'
+__copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
+__date__ = '27 May 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.2'
+__version__ = '3.1.3'
 
 import http.client
 import signal
@@ -85,13 +87,13 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 _WRITE = True  # Should always be True. Used for debug only. Prevents the output file from being written when False
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
 _DEBUG_ip = 'xx.xxx.x.xx'
-_DEBUG_f = 'test/test'
+_DEBUG_f = 'test/test_output'
 _DEBUG_id = 'admin'
 _DEBUG_pw = 'password'
 _DEBUG_s = 'self'
 _DEBUG_sup = False
-_DEBUG_d = False
-_DEBUG_c = '*'
+_DEBUG_d = True
+_DEBUG_c = None  # 'test/test_kpis.txt'
 _DEBUG_fid = None
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
@@ -144,9 +146,9 @@ _report_kpi_l = (
     # 'running/brocade-maps/rule',
     # 'running/brocade-maps/maps-policy',
     # 'running/brocade-maps/group',
-    # 'running/brocade-maps/dashboard-rule',
-    # 'running/brocade-maps/dashboard-history',
-    # 'running/brocade-maps/dashboard-misc',
+    'running/brocade-maps/dashboard-rule',
+    'running/brocade-maps/dashboard-history',
+    'running/brocade-maps/dashboard-misc',
     # 'running/brocade-maps/system-resources',
     # 'running/brocade-maps/paused-cfg',
     # 'running/brocade-maps/monitoring-system-matrix',
@@ -168,6 +170,8 @@ def _kpi_list(session, c_file):
     :return: List of KPIs
     :rtype: list
     """
+    global _report_kpi_l
+
     kpi_l = _report_kpi_l if c_file is None else brcdapi_util.uris_for_method(session, 'GET', uri_d_flag=False) if \
         c_file == '*' else brcdapi_file.read_file(c_file)
 
@@ -219,8 +223,8 @@ def _get_input():
         parser.add_argument('-id', help='User ID', required=True)
         parser.add_argument('-pw', help='Password', required=True)
         parser.add_argument('-s', help='\'CA\' or \'self\' for HTTPS mode.', required=False,)
-        buf = '(Optional) Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. The '\
-              'default is to capture all KPIs required for the report.'
+        buf = '(Optional) Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. '\
+              'The default is to capture all KPIs required for the report.'
         parser.add_argument('-c', help=buf, required=False,)
         buf = '(Optional) CSV list of FIDs to capture logical switch specific data. The default is to automatically '\
               'determine all logical switch FIDs defined in the chassis.'
@@ -231,8 +235,8 @@ def _get_input():
         buf = '(Optional) No parameters. When set, a pprint of all content sent and received to/from the API, except '\
               'login information, is printed to the log.'
         parser.add_argument('-d', help=buf, action='store_true', required=False)
-        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log ' \
-              'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
+        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The ' \
+              'log file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
         parser.add_argument('-log', help=buf, required=False, )
         buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
         parser.add_argument('-nl', help=buf, action='store_true', required=False)
@@ -345,5 +349,5 @@ if _DOC_STRING:
     exit(brcddb_common.EXIT_STATUS_OK)
 
 _ec = pseudo_main()
-brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec))
+brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
 exit(_ec)

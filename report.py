@@ -61,16 +61,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.2     | 11 Feb 2023   | Added zone groups, -g, options.                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.3     | 27 May 2023   | Add zone groups missing in feedback.                                              |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '11 Feb 2023'
+__date__ = '27 May 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.2'
+__version__ = '3.1.3'
 
 import argparse
 import brcdapi.log as brcdapi_log
@@ -89,17 +91,18 @@ import brcddb.brcddb_port as brcddb_port
 import brcddb.util.search as brcddb_search
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = '_capture_2023_01_29_10_21_27/sw_2_217'
+_DEBUG = False  # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
+_DEBUG_i = 'test/capture/combined'
 _DEBUG_o = 'test/test_report'
-_DEBUG_bp = None  # 'bp'
+_DEBUG_bp = 'bp_jc'
 _DEBUG_sup = False
-_DEBUG_sfp = None  # 'sfp_rules_r10'
-_DEBUG_iocp = None
+_DEBUG_sfp = 'sfp_rules_r10'
+_DEBUG_iocp = None  # 'test/iocp'
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 _DEBUG_c = None
-_DEBUG_group = None  # 'test/group'
+_DEBUG_group = 'sac_group'
+
 
 def _custom_report(proj_obj, options):
     """Modified as needed for custom reports. Intended for programmers customizing this script
@@ -114,7 +117,7 @@ def _custom_report(proj_obj, options):
 
 
 def _filter_wwn(obj, filter_val, search):
-    """Returns a list of login objects in obj"""
+    """Returns a list of port objects with logins that have WWNs matching the search criteria"""
     return brcddb_conv.obj_extract(
         brcddb_search.match_test(
             brcddb_conv.obj_extract(obj, 'LoginObj'),
@@ -123,11 +126,10 @@ def _filter_wwn(obj, filter_val, search):
 
 
 def _filter_alias(obj, filter_val, search):
-    """Returns a list of alias objects in obj"""
+    """Returns a list of port objects with logins that have aliases matching the search criteria"""
     return brcddb_conv.obj_extract(
-        brcddb_search.match_test(
-            brcddb_conv.obj_extract(obj, 'AliasObj'),
-            dict(k='_obj_key', t=search, v=filter_val, i=True)),
+        brcddb_search.match_test(brcddb_conv.obj_extract(obj, 'AliasObj'),
+                                 dict(k='_obj_key', t=search, v=filter_val, i=True)),
         'PortObj'
     )
 
@@ -186,7 +188,7 @@ _group_filter_list = {'WWN': _filter_wwn,
 
 
 def _groups(proj_obj, file):
-    """Modified as needed for custom reports. Intended for programmers customizing this script
+    """Parses the group definition file
 
     :param proj_obj: Project object
     :type proj_obj: brcddb.classes.project.ProjectObj
@@ -201,8 +203,8 @@ def _groups(proj_obj, file):
 
     # Read the workbook
     try:
-        al = excel_util.read_workbook(file, dm=3, sheets='parameters')[0]['al']
-        if len(al) < 2:
+        worksheet_l = excel_util.read_workbook(file, dm=3, sheets='parameters')[0]['al']
+        if len(worksheet_l) < 2:
             ml.append('No Filters defined in ' + file)
     except (IndexError, KeyError):
         ml.append('"parameters" sheet not found in ' + file)
@@ -215,7 +217,7 @@ def _groups(proj_obj, file):
         return group_d
 
     # Find the column headers
-    col_d = excel_util.find_headers(al[0])
+    col_d = excel_util.find_headers(worksheet_l[0])
     for key in ('Group', 'Filter', 'Operand', 'Operator'):
         if key not in col_d:
             ml.append(key + ' missing in ' + file)
@@ -225,19 +227,28 @@ def _groups(proj_obj, file):
 
     # Figure out what's in each group
     row = 1
-    for row_l in al[1:]:
+    for row_l in worksheet_l[1:]:
         row += 1
-        group, g_filter, operand, operator =\
-            row_l[col_d['Group']], row_l[col_d['Filter']], row_l[col_d['Operand']], row_l[col_d['Operator']]
+        group, g_filter, = row_l[col_d['Group']], row_l[col_d['Filter']]  # Just to save some typing
         if not isinstance(group, str) or len(group) == 0:
             continue
         if not isinstance(g_filter, str) or g_filter not in _group_filter_list:
             ml.append('Unknown Filter, ' + str(g_filter) + ', at row ' + str(row))
-        group_l = group_d.get(group)
-        if group_l is None:
-            group_l = list()
-            group_d.update({group: group_l})
-        group_l.extend(_group_filter_list[g_filter](proj_obj, operand, operator))
+        sub_group_d = group_d.get(group)
+        if sub_group_d is None:
+            sub_group_d = dict(group_wwn_d=dict(), port_obj_l=list())
+            group_d.update({group: sub_group_d})
+        sub_group_d['port_obj_l'].extend(
+            _group_filter_list[g_filter](proj_obj, row_l[col_d['Operand']], row_l[col_d['Operator']]))
+
+    # Zone groups are typically used for storage enclosures and it's not uncommon to use standard zones with multiple
+    # target WWNs in the same zone. Below probably could have been more efficient but I didn't realize this until after
+    # the fact so I just shoe horned it in. It adds a dictionary of WWNs that are part of the group. This dictionary
+    # is used in the report zone page to skip logins zone to this group that are already part of the group.
+    for sub_group_d in group_d.values():
+        for port_obj in sub_group_d['port_obj_l']:
+            for wwn in port_obj.r_login_keys():
+                sub_group_d['group_wwn_d'].update({wwn: True})
 
     return group_d
 
@@ -310,17 +321,19 @@ def _get_input():
           'Out file, -o:         ' + args_o,
           'SFP rules file, -sfp: ' + str(args_sfp),
           'Best practice, -bp:   ' + str(args_bp),
+          'Zone groups, -group:  ' + str(args_group),
+          'IOCP, -iocp:          ' + str(args_iocp),
           'Custom, -c:           ' + str(args_c)]
     if _DEBUG:
         ml.insert(0, 'WARNING!!! Debug is enabled')
 
-    return brcdapi_file.full_file_name(args_i, '.json'), \
-           brcdapi_file.full_file_name(args_o, '.xlsx'), \
-           brcdapi_file.full_file_name(args_bp, '.xlsx'), \
-           brcdapi_file.full_file_name(args_sfp, '.xlsx'), \
-           brcdapi_file.full_file_name(args_group, '.xlsx'), \
-           args_iocp, \
-           args_c, \
+    return brcdapi_file.full_file_name(args_i, '.json'),\
+           brcdapi_file.full_file_name(args_o, '.xlsx'),\
+           brcdapi_file.full_file_name(args_bp, '.xlsx'),\
+           brcdapi_file.full_file_name(args_sfp, '.xlsx'),\
+           brcdapi_file.full_file_name(args_group, '.xlsx'),\
+           args_iocp,\
+           args_c,\
            ml
 
 

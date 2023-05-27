@@ -24,16 +24,19 @@ Version Control::
     +===========+===============+===================================================================================+
     | 1.0.0     | 09 May 2023   | Initial launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.1     | 27 May 2023   | Removed call to brcdapi_switch.fibrechannel_configuration in _switch_update_act() |
+    |           |               | Removed setting for insistent-domain-id-enabled if switch is FICON.               |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023 Jack Consoli'
-__date__ = '09 May 2023'
+__date__ = '27 May 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 import argparse
 import collections
@@ -379,6 +382,18 @@ def _conv_lookup_act(obj, key, sub_key=None):
     return None
 
 
+def _conv_ficon_lookup_act(obj, key, sub_key=None):
+    """Returns None of any parameter with a FICON switch that must not be set. See _conv_none_act() for parameters"""
+    try:
+        if bool(obj.r_get('r_is_ficon')):
+            return None
+        full_key = key if sub_key is None else key + '/' + sub_key
+        return copy.deepcopy(gen_util.get_key_val(obj, full_key))
+    except BaseException as e:
+        brcdapi_log.exception(['Key: ' + str(key), 'sub_key: ' + str(sub_key)] + _fmt_errors(obj, full=True), echo=True)
+    return None
+
+
 def _default_user_pw_act(obj, key, sub_key=None):
     """Returns an encoded default new user password: "Passw0rd!". See _conv_none_act() for parameters"""
     global _temp_password
@@ -681,8 +696,6 @@ def _switch_update_act(cd, d):
             if len(content_d) > 0:
                 if 'brocade-fibrechannel-switch' in key:
                     obj = brcdapi_switch.fibrechannel_switch(cd['session'], fid, content_d, t_switch_obj.r_obj_key())
-                elif 'brocade-fibrechannel-configuration' in key:
-                    obj = brcdapi_switch.fibrechannel_configuration(cd['session'], fid, content_d)
                 else:
                     temp_l = key.split('/')
                     d = {temp_l.pop(): content_d}
@@ -1033,9 +1046,8 @@ _action_l = [
              'node-name-zoning-enabled': _conv_lookup_act,
              'fabric-lock-timeout': _conv_lookup_act,
     }),
-    # Not tested. Below might be done in the vf section when creating logical switches.
     dict(k='brocade-fibrechannel-configuration/fabric', a=_switch_update_act, m='PATCH', rl='name', p='s', rw={
-        'insistent-domain-id-enabled': _conv_lookup_act,
+        'insistent-domain-id-enabled': _conv_ficon_lookup_act,
         'principal-selection-enabled': _conv_lookup_act,
         'principal-priority': _conv_lookup_act,
         'preserved-domain-id-mode-enabled': _conv_lookup_act,
