@@ -63,16 +63,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.3     | 27 May 2023   | Add zone groups missing in feedback.                                              |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.4     | 04 Jun 2023   | Changed write to log to print() when _DOC_STRING is True                          |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '27 May 2023'
+__date__ = '04 Jun 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.3'
+__version__ = '3.1.4'
 
 import argparse
 import brcdapi.log as brcdapi_log
@@ -101,7 +102,7 @@ _DEBUG_iocp = None  # 'test/iocp'
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 _DEBUG_c = None
-_DEBUG_group = 'sac_group'
+_DEBUG_group = 'SAC_ODD/sac_group'  # None  # 'test/test_group'
 
 
 def _custom_report(proj_obj, options):
@@ -327,14 +328,9 @@ def _get_input():
     if _DEBUG:
         ml.insert(0, 'WARNING!!! Debug is enabled')
 
-    return brcdapi_file.full_file_name(args_i, '.json'),\
-           brcdapi_file.full_file_name(args_o, '.xlsx'),\
-           brcdapi_file.full_file_name(args_bp, '.xlsx'),\
-           brcdapi_file.full_file_name(args_sfp, '.xlsx'),\
-           brcdapi_file.full_file_name(args_group, '.xlsx'),\
-           args_iocp,\
-           args_c,\
-           ml
+    file_l = [brcdapi_file.full_file_name(f, '.xlsx') for f in (args_o, args_bp, args_sfp, args_group)]
+    file_l.insert(0, brcdapi_file.full_file_name(args_i, '.json'))
+    return file_l[0], file_l[1], file_l[2], file_l[3], file_l[4], args_iocp, args_c, ml
 
 
 def pseudo_main():
@@ -385,7 +381,7 @@ def pseudo_main():
 # Create project
 
 if _DOC_STRING:
-    brcdapi_log.close_log('_DOC_STRING is True. No processing', echo=True)
+    print('_DOC_STRING is True. No processing')
     exit(0)
 
 _ec = pseudo_main()
