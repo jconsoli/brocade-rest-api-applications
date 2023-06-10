@@ -65,15 +65,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.4     | 04 Jun 2023   | Changed write to log to print() when _DOC_STRING is True                          |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.5     | 10 Jun 2023   | Added ungrouped ports to group zone page                                          |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '04 Jun 2023'
+__date__ = '10 Jun 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.4'
+__version__ = '3.1.5'
 
 import argparse
 import brcdapi.log as brcdapi_log
@@ -83,6 +85,7 @@ import brcdapi.gen_util as gen_util
 import brcdapi.port as brcdapi_port
 import brcddb.brcddb_project as brcddb_project
 import brcddb.apps.report as brcddb_report
+import brcddb.report.zone as zone_report
 import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_bp as brcddb_bp
 import brcddb.app_data.alert_tables as al
@@ -93,7 +96,7 @@ import brcddb.util.search as brcddb_search
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test/capture/combined'
+_DEBUG_i = 'test/test_out'
 _DEBUG_o = 'test/test_report'
 _DEBUG_bp = 'bp_jc'
 _DEBUG_sup = False
@@ -102,7 +105,7 @@ _DEBUG_iocp = None  # 'test/iocp'
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 _DEBUG_c = None
-_DEBUG_group = 'SAC_ODD/sac_group'  # None  # 'test/test_group'
+_DEBUG_group = 'sac_230530/sac_group'  # 'test/test_group'
 
 
 def _custom_report(proj_obj, options):
@@ -198,7 +201,9 @@ def _groups(proj_obj, file):
     :return: Dictionary whose key is the group name and the value is a list of login objects
     :rtype: dict
     """
-    ml, group_d = list(), dict()
+    ml, grouped_d = list(), dict()
+    group_d = {zone_report.UNGROUPED_TARGET: dict(port_obj_l=list()),
+               zone_report.UNGROUPED_INITIATOR: dict(port_obj_l=list())}
     if file is None:
         return group_d
 
@@ -242,14 +247,28 @@ def _groups(proj_obj, file):
         sub_group_d['port_obj_l'].extend(
             _group_filter_list[g_filter](proj_obj, row_l[col_d['Operand']], row_l[col_d['Operator']]))
 
-    # Zone groups are typically used for storage enclosures and it's not uncommon to use standard zones with multiple
-    # target WWNs in the same zone. Below probably could have been more efficient but I didn't realize this until after
-    # the fact so I just shoe horned it in. It adds a dictionary of WWNs that are part of the group. This dictionary
-    # is used in the report zone page to skip logins zone to this group that are already part of the group.
+    # Zone groups are typically used for storage enclosures. It's not uncommon to use standard zones with multiple
+    # target WWNs in the same zone. Below probably could have been more efficient but I didn't think of this until after
+    # the first test so I just shoe horned it in. It adds a dictionary of WWNs that are part of the group. This
+    # dictionary is used in the report zone page to skip logins zoned to this group that are already part of the group.
     for sub_group_d in group_d.values():
         for port_obj in sub_group_d['port_obj_l']:
             for wwn in port_obj.r_login_keys():
                 sub_group_d['group_wwn_d'].update({wwn: True})
+            # Keep track of ports already grouped:
+            grouped_d.update({port_obj.r_switch_key()+port_obj.r_obj_key(): True})
+
+    # Another after thought: find all the logins that are not grouped
+    for port_obj in proj_obj.r_port_objects():
+        if not bool(grouped_d.get(port_obj.r_switch_key()+port_obj.r_obj_key())):
+            login_obj_l = port_obj.r_login_objects()
+            if len(login_obj_l) > 0:
+                fc4_features = login_obj_l[0].r_get('brocade-name-server/fibrechannel-name-server/fc4-features')
+                if isinstance(fc4_features, str):
+                    if 'initiator' in fc4_features.lower():
+                        group_d[zone_report.UNGROUPED_INITIATOR]['port_obj_l'].append(port_obj)
+                    else:
+                        group_d[zone_report.UNGROUPED_TARGET]['port_obj_l'].append(port_obj)
 
     return group_d
 
