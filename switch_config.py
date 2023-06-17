@@ -15,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-:mod:`switch_config.py` -
+:mod:`switch_config.py` - Configure logical switch(es) from a workbook
 
 $ToDo running/brocade-fibrechannel-switch/fibrechannel-switch/principal (0 for no, 1 for yes)
 
@@ -76,21 +76,24 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.1.4     | 09 May 2023   | Fixed HTTP (not HTTPS) bug and attempt to write switch config to port config      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.5     | 17 Jun 2023   | Finished port enables.                                                            |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '09 May 2023'
+__date__ = '17 Jun 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.1.4'
+__version__ = '1.1.5'
 
 import argparse
 import sys
 import datetime
 import os
 import pprint
+import time
 import brcdapi.log as brcdapi_log
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.switch as brcdapi_switch
@@ -108,29 +111,31 @@ import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = '10.155.2.139'
+_DEBUG_ip = 'xx.xxx.xx.xx'
 _DEBUG_id = 'admin'
-_DEBUG_pw = 'Pass@word1!'
+_DEBUG_pw = 'password'
 _DEBUG_s = 'self'
-_DEBUG_i = 'test/switch_config'
+_DEBUG_i = 'config/ficon_switch'
 _DEBUG_force = False
 _DEBUG_sup = False
-_DEBUG_echo = True
+_DEBUG_echo = False
 _DEBUG_d = False
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
 
-_fc_switch = 'running/brocade-fibrechannel-switch/fibrechannel-switch'
-_fc_switch_config = 'running/brocade-fibrechannel-configuration/switch-configuration'
-_fc_switch_port = 'running/brocade-fibrechannel-configuration/port-configuration'
-_fc_ficon_cup = 'running/brocade-ficon/cup'
+_PORT_ENABLE_WAIT = 1  # Time in seconds to wait after enabling a switch before enabling the ports
+
+_fc_switch = 'running/' + brcdapi_util.bfs_uri
+_fc_switch_config = 'running/' + brcdapi_util.bfc_sw_uri
+_fc_switch_port = 'running/' + brcdapi_util.bfc_port_uri
+_fc_ficon_cup = 'running/' + brcdapi_util.ficon_cup_uri
 _basic_capture_kpi_l = [
     # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface.get_chassis()
     _fc_switch,
     _fc_switch_config,
     _fc_switch_port,
     _fc_ficon_cup,
-    'running/brocade-interface/fibrechannel',
+    'running/' + brcdapi_util.bifc_uri,
 ]
 
 
@@ -540,7 +545,7 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
                 break  # Port POD licenses only need to be reserved on fixed port switches
             port_obj = switch_obj.r_port_obj(port)
             if port_obj is not None and \
-                    port_obj.r_get('') != 'running/brocade-interface/fibrechannel/pod-license-state' != 'reserved':
+                    port_obj.r_get('') != 'running/'+brcdapi_util.bifc_pod != 'reserved':
                 # If the port doesn't exist in the chassis, it is reported in switch_d['not_found_port_l']. If the port
                 # was already in the logical switch it may not have been reserved.
                 port_l.append(port)
@@ -576,7 +581,7 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
         if len(content) > 0:
             brcdapi_log.log('Naming ' + str(len(content)) + ' ports.', echo)
             obj = brcdapi_rest.send_request(session,
-                                            'running/brocade-interface/fibrechannel',
+                                            'running/' + brcdapi_util.bifc_uri,
                                             'PATCH',
                                             {'fibrechannel': content},
                                             fid)
@@ -606,7 +611,7 @@ def _enable_switch_and_ports(session, chassis_obj, switch_d_l, echo):
     :return: Ending status. See brcddb.common
     :rtype: int
     """
-    global _basic_capture_kpi_l
+    global _basic_capture_kpi_l, _PORT_ENABLE_WAIT
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -622,12 +627,17 @@ def _enable_switch_and_ports(session, chassis_obj, switch_d_l, echo):
                 brcdapi_log.exception([buf, fos_auth.formatted_error_msg(obj)], echo=True)
                 ec = brcddb_common.EXIT_STATUS_API_ERROR
 
-        # Enable ports  LEFT OFF HERE
-        # Also note that ports may be enabled automatically after enabling the switch
-        # Forgot what;s in switch_d to indicate ports should be enabled
-        # No port should be enabled until this method is called and I don't think that's the case.
-        # if enable_ports_flag:
-        #     brcdapi_port.enable_port(session, fid, port_list)
+        # Enable ports
+        if switch_d['switch_info']['enable_ports'] and ec == brcddb_common.EXIT_STATUS_OK:
+            # brcdapi_rest will sleep if switch is busy but no point in executing that logic when only 1 sec is needed
+            time.sleep(_PORT_ENABLE_WAIT)
+            persist_flag = True if switch_d['switch_info']['switch_type'] == 'ficon' else False
+            obj = brcdapi_port.enable_port(session, fid, switch_d['port_d'].keys(), persistent=persist_flag)
+            if fos_auth.is_error(obj):
+                buf = 'Failed to enable ports for FID ' + str(fid)
+                switch_d['err_msgs'].append(buf)
+                brcdapi_log.exception([buf, fos_auth.formatted_error_msg(obj)], echo=True)
+                ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     return ec
 
