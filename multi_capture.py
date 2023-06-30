@@ -49,16 +49,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 3.1.2     | 09 May 2023   | Added -bp parameter for report.                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 3.1.3     | 30 Jun 2023   | Added -groups option for the report.                                              |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2019, 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '09 May 2023'
+__date__ = '30 Jun 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.1.2'
+__version__ = '3.1.3'
 
 import signal
 import argparse
@@ -76,6 +78,7 @@ _DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed 
 _DEBUG_i = 'test_copy'
 _DEBUG_f = None
 _DEBUG_sfp = 'sfp_rules_r10'
+_DEBUG_group = None
 _DEBUG_iocp = None  # 'test_iocp'
 _DEBUG_r = False
 _DEBUG_c = None
@@ -95,6 +98,8 @@ def parse_args():
     :rtype f: str, None
     :return sfp: Name of SFP rules file. None if not specified.
     :rtype sfp: str, None
+    :return group: Name of SFP rules file. None if not specified.
+    :rtype group: str, None
     :return iocp: Name of folder containing IOCP files. None if not specified.
     :rtype iocp: str, None
     :return r: If True, generate a report.
@@ -110,8 +115,8 @@ def parse_args():
     :return nl: No log. When True, a log file is not created.
     :rtype nl: bool
     """
-    global _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_bp, _DEBUG_sup, _DEBUG_d, _DEBUG_log
-    global _DEBUG_nl
+    global _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_group, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_bp, _DEBUG_sup
+    global _DEBUG_d, _DEBUG_log, _DEBUG_nl
 
     if _DEBUG:
         return _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_bp, _DEBUG_sup, _DEBUG_d, \
@@ -132,6 +137,9 @@ def parse_args():
     buf = 'Optional. Name of the Excel Workbook with SFP thresholds. This parameter is passed to report.py if -r is ' \
           'specified. Otherwise it is not used. ".xlsx" is automatically appended.'
     parser.add_argument('-sfp', help=buf, required=False)
+    buf = 'Optional. Name of Excel file containing group definitions. This parameter is passed to report.py if -r is ' \
+          'specified. Otherwise it is not used. ".xlsx" is automatically appended.'
+    parser.add_argument('-group', help=buf, required=False)
     buf = 'Optional. Name of folder with IOCP files. All files in this folder must be IOCP files (build I/O '\
           'configuration statements from HCD) and must begin with the CEC serial number followed by \'_\'. Leading 0s '\
           'are not required. Example, for a CPC with serial number 12345: 12345_M90_iocp.txt'
@@ -151,7 +159,7 @@ def parse_args():
     buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
     parser.add_argument('-nl', help=buf, action='store_true', required=False)
     args = parser.parse_args()
-    return args.i, args.f, args.sfp, args.iocp, args.r, args.c, args.bp, args.sup, args.d, args.log, args.nl
+    return args.i, args.f, args.sfp, args.group, args.iocp, args.r, args.c, args.bp, args.sup, args.d, args.log, args.nl
 
 
 def psuedo_main():
@@ -169,7 +177,7 @@ def psuedo_main():
     # Get and parse the input data
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
     ml.append(os.path.basename(__file__) + ' version: ' + __version__)
-    in_file, folder, sfp, iocp, report_flag, kpi_file, bp_file, s_flag, vd, log, nl = parse_args()
+    in_file, folder, sfp, group, iocp, report_flag, kpi_file, bp_file, s_flag, vd, log, nl = parse_args()
     if kpi_file is not None:
         addl_parms_capture.extend(['-c', kpi_file])
     if vd:
@@ -194,6 +202,7 @@ def psuedo_main():
     else:
         ml.append('Output Folder: ' + folder)
     ml.append('SFP, -sfp:           ' + str(sfp))
+    ml.append('Group, -group:       ' + str(group))
     ml.append('Best Practices, -bp: ' + str(bp_file))
     ml.append('IOCP, -iocp:         ' + str(iocp))
     ml.append('Report, -r:          ' + str(report_flag))
@@ -204,10 +213,9 @@ def psuedo_main():
 
     # Read the file with login credentials and perform some basic validation
     ml, switch_parms = list(), list()
-    if sfp is not None:
-        addl_parms_report.extend(['-sfp', sfp])
-    if bp_file is not None:
-        addl_parms_report.extend(['-bp', bp_file])
+    for k, v in {'-sfp': sfp, '-group': group, '-bp': bp_file}.items():
+        if k is not None:
+            addl_parms_report.extend([k, v])
     file = brcdapi_file.full_file_name(in_file, '.xlsx')
     row = 1
     try:
@@ -284,13 +292,12 @@ def psuedo_main():
 
     return ec
 
+
 ###################################################################
 #
 #                    Main Entry Point
 #
 ###################################################################
-
-
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
     exit(brcddb_common.EXIT_STATUS_OK)
