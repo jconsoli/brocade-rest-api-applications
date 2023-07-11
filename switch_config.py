@@ -78,15 +78,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.1.5     | 17 Jun 2023   | Finished port enables.                                                            |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.1.6     | 11 Jul 2023   | Added support for GE ports                                                        |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '17 Jun 2023'
+__date__ = '11 Jul 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.1.5'
+__version__ = '1.1.6'
 
 import argparse
 import sys
@@ -111,12 +113,12 @@ import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = 'xx.xxx.xx.xx'
+_DEBUG_ip = 'xx.xxx.x.xx'
 _DEBUG_id = 'admin'
 _DEBUG_pw = 'password'
 _DEBUG_s = 'self'
-_DEBUG_i = 'config/ficon_switch'
-_DEBUG_force = False
+_DEBUG_i = 'bd_test/FCIP_switch_wip'
+_DEBUG_force = True
 _DEBUG_sup = False
 _DEBUG_echo = False
 _DEBUG_d = False
@@ -246,8 +248,13 @@ def _ports_to_move(switch_obj, switch_d, force):
     :param force: Move the port whether it's online or not.
     :type force: bool
     """
-    switch_d.update(not_found_port_l=list(), online_port_l=list(), remove_port_l=list(), remove_ge_port_l=list(),
-                    add_port_l=list(), add_ge_port_l=list(), already_present_l=list())
+    switch_d.update(not_found_port_l=list(),
+                    online_port_l=list(),
+                    remove_port_l=list(),
+                    remove_ge_port_l=list(),
+                    add_port_l=list(),
+                    add_ge_port_l=list(),
+                    already_present_l=list())
     chassis_obj = switch_obj.r_chassis_obj()
     switch_pl = switch_obj.r_port_keys()
 
@@ -272,7 +279,7 @@ def _ports_to_move(switch_obj, switch_d, force):
             port_obj = chassis_obj.r_port_obj(port)  # Make sure the port is present in the chassis
             if port_obj is None:
                 switch_d['not_found_port_l'].append(port)
-            elif port_obj.r_is_online():
+            elif not force and port_obj.r_is_online():
                 switch_d['online_port_l'].append(port)
             elif switch_obj.r_port_obj(port) is None:  # Make sure the port isn't already in the switch
                 switch_d['add_port_l'].append(port)
@@ -300,6 +307,7 @@ def _create_switch(session, chassis_obj, switch_d, echo):
     base = True if switch_d['switch_info']['switch_type'] == 'base' else False
     ficon = True if switch_d['switch_info']['switch_type'] == 'ficon' else False
     obj = brcdapi_switch.create_switch(session, fid, base, ficon, echo=echo)
+
     if fos_auth.is_error(obj):
         switch_d['err_msgs'].append('Error creating FID ' + str(fid))
         brcdapi_log.exception([switch_d['err_msgs'][len(switch_d['err_msgs']) - 1],
@@ -452,21 +460,26 @@ def _add_ports(session, chassis_obj, switch_d_l, echo):
 
     for switch_d in switch_d_l:
         fid = switch_d['switch_info']['fid']
-        switch_obj = chassis_obj.r_switch_obj_for_fid(fid)
 
         # Figure out what FID all the port to move are in so they can be moved by groups for each FID
         from_fid_d = dict()
-        for port in switch_d['add_port_l']:
-            from_fid = brcddb_switch.switch_fid(chassis_obj.r_port_obj(port).r_switch_obj())
-            port_l = from_fid_d.get(from_fid)
-            if port_l is None:
-                port_l = list()
-                from_fid_d.update({from_fid: port_l})
-            port_l.append(port)
+        for key in ('add_port_l', 'add_ge_port_l'):
+            for port in switch_d[key]:
+                from_fid = brcddb_switch.switch_fid(chassis_obj.r_port_obj(port).r_switch_obj())
+                fid_d = from_fid_d.get(from_fid)
+                if fid_d is None:
+                    fid_d = dict(add_port_l=list(), add_ge_port_l=list())
+                    from_fid_d.update({from_fid: fid_d})
+                fid_d[key].append(port)
 
         # Add ports
-        for from_fid, port_l in from_fid_d.items():
-            obj = brcdapi_switch.add_ports(session, fid, from_fid, i_ports=port_l, echo=echo)
+        for from_fid, fid_d in from_fid_d.items():
+            obj = brcdapi_switch.add_ports(session,
+                                           fid,
+                                           from_fid,
+                                           i_ports=fid_d['add_port_l'],
+                                           i_ge_ports=fid_d['add_ge_port_l'],
+                                           echo=echo)
             if fos_auth.is_error(obj):
                 buf = 'Error moving ports from FID ' + str(from_fid) + ' to ' + str(fid)
                 switch_d['err_msgs'].append(buf)
@@ -501,9 +514,10 @@ def _remove_ports(session, chassis_obj, switch_d_l, echo):
         fid = switch_d['switch_info']['fid']
         switch_obj = chassis_obj.r_switch_obj_for_fid(fid)
 
-        # Remove ports - $ToDo brcdapi_switch.add_ports() doesn't remove GE ports
+        # Remove ports
         port_l = [p for p in switch_d['remove_port_l'] if switch_obj.r_port_obj(p) is not None]
-        obj = brcdapi_switch.add_ports(session, default_fid, fid, i_ports=port_l, echo=echo)
+        ge_port_l = [p for p in switch_d['remove_ge_port_l'] if switch_obj.r_port_obj(p) is not None]
+        obj = brcdapi_switch.add_ports(session, default_fid, fid, i_ports=port_l, i_ge_ports=ge_port_l, echo=echo)
         if fos_auth.is_error(obj):
             buf = 'Error moving ports from FID ' + str('fid') + ' to ' + str(default_fid)
             switch_d['err_msgs'].append(buf)
@@ -811,9 +825,7 @@ def pseudo_main():
         """ NOTE: _add_ports() must be called first. This was done for efficiency. Moving ports is time consuming. When
         configuring multiple switches, if a port is needed in another logical switch there is no point in moving it from
         the switch being worked on to the default switch only to later have to move it to another logical switch. Ports
-        are added by moving them from whatever logical switch they are in to the one where they are needed. By adding
-        ports to all logical switches first, only ports not used in any of the logical switches being created are moved
-        to the default switch.
+        are added by moving them from whatever logical switch they are in to the one where they are needed.
         
         I didn't think of this until after the code was written. To minimize changes to working code, I just built a
         list of all ports that will be added to a logical switch, all_add_l, and removed them from the remove_port_l."""

@@ -36,17 +36,17 @@ Version Control::
     +===========+===============+===================================================================================+
     | 3.0.0     | 19 Jul 2020   | Initial Launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.3.6     | 06 Jul 2023   | Latest updates.                                                                   |
+    | 3.3.7     | 06 Jul 2023   | Latest updates.                                                                   |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2020, 2021, 2022, 2023 Jack Consoli'
-__date__ = '06 Jul 2023'
+__date__ = '11 Jul 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack.consoli@broadcom.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.3.6'
+__version__ = '3.3.7'
 
 import sys
 import os
@@ -104,7 +104,7 @@ _imports = (
     {'l': 'brcdapi.file', 'd': 'Required by modules that perform file I/O.', 'r': '1.0.4'},
     {'l': 'brcdapi.gen_util', 'd': 'Required by most scripts.', 'r': '1.1.0'},
     {'l': 'brcdapi.log', 'd': 'Required by all scripts.', 'r': '3.0.7'},
-    {'l': 'brcdapi.port', 'd': 'Required for reading and configuring ports.', 'r': '3.1.0'},
+    {'l': 'brcdapi.port', 'd': 'Required for reading and configuring ports.', 'r': '3.1.1'},
     {'l': 'brcdapi.switch', 'd': 'Required for reading and configuring switches.', 'r': '3.1.1'},
     {'l': 'brcdapi.util', 'd': 'Utilities supporting the FOS RESTConf API driver.', 'r': '3.1.4'},
     {'l': 'brcdapi.zone', 'd': 'Required by scripts performing zoning operations.', 'r': '3.0.8'},
@@ -150,12 +150,12 @@ _imports = (
     {'l': 'brcddb.report.login', 'd': 'Required for generating Excel reports', 'r': '3.1.2'},
     {'l': 'brcddb.report.port', 'd': 'Required for generating Excel reports', 'r': '3.1.3'},
     {'l': 'brcddb.report.switch', 'd': 'Required for generating Excel reports', 'r': '3.0.9'},
-    {'l': 'brcddb.report.utils', 'd': 'Required for generating Excel reports', 'r': '3.1.7'},
+    {'l': 'brcddb.report.utils', 'd': 'Required for generating Excel reports', 'r': '3.1.8'},
     {'l': 'brcddb.report.zone', 'd': 'Required for generating Excel reports', 'r': '3.2.2'},
     {'l': 'brcddb.app_data.alert_tables', 'd': 'Alert format tables. Required for best practice analysis.',
      'r': '3.1.5'},
     {'l': 'brcddb.app_data.report_tables', 'd': 'Required for controlling the formats when generating Excel reports',
-     'r': '3.1.6'},
+     'r': '3.1.7'},
     {'d': ''},
     {'d': 'FOS API driver libraries from github/jconsoli, brcdapi, required for SANnav scripts.'},
     {'d': ''},
