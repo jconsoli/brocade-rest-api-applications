@@ -15,43 +15,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-:mod:`zone_config.py` - Examples on how to create, modify and delete zone objects using the brcdapi.zone library.
+:mod:`maps.py` - Creates MAPS SFP rules from a workbook
 
 **Description**
 
-    This spawned from https://github.com/jconsoli/brocade-rest-api-examples/zone_config.py. zone_config.py was
-    written for the sole purpose of illustrating automated zoning design considerations and to provide coding examples.
-    I never thought anyone would zone form a workbook but I needed something to validate zone changes ahead of a change
-    control window so I hacked zone_config.py to use the database in brcddb to facilitate this. Over time, I figured
-    since I already had a workbook of validated zone changes, I may as well use it to save and activate the zone changes
-    so I added logic for that as well.
-
-    The operation is essentially the same as how FOS handles zoning in that zoning transactions are stored in memory and
-    then applied to the switch all at once. Specifically:
-
-    1.  The zone database is read from the switch and added to the brcddb database referred to herein as the “local
-        database”.
-    2.  Actions specified in the input workbook are tested against the local database and if there are no errors, the
-        local database is updated. (the ability to do is what supports the test mode, -t option).
-    3.  A zone configuration activation (equivalent to cfgenable) or save (equivalent to cfgsave) then write the revised
-        zone database to the switch.
 
 Version Control::
 
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
     +===========+===============+===================================================================================+
-    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
+    | 4.0.0     | xx xxx 2023   | Initial Launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 Aug 2023'
+__date__ = 'xx xxx 2023'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Released'
+__status__ = 'Development'
 __version__ = '4.0.0'
 
 import collections
