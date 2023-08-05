@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2020, 2021, 2022 Jack Consoli.  All rights reserved.
+# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -49,40 +49,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
     +===========+===============+===================================================================================+
-    | 1.x.x     | 03 Jul 2019   | Experimental                                                                      |
-    | 2.x.x     |               |                                                                                   |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.0     | 19 Jul 2020   | Initial Launch                                                                    |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.1     | 29 Sep 2020   | Used standard date format                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.2     | 09 Jan 2021   | Open log file.                                                                    |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.3     | 13 Feb 2021   | Added # -*- coding: utf-8 -*-                                                     |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.4     | 14 Nov 2021   | Changed _MIN_POLL_TIME to 2.1 and added collection of brocade-interface. This was |
-    |           |               | primarily to capture average-receive-frame-size and average-transmit-frame-size.  |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.5     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.6     | 28 Apr 2022   | Adjusted for new URI format in 9.0                                                |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.7     | 25 Jul 2022   | Fixed bad reference to args.sec and removed double poll of stats                  |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.8     | 04 Sep 2022   | Fixed reference to fid when -fid is not specified (default)                       |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 3.0.9     | 24 Oct 2022   | Improved error messaging and modified Control-C handling                          |
+    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2019, 2020, 2021, 2022 Jack Consoli'
-__date__ = '24 Oct 2022'
+__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
+__date__ = '04 August 2023'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack.consoli@broadcom.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '3.0.9'
+__version__ = '4.0.0'
 
 import http.client
 import sys
