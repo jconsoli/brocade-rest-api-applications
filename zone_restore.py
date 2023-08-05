@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2021, 2022, 2023 Jack Consoli.  All rights reserved.
+# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -22,26 +22,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
     +===========+===============+===================================================================================+
-    | 1.0.0     | 07 Aug 2021   | Initial launch                                                                    |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.1     | 31 Dec 2021   | Use brcddb.util.file.full_file_name()                                             |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.2     | 28 Apr 2022   | Use new URI formats.                                                              |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.3     | 25 Jul 2022   | Added ability to activate a zone configuration.                                   |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.4     | 01 Jan 2023   | Added ability to generate CLI commands                                            |
+    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021, 2022, 2023 Jack Consoli'
-__date__ = '01 Jan 2023'
+__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
+__date__ = '04 August 2023'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack.consoli@broadcom.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.4'
+__version__ = '4.0.0'
 
 import argparse
 import brcdapi.log as brcdapi_log

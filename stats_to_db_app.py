@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2021, 2022 Jack Consoli.  All rights reserved.
+# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
 #
 # NOT BROADCOM SUPPORTED
 #
@@ -34,23 +34,18 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
     +===========+===============+===================================================================================+
-    | 1.0.0     | 27 Feb 2021   | Initial Launch                                                                    |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.1     | 28 Feb 2021   | Build cross-references before generating port descriptions.                       |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.2     | 31 Dec 2021   | Updated comments. No functional changes.                                          |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.3     | 28 Apr 2022   | Adjusted for new URI format.                                                      |
+    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
+
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021, 2022 Jack Consoli'
-__date__ = '28 Apr 2022'
+__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
+__date__ = '04 August 2023'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack.consoli@broadcom.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '4.0.0'
 
 import datetime
 import argparse
