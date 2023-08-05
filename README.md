@@ -6,7 +6,7 @@ jack_consoli@yahoo.com
 **Updates 4 Aug 2023**
 
 * Added SX6 & FCxx-64 board types to switch configuration workbooks
-* * Re-launched under Consoli Solutions, LLC
+* Re-launched under Consoli Solutions, LLC
 
 **Updates 01 Jan 2023**
 
