@@ -1,5 +1,10 @@
 # brocade-rest-api-applications
 
+**Updates 4 Aug 2023**
+
+* Added SX6 & FCxx-64 board types to switch configuration workbooks
+* * Re-launched under Consoli Solutions, LLC
+
 **Updates 01 Jan 2023**
 
 * Replaced hard-coded best practice table with ability to read best practices from a Workbook
@@ -164,12 +169,6 @@ py compare_report.py –b old_project.json –c new_project.json –r comparison
 Used to validate proper installation of Python and the Python libraries required by these modules.
 
 py lib_check.py
-
-**maps_config**
-
-It is common for organizations to modify default SFP thresholds. This utility configures MAPS policy for SFP thresholds read from an Excel Workbook.
-
-py map_config.py –ip xxx.xxx.xxx.xxx –id admin –pw password –s self –fid 128 –sfp sfp_rules_r9
 
 **multi_capture**
 
