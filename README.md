@@ -1,5 +1,8 @@
 # brocade-rest-api-applications
 
+Consoli Solutions, LLC
+jack_consoli@yahoo.com
+
 **Updates 4 Aug 2023**
 
 * Added SX6 & FCxx-64 board types to switch configuration workbooks
