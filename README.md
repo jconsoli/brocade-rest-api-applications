@@ -1,7 +1,13 @@
 # brocade-rest-api-applications
 
 Consoli Solutions, LLC
-jack_consoli@yahoo.com
+jack@consoli-solutions.com
+
+**Updates 6 March 2024
+
+* Added restore.py
+* Improved error messaging
+* Updated comments
 
 **Updates 4 Aug 2023**
 
