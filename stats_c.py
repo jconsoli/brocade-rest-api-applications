@@ -1,32 +1,31 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`stats_c` - Collects port statistics at a user specified interval
 
 **Overview**
 
 Initially collects switch and name server information plus the first sample. This is done to make it so that ports can
-be associated with what is logged in. From there after, only port statistics are gathered. All data collected from the
+be associated with what is logged in. From thereafter, only port statistics are gathered. All data collected from the
 switch is stored in a standard brcddb project. The initial switch is stored with it's WWN as is normal; however, each
 additional sample is stored with the WWN and the sample number appended.
 
 This script is pretty simple. It doesn't log out and re-login between polls so the poll cycle has to be short enough
 such that the switch doesn't automatically log you out. I believe the default logout for a switch login via the API is
-5 minutes. The poll cycle is a best effort in that a sleep is introduced that is calculated by:
+5 minutes. To maintain the poll cycle a sleep is introduced that is calculated by:
 
 sleep = poll cycle time - (poll finish time - poll start time)
 
@@ -51,24 +50,25 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | 06 Mar 2024   | Set verbose debug via brcdapi.brcdapi_rest.verbose_debug()                        |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 August 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = '06 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack_consoli@yahoo.com'
+__email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 
 import http.client
 import sys
-import os
 import signal
 import time
 import datetime
-import argparse
+import brcdapi.gen_util as gen_util
 import brcdapi.util as brcdapi_util
 import brcdapi.log as brcdapi_log
 import brcdapi.fos_auth as fos_auth
@@ -78,8 +78,45 @@ import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
 import brcddb.util.copy as brcddb_copy
 import brcddb.api.interface as brcddb_int
+import brcddb.classes.util as class_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
+# _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
+# execute. This is useful when importing this module into another module that calls psuedo_main().
+_STAND_ALONE = True  # See note above
+
+"""_MIN_POLL is the minimum time in seconds the command line will accept. It is actually the time to sleep between each
+request for statistical data. Additional comments regarding the poll cycles are in the Overview section in the module
+header. Picking a sleep time that results in a poll that guarantees the poll cycle of FOS is impossible. This is why
+0.1 is added. Keep in mind that if you poll a switch twice within the same internal switch poll cycle, all the
+statistical counters will be the same as the previous poll but the time stamp will be different."""
+_MIN_POLL = 2.1  # See comments above
+_EXCEPTION_MSG = 'This normally occurs when data collection is terminated with Control-C keyboard interrupt or a '\
+    'network error occurred. All data collected up to this point will be saved.'
+_DEFAULT_POLL_INTERVAL = 10.0  # Default poll interval, -p
+_DEFAULT_MAX_SAMPLE = 100  # Default number of samples, -m
+_MIN_SAMPLES = 5  # A somewhat arbitrary minimum number of samples.
+
+_buf = '(Optional) Samples are collected until this maximum is reached or a Control-C keyboard interrupt is received. '
+_buf += '"-m 0" picks the default which is equivalent to -p ' + str(_DEFAULT_MAX_SAMPLE) + '. The minimum number of '
+_buf += 'samples is ' + str(_MIN_SAMPLES) + '.'
+_input_d = gen_util.parseargs_login_d.copy()
+_input_d.update(
+    o=dict(h='Required. Name of output file where raw data is to be stored. ".json" extension is automatically '
+             'appended.'),
+    fid=dict(r=False, t='int', v=gen_util.range_to_list('1-128'),
+             h='(Optional) Virtual Fabric ID (1 - 128) of switch to read statistics from.'),
+    p=dict(r=False, t='float',
+           h='(Optional) Polling interval in seconds. Since fractions of a second are supported, this is a floating'
+             'point number. "-p 0.0" picks the default which is equivalent to -p ' + str(_DEFAULT_POLL_INTERVAL) +
+             '. The minimum is ' + str(_MIN_POLL) + ' seconds.'),
+    m=dict(r=False, t='int', h=_buf),
+)
+_input_d.update(gen_util.parseargs_log_d.copy())
+_input_d.update(gen_util.parseargs_debug_d.copy())
+
+_required_input = ('ip', 'id', 'pw', 'fid', 'wwn')
+
 _DEBUG = False
 _DEBUG_ip = 'xx.xxx.x.xxx'
 _DEBUG_id = 'admin'
@@ -93,19 +130,10 @@ _DEBUG_m = 4
 _DEBUG_o = 'test/stats_r0.json'
 _DEBUG_log = '_logs'
 _DEBUG_nl = False
-"""_MIN_POLL is the minimum time in seconds the command line will accept. It is actually the time to sleep between each
-request for statistical data. Additional comments regarding the poll cycles are in the Overview section in the module
-header. Picking a sleep time that results in a poll that guarantees the poll cycle of FOS is impossible. This is why
-0.1 is added. Keep in mind that if you poll a switch twice within the same internal switch poll cycle, all the
-statistical counters will be the same as the previous poll but the time stamp will be different."""
-_MIN_POLL = 2.1  # See comments above
-_EXCEPTION_MSG = 'This normally occurs when data collection is terminated with Control-C keyboard interrupt or a '\
-    'network error occured. All data collected up to this point will be saved.'
-_DEFAULT_POLL_INTERVAL = 10  # Default poll interval, -p
-_DEFAULT_MAX_SAMPLE = 100  # Default number of samples, -m
+
 _proj_obj = None  # Project object (brcddb.classes.project.ProjectObj)
 _session = None  # Session object returned from brcdapi.fos_auth.login()
-_out_f = None  # Name of output file for plain text copy of _proj_obj
+_out_f = 'None'  # Name of output file for plain text copy of _proj_obj
 _base_switch_obj = None  # First switch object, brcddb.classes.switch.SwitchObj
 _switch_obj = list()  # List of switch objects containing the statistic samples.
 
@@ -128,13 +156,17 @@ _uris_2 = (  # Execute if there is a fabric principal
 )
 
 
-def _wrap_up(exit_code):
+def _wrap_up(exit_code, out_f):
     """Write out the collected data in JSON to a plain text file.
 
     :param exit_code: Initial exit code
     :type exit_code: int
+    :param out_f:  Name of output file where raw data is to be stored
+    :type out_f: str
+    :return: Exit code. See exist codes in brcddb.brcddb_common
+    :rtype: int
     """
-    global _proj_obj, _session, _out_f, _switch_obj, _base_switch_obj
+    global _proj_obj, _session, _switch_obj, _base_switch_obj
 
     ec = exit_code
     if _session is not None:
@@ -155,91 +187,10 @@ def _wrap_up(exit_code):
         _proj_obj.s_new_key('switch_list', [obj.r_obj_key() for obj in _switch_obj])
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(_proj_obj, plain_copy)
-        brcdapi_file.write_dump(plain_copy, _out_f)
+        brcdapi_file.write_dump(plain_copy, out_f)
     except BaseException as e:
-        brcdapi_log.log('Unknown exception: ' + str(e) if isinstance(e, (bytes, str)) else str(type(e)), echo=True)
+        brcdapi_log.exception(str(type(e)) + ': ' + str(e), echo=True)
     return ec
-
-
-def _get_input():
-    """Parses the module load command line
-
-    :return ip_addr: IP address
-    :rtype ip_addr: str
-    :return id: User ID
-    :rtype id: str
-    :return pw: Password
-    :rtype pw: str
-    :return http_sec: Type of HTTP security
-    :rtype http_sec: str
-    :return fid: Fabric ID in chassis specified by -ip where the zoning information is to copied to.
-    :rtype fid: int
-    :return suppress_flag: True - suppress all print to STD_OUT
-    :rtype suppress_flag: bool
-    :return suppress_flag: True - suppress all print to STD_OUT
-    :rtype suppress_flag: bool
-    :return poll_time: Polling interval in seconds
-    :return poll_time: int, None
-    :return max_samples: Maximum number of samples to collect
-    :rtype max_samples: int, None
-    :return file:  Name of output file where raw data is to be stored
-    :rtype file: str
-    """
-    global _DEBUG, _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_s, _DEBUG_fid, _DEBUG_sup
-    global _DEBUG_p, _DEBUG_m, _DEBUG_o, _DEBUG_d, _DEBUG_log, _DEBUG_nl
-
-    if _DEBUG:
-        args_ip, args_id, args_pw, args_s, args_fid, args_sup, args_p, args_m, args_o, args_d, args_log, args_nl =\
-            _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_s, _DEBUG_fid, _DEBUG_sup, _DEBUG_p, _DEBUG_m, _DEBUG_o, \
-            _DEBUG_d, _DEBUG_log, _DEBUG_nl
-    else:
-        buf = 'Collect port statistics at a specified poll interval. Use Control-C to stop data collection and write ' \
-              'report'
-        parser = argparse.ArgumentParser(description=buf)
-        parser.add_argument('-ip', help='Required. IP address', required=True)
-        parser.add_argument('-id', help='Required. User ID', required=True)
-        parser.add_argument('-pw', help='Required. Password', required=True)
-        buf = '(Optional) \'CA\' or \'self\' for HTTPS mode. Default is HTTP'
-        parser.add_argument('-s', help=buf, required=False,)
-        buf = 'Required. Name of output file where raw data is to be stored. ".json" extension is automatically '\
-              'appended.'
-        parser.add_argument('-o', help=buf, required=True)
-        buf = '(Optional) Virtual Fabric ID (1 - 128) of switch to read statistics from. Default is 128'
-        parser.add_argument('-fid', help=buf, type=int, required=False)
-        buf = '(Optional) No arguments. Suppress all library generated output to STD_IO except the exit code. Useful '\
-              'with batch processing'
-        parser.add_argument('-sup', help=buf, action='store_true', required=False)
-        buf = '(Optional) Polling interval in seconds. Default is '\
-              + str(_DEFAULT_POLL_INTERVAL) + '. The minimum is ' + str(_MIN_POLL) + ' seconds.'
-        parser.add_argument('-p', help=buf, type=float, required=False)
-        buf = '(Optional) Samples are collected until this maximum is reached or a Control-C keyboard interrupt is '\
-              'received. Default: ' + str(_DEFAULT_MAX_SAMPLE)
-        parser.add_argument('-m', help=buf, type=int, required=False)
-        buf = '(Optional) No arguments. Enable debug logging'
-        parser.add_argument('-d', help=buf, action='store_true', required=False)
-        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
-              'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-        parser.add_argument('-log', help=buf, required=False,)
-        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-        parser.add_argument('-nl', help=buf, action='store_true', required=False)
-        args = parser.parse_args()
-        args_ip, args_id, args_pw, args_s, args_fid, args_sup, args_p, args_m, args_o, args_d, args_log, args_nl =\
-            args.ip, args.id, args.pw, args.s, args.fid, args.sup, args.p, args.m, args.o, args.d, args.log, args.nl
-
-    # Condition input
-    sec = 'none' if args_s is None else args_s
-    if isinstance(args_fid, str):
-        args_fid = int(args_fid)
-
-    # Set up the log file & debug mode
-    if not args_nl:
-        brcdapi_log.open_log(args_log)
-    if args_d:
-        brcdapi_rest.verbose_debug = True
-    if args_sup:
-        brcdapi_log.set_suppress_all()
-
-    return args_ip, args_id, args_pw, sec, args_fid, args_p, args_m, brcdapi_file.full_file_name(args_o, '.json')
 
 
 def _stats_diff(old_obj, new_obj):
@@ -255,8 +206,8 @@ def _stats_diff(old_obj, new_obj):
     new_list = list()
     ret_obj = {'fibrechannel-statistics': new_list}
 
-    # I'm not sure if it's a guarantee to get the ports in the same order but I need to account for a port going offline
-    # anyway so the code below creates a map (dict) of old ports to their respective stats
+    # I'm not sure if it's a guarantee to get the ports in the same order, but I need to account for a port going
+    # offline anyway so the code below creates a map (dict) of old ports to their respective stats
     old_ports = dict()
     for port in old_obj.get('fibrechannel-statistics'):
         old_ports.update({port.get('name'): port})
@@ -285,37 +236,32 @@ def _stats_diff(old_obj, new_obj):
     return ret_obj
 
 
-def pseudo_main():
-    """Basically the main(). Did it this way so it can easily be used as a standalone module or called from another.
+def pseudo_main(ip, user_id, pw, sec, fid, pct, max_p, out_f):
+    """Basically the main(). Did it this way so that it can easily be used as a standalone module or called externally.
 
+    :param ip: IP address
+    :type ip: str
+    :param user_id: User ID
+    :type user_id: str
+    :param pw: Password
+    :type pw: str
+    :param sec: Type of HTTP security
+    :type sec: str
+    :param fid: Fabric ID in chassis specified by -ip where the zoning information is to be copied to.
+    :type fid: int
+    :param pct: Poll Time - Poll interval in seconds
+    :type pct: float
+    :param max_p: Maximum number of times to poll (collect samples)
+    :type max_p: int, None
+    :param out_f:  Name of output file where raw data is to be stored
+    :type out_f: str
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _DEBUG, _DEFAULT_POLL_INTERVAL, _DEFAULT_MAX_SAMPLE, _proj_obj, _session, _out_f, _switch_obj
+    global _DEBUG, _DEFAULT_POLL_INTERVAL, _DEFAULT_MAX_SAMPLE, _proj_obj, _session, _switch_obj
     global _base_switch_obj, __version__, _uris, _uris_2
 
     signal.signal(signal.SIGINT, brcdapi_rest.control_c)
-
-    # Get user input
-    ip, user_id, pw, sec, fid, pct, max_p, _out_f = _get_input()
-    default_text = ' (default)'
-    ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    ml.append(os.path.basename(__file__) + ' version: ' + __version__)
-    ml.append('IP Address:    ' + brcdapi_util.mask_ip_addr(ip))
-    ml.append('User ID:       ' + user_id)
-    ml.append('FID:           ' + str(fid))
-    if max_p is None:
-        max_p = _DEFAULT_MAX_SAMPLE
-        ml.append('Samples:       ' + str(max_p) + default_text)
-    else:
-        ml.append('Samples:       ' + str(max_p))
-    if pct is None:
-        pct = _DEFAULT_POLL_INTERVAL
-        ml.append('Poll Interval: ' + str(pct) + default_text)
-    else:
-        ml.append('Poll Interval: ' + str(pct) + ' (defaulting to ' + str(_MIN_POLL) + ')' if pct < _MIN_POLL else '')
-    ml.append('Output File:   ' + _out_f)
-    brcdapi_log.log(ml, echo=True)
 
     # Create project
     _proj_obj = brcddb_project.new('Port_Stats', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -341,7 +287,7 @@ def pseudo_main():
             _base_switch_obj = chassis_obj.r_switch_objects()[0]
         if _base_switch_obj is None:
             brcdapi_log.log('Switch for FID ' + str(fid) + ' not found. ', echo=True)
-            return _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
+            return _wrap_up(brcddb_common.EXIT_STATUS_ERROR, out_f)
         base_switch_wwn = _base_switch_obj.r_obj_key()
         if _base_switch_obj.r_fabric_key() is None:
             _base_switch_obj.s_fabric_key(base_switch_wwn)  # Fake out a fabric principal if we don't have one
@@ -368,7 +314,7 @@ def pseudo_main():
             if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
                                 echo=True)
-                _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
+                _wrap_up(brcddb_common.EXIT_STATUS_ERROR, out_f)
                 return brcddb_common.EXIT_STATUS_ERROR
             for p in obj.get('fibrechannel'):
                 switch_obj.s_add_port(p.get('name')).s_new_key('fibrechannel', p)
@@ -378,7 +324,7 @@ def pseudo_main():
             if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
                                 echo=True)
-                _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
+                _wrap_up(brcddb_common.EXIT_STATUS_ERROR, out_f)
                 return brcddb_common.EXIT_STATUS_ERROR
 
             for p in _stats_diff(last_stats, obj).get('fibrechannel-statistics'):
@@ -386,15 +332,80 @@ def pseudo_main():
             _switch_obj.append(switch_obj)
             last_stats = obj
 
-        return _wrap_up(brcddb_common.EXIT_STATUS_OK)
+        return _wrap_up(brcddb_common.EXIT_STATUS_OK, out_f)
 
     except (KeyboardInterrupt, http.client.CannotSendRequest, http.client.ResponseNotReady):
-        return _wrap_up(brcddb_common.EXIT_STATUS_OK)
+        return _wrap_up(brcddb_common.EXIT_STATUS_OK, out_f)
     except BaseException as e:
-        ec = brcddb_common.EXIT_STATUS_ERROR
-        e_buf = str(e) if isinstance(e, (bytes, str)) else str(type(e))
-        brcdapi_log.log(['Error capturing statistics. ' + _EXCEPTION_MSG, 'Exception: ' + e_buf], echo=True)
-        return _wrap_up(brcddb_common.EXIT_STATUS_ERROR)
+        brcdapi_log.log(['Error capturing statistics. ' + _EXCEPTION_MSG, 'Exception: '] + class_util.format_obj(e),
+                        echo=True)
+        return _wrap_up(brcddb_common.EXIT_STATUS_ERROR, out_f)
+
+
+def _get_input():
+    """Parses the module load command line
+
+    :return: Exit code. See exist codes in brcddb.brcddb_common
+    :rtype: int
+    """
+    global __version__, _input_d, _MIN_POLL, _MIN_SAMPLES
+
+    ec = brcddb_common.EXIT_STATUS_OK
+
+    # Get command line input
+    buf = 'Collect port statistics at a specified poll interval. Use Control-C to stop data collection and write report'
+    try:
+        args_d = gen_util.get_input(buf, _input_d)
+    except TypeError:
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR  # gen_util.get_input() already posted the error message.
+
+    # Set up logging
+    if args_d['d']:
+        brcdapi_rest.verbose_debug(True)
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+
+    # Is the poll interval valid?
+    args_p_help = ''
+    if args_d['p'] == 0:
+        args_p = _DEFAULT_POLL_INTERVAL
+        args_p_help = ' Using default of ' + str(_DEFAULT_POLL_INTERVAL)
+    else:
+        args_p = args_d['p']
+        if args_p < _MIN_POLL:
+            args_p_help = ' *ERROR: Must be >= ' + str(_MIN_POLL) + ' seconds'
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    # Are the number of samples valid?
+    args_m_help = ''
+    if args_d['m'] == 0:
+        args_m_help = ' Using the default of ' + str(_DEFAULT_MAX_SAMPLE)
+        args_m = _DEFAULT_MAX_SAMPLE
+    else:
+        args_m = args_d['m']
+        if args_m < _MIN_SAMPLES:
+            args_m_help = ' *ERROR: Must be >= ' + str(_MIN_SAMPLES)
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    # Command line feedback
+    ml = [
+        'stats_c.py version: ' + __version__,
+        'IP Address, -ip:    ' + brcdapi_util.mask_ip_addr(args_d['ip']),
+        'User ID, -id:       ' + args_d['id'],
+        'FID:                ' + str(args_d['fid']),
+        'Samples, -m:        ' + str(args_d['m']) + args_m_help,
+        'Poll Interval, -p:  ' + str(args_d['p']) + args_p_help,
+        'Output File, -o:    ' + args_d['o'],
+        'Log, -log:          ' + str(args_d['log']),
+        'No log, -nl:        ' + str(args_d['nl']),
+        'Debug, -d:          ' + str(args_d['d']),
+        'Supress, -sup:      ' + str(args_d['sup']),
+        '',
+    ]
+    brcdapi_log.log(ml, echo=True)
+
+    return ec if ec != brcddb_common.EXIT_STATUS_OK else\
+        pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'], args_d['fid'], args_p, args_m,
+                    brcdapi_file.full_file_name(args_d['o'], '.json'))
 
 
 ##################################################################
@@ -406,6 +417,7 @@ if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
     exit(brcddb_common.EXIT_STATUS_OK)
 
-_ec = pseudo_main()
-brcdapi_log.close_log('\nProcessing Complete. Exit code: ' + str(_ec))
-exit(_ec)
+if _STAND_ALONE:
+    _ec = _get_input()
+    brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
+    exit(_ec)

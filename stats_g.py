@@ -1,20 +1,19 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`stats_g` - Add statistics to Excel Workbook
 
 **Overview**
@@ -28,19 +27,20 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | 06 Mar 2024   | Documentation updates only.                                                       |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 Aug 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = '06 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack_consoli@yahoo.com'
+__email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 
 import sys
-import argparse
 import os
 import datetime
 from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
@@ -48,6 +48,7 @@ import openpyxl.utils.cell as xl
 import brcdapi.log as brcdapi_log
 import brcdapi.gen_util as gen_util
 import brcdapi.excel_util as excel_util
+import brcdapi.file as brcdapi_file
 import brcddb.brcddb_project as brcddb_project
 import brcddb.util.util as brcddb_util
 import brcddb.brcddb_common as brcddb_common
@@ -55,13 +56,40 @@ import brcddb.report.utils as report_utils
 import brcddb.app_data.report_tables as rt
 import brcddb.report.port as report_port
 import brcddb.util.copy as brcddb_copy
-import brcddb.util.file as brcddb_file
 import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.util.search as brcddb_search
 import brcddb.report.graph as report_graph
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
+# _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
+# execute. This is useful when importing this module into another module that calls psuedo_main().
+_STAND_ALONE = True  # See note above
+
+_buf = 'Optional. Specifies the graph type. Valid chart types are: ' + ', '.join(report_graph.chart_types) + '. '
+_buf += 'Default: line.'
+_input_d = dict(
+    r=dict(h='Required. Report name. ".xlsx" is automatically appended.'),
+    i=dict(h='Required. Name of data input file. This must be the output file, -o, from stats_c.py. ".json" is '
+             'automatically appended'),
+    gp=dict(r=False,
+            h='Optional. Creates a worksheet with a graph of one or more statistical counters for a port. Useful for '
+              'analyzing performance for a specific port. Parameters that follow are the port number followed by any '
+              'of the statistical parameters in brocade-interface/fibrechannel-statistics. Only the final leaf should '
+              'be used. All parameters must be separated by a comma. Separate multiple graphs with a semi-colon. '
+              'Graphs are plotted against the sample time. For example, to graph the Tx and Rx frames for port 3/14: '
+              '"-gp 3/14,in-frames,out-frames"'),
+    gs=dict(r=False,
+            h='Optional. Name of the worksheet to create with a graph of one or more statistical counters for a port. '
+              'Useful for analyzing performance for a specific port. Parameters that follow are the port number '
+              'followed by any of the statistical parameters in brocade-interface/fibrechannel-statistics. Only the '
+              'final leaf should be used. All parameters must be separated by a comma. Separate multiple graphs with a '
+              'semi-colon. Graphs are plotted against the sample time. For example, to graph the Tx and Rx frames for '
+              'port 3/14: "-gp 3/14,in-frames,out-frames"'),
+    gt=dict(r=False, h=_buf),
+)
+_input_d.update(gen_util.parseargs_log_d.copy())
+
 _DEBUG = False
 _DEBUG_sup = False
 _DEBUG_r = 'test/test_report'
@@ -218,8 +246,6 @@ def _add_ports(wb, tc_page, t_content, start_i, switch_obj):
     sheet_index = start_i
     proj_obj = switch_obj.r_project_obj()
     switch_obj_l = [proj_obj.r_switch_obj(wwn) for wwn in proj_obj.r_get('switch_list')]
-    if _DEBUG:
-        switch_obj_l = switch_obj_l[:6]
     for port_obj in brcddb_util.sort_ports(switch_obj.r_port_objects()):
 
         # Create the port page
@@ -272,8 +298,6 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
     ml = list()
     proj_obj = base_switch_obj.r_project_obj()
     switch_obj_l = [proj_obj.r_switch_obj(wwn) for wwn in proj_obj.r_get('switch_list')]
-    if _DEBUG:
-        switch_obj_l = switch_obj_l[:6]
     if len(switch_obj_l) < 2:
         brcdapi_log.log('Nothing to graph. No data collected.', echo=True)
         return ml
@@ -609,104 +633,27 @@ def _write_report(switch_obj, report, graph_list, ml):
     return brcddb_common.EXIT_STATUS_OK
 
 
-def _get_input():
-    """Parses the module load command line
+def pseudo_main(report, in_f, single_port_graph, stats_graph, graph_type):
+    """Basically the main(). Did it this way, so it can easily be used as a standalone module or called from another.
 
-    :return ip_addr: IP address
-    :rtype ip_addr: str
-    :return id: User ID
-    :rtype id: str
-    :return pw: Password
-    :rtype pw: str
-    :return http_sec: Type of HTTP security
-    :rtype http_sec: str
-    :return suppress_flag: True - suppress all print to STD_OUT
-    :rtype suppress_flag: bool
-    :return fid: Fabric ID in chassis specified by -ip where the zoning information is to copied to.
-    :rtype fid: int
-    :return suppress_flag: True - suppress all print to STD_OUT
-    :rtype suppress_flag: bool
-    :return report_name: Name of Excel report.
-    :rtype report_name: str
-    """
-    global _DEBUG, _DEBUG_sup, _DEBUG_r, _DEBUG_i, _DEBUG_gp, _DEBUG_gs, _DEBUG_gt, _DEBUG_log, _DEBUG_nl
-
-    if _DEBUG:
-        args_sup, args_r, args_i, args_gp, args_gs, args_gt, args_log, args_nl =\
-            _DEBUG_sup, _DEBUG_r, _DEBUG_i, _DEBUG_gp, _DEBUG_gs, _DEBUG_gt, _DEBUG_log, _DEBUG_nl
-
-    else:
-        buf = 'Create Excel Workbook from statistics gathered with stats_c.py. WARNING: Graphing parameters are not ' \
-              'yet implemented. This module will only create the Excel Workbook with tables. You will then need to ' \
-              'create your own graphs manually.'
-        parser = argparse.ArgumentParser(description=buf)
-        buf = 'Suppress all library generated output to STD_IO except the exit code. Useful with batch processing'
-        parser.add_argument('-sup', help=buf, action='store_true', required=False)
-        parser.add_argument('-r', help='Required. Report name. ".xlsx" is automatically appended.', required=True)
-        buf = 'Required. Name of data input file. This must be the output file, -o, from stats_c.py. ".json" is '\
-              'automatically appended'
-        parser.add_argument('-i', help=buf, required=True)
-        buf = 'Optional. Creates a worksheet with a graph of one or more statistical counters for a port. Useful for ' \
-              'analyzing performance for a specific port. Parameters that follow are the port number followed by any '\
-              'of the statistical parameters in brocade-interface/fibrechannel-statistics. Only the final leaf should '\
-              'be used. All parameters must be separated by a comma. Separate multiple graphs with a semi-colon. '\
-              'Graphs are plotted against the sample time. For example, to graph the Tx and Rx frames for port 3/14: '\
-              '"-gp 3/14,in-frames,out-frames"'
-        parser.add_argument('-gp', help=buf, required=False)
-        buf = 'Optional. Similar to the -gp option. Creates a worksheet with a graph for a specific statistical ' \
-              'counter for one or more ports. Parameters that follow are the statistical counter followed by the '\
-              'ports. To automatically pick the ports with the highest peak counts in any of the individual samples, '\
-              'enter top-x instead of specific ports. To automatically pick the ports with highest accumulated count '\
-              'over all samples, enter avg-x. For example, to graph the 5 ports with the highest accumulated BB '\
-              'credit zero counters: -gs bb-credit-zero,avg-5.'
-        parser.add_argument('-gs', help=buf, required=False)
-        buf = 'Optional. Specifies the graph type. Valid chart types are: ' + ', '.join(report_graph.chart_types) + '. '
-        buf += 'Default: line.'
-        parser.add_argument('-gt', help=buf, required=False)
-        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
-              'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-        parser.add_argument('-log', help=buf, required=False,)
-        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-        parser.add_argument('-nl', help=buf, action='store_true', required=False)
-        args = parser.parse_args()
-        args_sup, args_r, args_i, args_gp, args_gs, args_gt, args_log, args_nl =\
-            args.sup, args.r, args.i, args.gp, args.gs, args.gt, args.log, args.nl
-
-    # Set up log file and debug
-    if args_sup:
-        brcdapi_log.set_suppress_all()
-    if not args_nl:
-        brcdapi_log.open_log(args_log)
-
-    return brcddb_file.full_file_name(args_r, '.xlsx'),\
-        brcddb_file.full_file_name(args_i, '.json'), \
-        args_gp, \
-        args_gs, \
-        args_gt
-
-
-def pseudo_main():
-    """Basically the main(). Did it this way so it can easily be used as a standalone module or called from another.
-
+    :param report: Name of Excel report.
+    :type report: str
+    :param in_f: Name of data input file. This must be the output file, -o, from stats_c.py.
+    :type in_f: str
+    :param single_port_graph: Name of the worksheet to create with a graph of one or more stats counters for a port.
+    :type single_port_graph: None, str
+    :param stats_graph: Name of the worksheet to create with a graph of one or more statistical counters for a port.
+    :type stats_graph: None, str
+    :param graph_type: Type of graph. see report_graph.chart_types for details
+    :type graph_type: str, None
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _DEBUG, __version__
-
-    # Get and validate user input
-    report, in_f, single_port_graph_in, stats_graph_in, graph_type = _get_input()
-    ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    ml.append(os.path.basename(__file__) + ' version: ' + __version__)
-    ml.append('Report, -r:      ' + report)
-    ml.append('Input file, -i:  ' + in_f)
-    ml.append('Port graph, -gp: ' + str(single_port_graph_in))
-    ml.append('Stat graph, -gs: ' + str(stats_graph_in))
-    ml.append('Graph type, -gt: ' + str(graph_type))
-    brcdapi_log.log(ml, echo=True)
+    global __version__, _input_d
 
     # Read in the previously collected data
     brcdapi_log.log('Reading ' + in_f, echo=True)
-    obj = brcddb_file.read_dump(in_f)
+    obj = brcdapi_file.read_dump(in_f)
     if obj is None:
         return brcddb_common.EXIT_STATUS_ERROR
     proj_obj = brcddb_project.new(obj.get('_obj_key'), obj.get('_date'))
@@ -722,9 +669,48 @@ def pseudo_main():
     if fab_obj is not None:
         brcddb_fabric.zone_analysis(base_switch_obj.r_fabric_obj())  # Determines what zones each login participates in
 
-    graph_list, msg_list = _graphs(base_switch_obj, single_port_graph_in, stats_graph_in, graph_type)
+    graph_list, msg_list = _graphs(base_switch_obj, single_port_graph, stats_graph, graph_type)
     brcdapi_log.log('Writing ' + report)
     return _write_report(base_switch_obj, report, graph_list, msg_list)
+
+
+def _get_input():
+    """Parses the module load command line
+
+    :return: Exit code. See exit codes in brcddb.brcddb_common
+    :rtype: int
+    """
+    global __version__, _input_d
+
+    # Get command line input
+    buf = 'Create Excel Workbook from statistics gathered with stats_c.py. WARNING: Graphing parameters are not yet '\
+          'implemented. This module will only create the Excel Workbook with tables. You will then need to create '\
+          'your own graphs manually.'
+    args_d = gen_util.get_input(buf, _input_d)
+
+    # Set up logging
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+
+    # Command line feedback
+    ml = [
+        os.path.basename(__file__) + ' version: ' + __version__,
+        'Report, -r:      ' + args_d['r'],
+        'Input file, -i:  ' + args_d['i'],
+        'Port graph, -gp: ' + str(args_d['gp']),
+        'Stat graph, -gs: ' + str(args_d['gs']),
+        'Graph type, -gt: ' + str(args_d['gt']),
+        'Log, -log:       ' + str(args_d['log']),
+        'No log, -nl:     ' + str(args_d['nl']),
+        'Supress, -sup:   ' + str(args_d['sup']),
+        '',
+        ]
+    brcdapi_log.log(ml, echo=True)
+
+    return pseudo_main(brcdapi_file.full_file_name(args_d['r'], '.xlsx'),
+                       brcdapi_file.full_file_name(args_d['i'], '.json'),
+                       args_d['gp'],
+                       args_d['gs'],
+                       args_d['gt'])
 
 
 ##################################################################
@@ -734,8 +720,9 @@ def pseudo_main():
 ###################################################################
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-    exit(brcddb_common.EXIT_STATUS_OK)
+    exit(0)
 
-_ec = pseudo_main()
-brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec), echo=True)
-exit(_ec)
+if _STAND_ALONE:
+    _ec = _get_input()
+    brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
+    exit(_ec)

@@ -1,20 +1,19 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`stats_to_db_app` - Example on how to capture port statistics and add them to your own database
 
 **Description**
@@ -36,29 +35,47 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | 06 Mar 2024   | Set verbose debug via brcdapi.brcdapi_rest.verbose_debug()                        |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 August 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = '06 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack_consoli@yahoo.com'
+__email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 
 import datetime
-import argparse
-import brcddb.brcddb_project as brcddb_project
+import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.fos_auth as fos_auth
 import brcdapi.log as brcdapi_log
 import brcdapi.file as brcdapi_file
+import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
 import brcddb.api.interface as api_int
 import brcddb.brcddb_port as brcddb_port
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
+# _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
+# execute. This is useful when importing this module into another module that calls psuedo_main().
+_STAND_ALONE = True  # See note above
+
+_input_d = dict(
+    i=dict(h='Required. Input CSV file of switch login credentials. The file must be a CSV plain text file in the '
+             'format: User ID,Password,Address,Security. Security is either CA or self for HTTPS access and none for '
+             'HTTP. If Security is omitted, none (HTTP) is assumed. Don\'t forget to include the file extension. The '
+             'file extension is not assumed.'),
+    fid=dict(r=False,
+             h='(Optional) CSV list of FIDs to capture logical switch specific data. The default is to automatically '
+               'determine all logical switch FIDs defined in the chassis.')
+)
+_input_d.update(gen_util.parseargs_log_d.copy())
+
 _DEBUG = False   # When True, use _DEBUG_xxx below instead of command line input
 _DEBUG_i = 'test_csv.txt'
 _DEBUG_fid = None
@@ -198,59 +215,18 @@ def _parse_login_credentials(in_file):
     return rl
 
 
-def parse_args():
-    """Parses the module load command line
+def pseudo_main(in_file, fid_l):
+    """Basically the main(). Did it this way so that it can easily be used as a standalone module or called externally.
 
-    :return: ip, id, pw, file
-    :rtype: (str, str, str, str
-    """
-    global _DEBUG_i, _DEBUG_fid, _DEBUG_d, _DEBUG_log, _DEBUG_nl
-
-    if _DEBUG:
-        return _DEBUG_i, _DEBUG_fid, _DEBUG_d, _DEBUG_log, _DEBUG_nl
-
-    buf = 'This is intended as a programming example only but the method _db_add() could be easily modified to ' \
-          'use as a stand-alone module to launch periodically to capture statistics and add them to a custom ' \
-          'database. It illustrates how to capture port statistics and additional information that is typical of ' \
-          'a custom script to capture statistics and add them to a database.'
-    parser = argparse.ArgumentParser(description=buf)
-    buf = 'Required. Input CSV file of switch login credentials. The file must be a CSV plain text file in the '\
-          'format: User ID,Password,Address,Security. Security is either CA or self for HTTPS access and none for '\
-          'HTTP. If Security is omitted, none (HTTP) is assumed. Don\'t forget to include the file extension. The '\
-          'file extension is not assumed.'
-    parser.add_argument('-i', help=buf, required=True)
-    buf = '(Optional) CSV list of FIDs to capture logical switch specific data. The default is to automatically ' \
-          'determine all logical switch FIDs defined in the chassis.'
-    parser.add_argument('-fid', help=buf, required=False)
-    buf = '(Optional) Enable debug logging. Prints the formatted data structures (pprint) to the log and console.'
-    parser.add_argument('-d', help=buf, action='store_true', required=False)
-    buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The ' \
-          'log file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-    parser.add_argument('-log', help=buf, required=False, )
-    buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-    parser.add_argument('-nl', help=buf, action='store_true', required=False)
-    args = parser.parse_args()
-    return args.i, args.fid, args.d, args.log, args.nl
-
-
-def pseudo_main():
-    """Basically the main(). Did it this way to use with IDE
+    :param in_file: Name of login credentials file
+    :type in_file: str
+    :param fid_l: FIDs to collect statistics from
+    :type fid_l: list, None
     :return: Exit code
     :rtype: int
     """
     global _kpi_l
     
-    # Get the command line input
-    ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    in_file, fid_str, vd, log, nl = parse_args()
-    if vd:
-        brcdapi_rest.verbose_debug = True
-    if not nl:
-        brcdapi_log.open_log(log)
-    ml.append('FID: ' + str(fid_str))
-    fid_l = None if fid_str is None else fid_str.split(',')
-    brcdapi_log.log(ml, True)
-
     # Read the file with the login credentials
     switch_list = _parse_login_credentials(in_file)
 
@@ -262,7 +238,7 @@ def pseudo_main():
     for switch in switch_list:  # Collect the data for each switch
         ec_l.append(_capture_data(proj_obj, _kpi_l, fid_l, switch['id'], switch['pw'], switch['ip'], switch['sec']))
 
-    # Build cross references. This associates name server logins with a physical port. It is necessary in this example
+    # Build cross-references. This associates name server logins with a physical port. It is necessary in this example
     # because what is attached to the port is used as the port description added to the database.
     brcdapi_log.log('Building cross references', True)
     brcddb_project.build_xref(proj_obj)
@@ -275,7 +251,50 @@ def pseudo_main():
     for ec in ec_l:
         if ec != brcddb_common.EXIT_STATUS_OK:
             return ec
-    return ec  # If we get this far, everything was good
+    return brcddb_common.EXIT_STATUS_OK  # If we get this far, everything was good
+
+
+def _get_input():
+    """Parses the module load command line
+
+    :return: Exit code. See exist codes in brcddb.brcddb_common
+    :rtype: int
+    """
+    global __version__, _input_d
+
+    ec = brcddb_common.EXIT_STATUS_OK
+
+    # Get command line input
+    buf = 'This is intended as a programming example only but the method _db_add() could be easily modified to ' \
+          'use as a stand-alone module to launch periodically to capture statistics and add them to a custom ' \
+          'database. It illustrates how to capture port statistics and additional information that is typical of ' \
+          'a custom script to capture statistics and add them to a database.'
+    args_d = gen_util.get_input(buf, _input_d)
+
+    # Set up logging
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+
+    # Is the FID or FID range valid?
+    args_fid_l = gen_util.range_to_list(args_d['fid']) if isinstance(args_d['fid'], str) else None
+    args_fid_help = brcdapi_util.validate_fid(args_fid_l)
+    if len(args_fid_help) > 0:
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    # Command line feedback
+    ml = [
+        'stats_to_db_app.py version: ' + str(__version__),
+        'Login credentials file, -i: ' + args_d['i'],
+        'Fabric ID, -fid:            ' + args_d['fid'],
+        'Log, -log:                  ' + str(args_d['log']),
+        'No log, -nl:                ' + str(args_d['nl']),
+        'Debug, -d:                  ' + str(args_d['d']),
+        'Supress, -sup:              ' + str(args_d['sup']),
+        '',
+    ]
+    brcdapi_log.log(ml, echo=True)
+
+    return ec if ec != brcddb_common.EXIT_STATUS_OK else \
+        pseudo_main(brcdapi_file.full_file_name(args_d['i'], '.json'), args_fid_l)
 
 
 ###################################################################
@@ -285,8 +304,9 @@ def pseudo_main():
 ###################################################################
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-    exit(brcddb_common.EXIT_STATUS_OK)
+    exit(0)
 
-_ec = pseudo_main()
-brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
-exit(_ec)
+if _STAND_ALONE:
+    _ec = _get_input()
+    brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
+    exit(_ec)

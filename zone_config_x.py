@@ -1,30 +1,29 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`zone_config.py` - Examples on how to create, modify and delete zone objects using the brcdapi.zone library.
 
 **Description**
 
     This spawned from https://github.com/jconsoli/brocade-rest-api-examples/zone_config.py. zone_config.py was
     written for the sole purpose of illustrating automated zoning design considerations and to provide coding examples.
-    I never thought anyone would zone form a workbook but I needed something to validate zone changes ahead of a change
-    control window so I hacked zone_config.py to use the database in brcddb to facilitate this. Over time, I figured
-    since I already had a workbook of validated zone changes, I may as well use it to save and activate the zone changes
-    so I added logic for that as well.
+    I never thought anyone would zone form a workbook, but I needed something to validate zone changes ahead of a change
+    control window, so I hacked zone_config.py to use the database in brcddb to facilitate this. Over time, I figured
+    since I already had a workbook of validated zone changes, I may as well use it to save and activate the zone
+    changes, so I added logic for that as well.
 
     The operation is essentially the same as how FOS handles zoning in that zoning transactions are stored in memory and
     then applied to the switch all at once. Specifically:
@@ -43,21 +42,21 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | 06 Mar 2024   | Removed deprecated parameter in enable_zonecfg()                                  |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 Aug 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = '06 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack_consoli@yahoo.com'
+__email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 
 import collections
 import sys
 import pprint
-import argparse
 import datetime
 import brcdapi.gen_util as gen_util
 import brcdapi.brcdapi_rest as brcdapi_rest
@@ -71,31 +70,37 @@ import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.api.interface as api_int
-import brcddb.api.zone as brcddb_api_zone
+import brcddb.api.zone as api_zone
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
-_DEBUG = False
-_DEBUG_ip = 'xx.xxx.xx.xx'
-_DEBUG_id = 'admin'
-_DEBUG_pw = 'password'
-_DEBUG_s = 'self'
-_DEBUG_z = 'zone_sample_x'
-_DEBUG_fid = 1
-_DEBUG_a = False
-_DEBUG_i = 'test/gsh'
-_DEBUG_sup = False
-_DEBUG_d = False
-_DEBUG_log = '_logs'
-_DEBUG_nl = False
+# _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
+# execute. This is useful when importing this module into another module that calls psuedo_main().
+_STAND_ALONE = True  # See note above
+
+_input_d = gen_util.parseargs_login_false_d.copy()
+_input_d.update(
+    i=dict(r=False,
+           h='Optional. Output of capture.py, multi_capture.py, or combine.py. When this option is specified, -ip, '
+             '-id, -pw, -s, and -a are ignored. This is for offline test purposes only.'),
+    fid=dict(t='int', v=gen_util.range_to_list('1-128'), h='Required. Fabric ID of logical switch.'),
+    z=dict(h='Required. Workbook with zone definitions. ".xlsx" is automatically appended. See zone_sample.xlsx.'),
+    a=dict(r=False, d=False, t='bool',
+           h='Optional. No parameters. Activate or save zone changes. By default, this module is in a test mode. '
+             'Test mode validates that the zone changes can be made but does not make any zone changes.'),
+)
+_input_d.update(gen_util.parseargs_log_d.copy())
+_input_d.update(gen_util.parseargs_debug_d.copy())
 
 _pertinent_headers = ('Zone_Object', 'Action', 'Name', 'Member', 'Principal Member')
 _zone_kpis = ('running/brocade-fibrechannel-switch/fibrechannel-switch',
-                     'running/brocade-interface/fibrechannel',
-                     'running/brocade-zone/defined-configuration',
-                     'running/brocade-zone/effective-configuration',
-                     'running/brocade-fibrechannel-configuration/zone-configuration',
-                     'running/brocade-fibrechannel-configuration/fabric')
-_non_recoverable_error = _pending_flag = _change_flag = False
+              'running/brocade-interface/fibrechannel',
+              'running/brocade-zone/defined-configuration',
+              'running/brocade-zone/effective-configuration',
+              'running/brocade-fibrechannel-configuration/zone-configuration',
+              'running/brocade-fibrechannel-configuration/fabric')
+_non_recoverable_error = False  # A non-recoverable error occurred. Abort the transaction and terminate.
+_pending_flag = False  # Updates were made to the brcddb zone database that have not been written to the switch yet.
+_change_flag = False  # Changes were made successfully on the switch.
 # _tracking: They key in each sub-dictionary is the zone object name. The value is the list of rows in the workbook.
 # This is used for error reporting only.
 _tracking = dict(alias=dict(), zone=dict(), zone_cfg=dict())
@@ -146,8 +151,6 @@ def _validation_check(fab_obj):
 
     :param fab_obj: Fabric object
     :type fab_obj: brcddb.classes.fabric.FabricObj
-    :param eff_cfg: Name of new effective zone configuration. None if no new zone configuration
-    :type eff_cfg: None, str
     """
     global _non_recoverable_error, _tracking
 
@@ -246,9 +249,24 @@ def _invalid_action(fab_obj, zone_d):
 def _alias_create(fab_obj, zone_d):
     """Create an alias. See _invalid_action() for parameter descriptions"""
     global _non_recoverable_error, _pending_flag
+
+    el = list()
+
+    # Make sure it's a valid alias definition
     if len(zone_d['Principal Member']) > 0:
         _non_recoverable_error = True
-        return ['Principal members not supported in alias create at row ' + str(zone_d['row']+1)]
+        el.append('Principal members not supported in alias create at row ' + str(zone_d['row']+1))
+    if not gen_util.is_valid_zone_name(zone_d['Name']):
+        _non_recoverable_error = True
+        el.append('Invalid alias name, ' + zone_d['Name'] + ', at row ' + str(zone_d['row']+1))
+    if isinstance(zone_d['Member'], str):
+        for member in [m for m in zone_d['Member'].split(';')]:
+            if not gen_util.is_wwn(member, full_check=True) or not gen_util.is_di(member):
+                _non_recoverable_error = True
+                el.append('Invalid alias member, ' + member + ', at row ' + str(zone_d['row']+1))
+
+    if len(el) > 0:
+        return el
     fab_obj.s_add_alias(zone_d['Name'], zone_d['Member'])
     _pending_flag = True
     return _add_to_tracking('alias', zone_d)
@@ -275,6 +293,21 @@ def _alias_remove_mem(fab_obj, zone_d):
 def _peer_zone_create(fab_obj, zone_d):
     """Create a peer zone. See _invalid_action() for parameter descriptions"""
     global _pending_flag
+
+    el = list()
+
+    # Make sure it's a valid zone definition
+    if not gen_util.is_valid_zone_name(zone_d['Name']):
+        _non_recoverable_error = True
+        el.append('Invalid zone name, ' + zone_d['Name'] + ', at row ' + str(zone_d['row']+1))
+    if isinstance(zone_d['Member'], str):
+        for member in [m for m in zone_d['Member'].split(';')]:
+            if not gen_util.is_wwn(member, full_check=True) or not gen_util.is_di(member):
+                _non_recoverable_error = True
+                el.append('Invalid zone member, ' + member + ', at row ' + str(zone_d['row']+1))
+
+    if len(el) > 0:
+        return el
     fab_obj.s_add_zone(zone_d['Name'], brcddb_common.ZONE_USER_PEER, zone_d['Member'], zone_d['Principal Member'])
     _pending_flag = True
     return _add_to_tracking('zone', zone_d)
@@ -283,9 +316,24 @@ def _peer_zone_create(fab_obj, zone_d):
 def _zone_create(fab_obj, zone_d):
     """Create a zone. See _invalid_action() for parameter descriptions"""
     global _non_recoverable_error, _pending_flag
+
+    el = list()
+
+    # Make sure it's a valid zone definition
     if len(zone_d['Principal Member']) > 0:
         _non_recoverable_error = True
         return ['Principal members only supported in peer zones at row ' + str(zone_d['row']+1)]
+    if not gen_util.is_valid_zone_name(zone_d['Name']):
+        _non_recoverable_error = True
+        el.append('Invalid zone name, ' + zone_d['Name'] + ', at row ' + str(zone_d['row']+1))
+    if isinstance(zone_d['Member'], str):
+        for member in [m for m in zone_d['Member'].split(';')]:
+            if not gen_util.is_wwn(member, full_check=True) or not gen_util.is_di(member):
+                _non_recoverable_error = True
+                el.append('Invalid zone member, ' + member + ', at row ' + str(zone_d['row']+1))
+
+    if len(el) > 0:
+        return el
     fab_obj.s_add_zone(zone_d['Name'], brcddb_common.ZONE_STANDARD_ZONE, zone_d['Member'], zone_d['Principal Member'])
     _pending_flag = True
     return _add_to_tracking('zone', zone_d)
@@ -327,8 +375,8 @@ def _zonecfg_delete(fab_obj, zone_d):
     if eff_zonecfg_obj is not None and zone_d['Name'] == fab_obj.r_eff_zone_cfg_obj().r_obj_key():
         _non_recoverable_error = True
         el.extend(_add_to_tracking('zone_cfg', zone_d))
-        el.append(['The defined zone configuration, ' + zone_d['Name'] +
-                   ' is the effective zone and cannot be deleted at row ' + str(zone_d['row']+1)])
+        el.append('The defined zone configuration, ' + zone_d['Name'] +
+                  ' is the effective zone and cannot be deleted at row ' + str(zone_d['row']+1))
     else:
         fab_obj.s_del_zonecfg(zone_d['Name'])
         _pending_flag = True
@@ -366,7 +414,7 @@ def _zonecfg_save(fab_obj, zone_d):
 
 """
 _zone_action_d: I could have just had one dictionary with a pointer to the method and handled the activate list
-seperately but I was thinking of maybe doing some more complex checking and error messaging so the dictionary of
+separately but I was thinking of maybe doing some more complex checking and error messaging so the dictionary of
 dictionaries was done to simplify future script enhancements.
 +-------+-----------+-----------------------------------------------------------------------------------------------+
 | Key   | Type      | Description                                                                                   |
@@ -456,7 +504,7 @@ def _parse_zone_workbook(al):
     for row in range(1, len(al)):  # Starting from the row past the header.
         try:
             for col in hdr_d.values():  # It's a blank line if all cells are None
-                if al[row][col] != None:
+                if al[row][col] is not None:
                     raise Found
         except Found:
             d = dict(row=row)
@@ -497,7 +545,7 @@ def _capture_data(session, proj_obj, fid):
     :param fid: Logical FID number for the fabric of interest
     :type fid: int
     :return: The fabric object matching the FID
-    :rtype: brcddb.classes.fabric.FabricObj, None
+    :rtype: brcddb.classes.fabric.FabricObj
     """
     global _zone_kpis, _pending_flag
 
@@ -508,8 +556,7 @@ def _capture_data(session, proj_obj, fid):
         return fab_obj_l[0]
     elif len(fab_obj_l) == 0:
         raise NotFound
-    else:
-        raise FOSError
+    raise FOSError
 
 
 def _get_project(user_id, pw, ip, sec, fid, inf):
@@ -521,7 +568,7 @@ def _get_project(user_id, pw, ip, sec, fid, inf):
     :type pw: str
     :param ip: IP address
     :type ip: str
-    :param sec: Security. 'none' for HTTP, 'self' for self signed certificate, 'CA' for signed certificate
+    :param sec: Security. 'none' for HTTP, 'self' for self-signed certificate, 'CA' for signed certificate
     :type sec: str
     :param fid: Fabric ID
     :type fid: int
@@ -534,7 +581,7 @@ def _get_project(user_id, pw, ip, sec, fid, inf):
     :return fab_obj: Fabric object
     :rtype fab_obj: brcddb.classes.fabric.FabricObj, None
     """
-    el, session, fab_obj = list(), None, None
+    el, session, proj_obj, fab_obj = list(), None, None, None
 
     # If a file name was specified, read the project object from the file. If not, read data directly from the switch
     if isinstance(inf, str):
@@ -558,7 +605,7 @@ def _get_project(user_id, pw, ip, sec, fid, inf):
                 el.append('Fabric ID (FID) ' + str(fid) + ' not found.')
             elif len(fab_obj_l) > 1:
                 el.append('Multiple fabrics matching FID ' + str(fid) + ' found:')
-                el.extend('  ', '  \n'.join([brcddb_fabric.best_fab_name(obj, wwn=True) for obj in fab_obj_l]))
+                el.extend(['  ', '  \n'.join([brcddb_fabric.best_fab_name(obj, wwn=True) for obj in fab_obj_l])])
 
     else:  # Login and get data from the switch
 
@@ -593,7 +640,7 @@ def pseudo_main(user_id, pw, ip, sec, fid, test_mode, inf, zone_l):
     :type pw: str
     :param ip: IP address
     :type ip: str
-    :param sec: Security. 'none' for HTTP, 'self' for self signed certificate, 'CA' for signed certificate
+    :param sec: Security. 'none' for HTTP, 'self' for self-signed certificate, 'CA' for signed certificate
     :type sec: str
     :param fid: Fabric ID
     :type fid: int
@@ -603,14 +650,12 @@ def pseudo_main(user_id, pw, ip, sec, fid, test_mode, inf, zone_l):
     :type inf: str, None
     :param zone_l: Output of _parse_zone_workbook() - List of actions to take
     :type zone_l: list
-    :param force: If True, ignore inconsequential errors
-    :type force: bool
     :return: Exit code
     :rtype: int
     """
     global _zone_action_d, _zone_kpis, _pending_flag, _non_recoverable_error, _change_flag
 
-    ec, el = brcddb_common.EXIT_STATUS_OK, list()
+    ec, el, session, zone_d = brcddb_common.EXIT_STATUS_OK, list(), None, None
 
     try:
 
@@ -635,6 +680,10 @@ def pseudo_main(user_id, pw, ip, sec, fid, test_mode, inf, zone_l):
                 el.extend(temp_l)
             except KeyError:
                 el.append('Invalid Action: ' + str(zone_d['Action']) + ' in row ' + str(zone_d['row']+1))
+                ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+            except brcdapi_util.VirtualFabricIdError:
+                el.append('Software error. Search the log for "Invalid FID" for details.')
+                ec = brcddb_common.EXIT_STATUS_API_ERROR
             except ZoneCfgActivate:
                 if test_mode:
                     _pending_flag = False
@@ -643,20 +692,38 @@ def pseudo_main(user_id, pw, ip, sec, fid, test_mode, inf, zone_l):
                     el.append('Could not activate ' + zone_d['Name'] + ' due to previous errors')
                     ec = brcddb_common.EXIT_STATUS_API_ERROR
                 else:
-                    obj = brcddb_api_zone.replace_zoning(session, fab_obj, fid)
-                    if fos_auth.is_error(obj):
-                        _non_recoverable_error, ec = True, brcddb_common.EXIT_STATUS_API_ERROR
-                        el.extend(['Failed to replace zoning:', fos_auth.formatted_error_msg(obj)])
-                    else:
-                        _pending_flag, _change_flag = False, True
-                        obj = brcddb_api_zone.enable_zonecfg(session, None, fid, zone_d['Name'])
+                    # Commit whatever transactions are in buffer
+                    if _pending_flag:
+                        obj = api_zone.replace_zoning(session, fab_obj, fid)
+                        _pending_flag = False
                         if fos_auth.is_error(obj):
-                            brcdapi_zone.abort(session, fid)
-                            el.append('Failed to enable zone config: ' + zone_d['Name'])
                             _non_recoverable_error, ec = True, brcddb_common.EXIT_STATUS_API_ERROR
-                    # Clear out the local zone database and recapture the zone database from FOS
-                    proj_obj.s_del_chassis(session.pop('chassis_wwn'))
-                    fab_obj = _capture_data(session, proj_obj, fid)
+                            el.extend(['Failed to replace zoning:', fos_auth.formatted_error_msg(obj)])
+                            raise FOSError
+
+                        # Clear out the local zone database and recapture the zone database from FOS
+                        proj_obj.s_del_chassis(session.pop('chassis_wwn'))
+                        fab_obj = _capture_data(session, proj_obj, fid)
+
+                    # Enable the zone configuration
+                    eff_zonecfg_obj = fab_obj.r_eff_zone_cfg_obj()
+                    if eff_zonecfg_obj is not None and zone_d['Name'] == fab_obj.r_eff_zone_cfg_obj().r_obj_key():
+                        buf = 'The defined zone configuration, ' + zone_d['Name']
+                        buf += ' is already active. The zone configuration activate at row ' + str(zone_d['row'] + 1)
+                        buf += ' was ignored.'
+                        el.append(buf)
+                    obj = api_zone.enable_zonecfg(session, fid, zone_d['Name'])
+                    if fos_auth.is_error(obj):
+                        brcdapi_zone.abort(session, fid)
+                        el.extend(['Failed to enable zone config: ' + zone_d['Name'],
+                                   'FOS error is:',
+                                   fos_auth.formatted_error_msg(obj)])
+                        _non_recoverable_error, ec = True, brcddb_common.EXIT_STATUS_API_ERROR
+                    else:
+                        _change_flag = True
+                        # Clear out the local zone database and recapture the zone database from FOS
+                        proj_obj.s_del_chassis(session.pop('chassis_wwn'))
+                        fab_obj = _capture_data(session, proj_obj, fid)
             except ZoneCfgSave:
                 if test_mode:
                     _pending_flag = False
@@ -665,7 +732,7 @@ def pseudo_main(user_id, pw, ip, sec, fid, test_mode, inf, zone_l):
                     el.append('Could not save zoning changes due to previous errors')
                     ec = brcddb_common.EXIT_STATUS_API_ERROR
                 else:
-                    obj = brcddb_api_zone.replace_zoning(session, fab_obj, fid)
+                    obj = api_zone.replace_zoning(session, fab_obj, fid)
                     if fos_auth.is_error(obj):
                         _non_recoverable_error, ec = True, brcddb_common.EXIT_STATUS_API_ERROR
                         el.extend(['Failed to replace zoning:', fos_auth.formatted_error_msg(obj)])
@@ -678,11 +745,13 @@ def pseudo_main(user_id, pw, ip, sec, fid, test_mode, inf, zone_l):
     except NotFound:
         el.append('Fabric ID (FID) ' + str(fid) + ' not found.')
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    except brcdapi_util.VirtualFabricIdError:
+        el.append('Software error. Search the log for "Invalid FID" for details.')
     except FOSError:
         el.append('Unexpected response from FOS. See previous messages.')
         ec = brcddb_common.EXIT_STATUS_API_ERROR
     except BaseException as e:
-        el.extend(['Software error. Exception is:', pprint.pformat(e), 'zone_d:', pprint.pformat(zone_d)])
+        el.extend(['Software error.', str(type(e)) + ': ' + str(e), 'zone_d:', pprint.pformat(zone_d)])
         ec = brcddb_common.EXIT_STATUS_ERROR
 
     # Log out
@@ -710,113 +779,68 @@ def _get_input():
     :return ec: Error code. See brcddb_common.EXIT_* for details
     :rtype ec: int
     """
-    global __version__, _DEBUG, _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_s, _DEBUG_i, _DEBUG_z, _DEBUG_fid, _DEBUG_a
-    global _DEBUG_d, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
+    global __version__, _input_d
 
-    ec, el, args_s_append, args_i_append = brcddb_common.EXIT_STATUS_OK, list(), '', ''
+    ec, error_l, args_i_help, zone_l = brcddb_common.EXIT_STATUS_OK, list(), '', list()
 
-    # Get shell input
-    if _DEBUG:
-        args_ip, args_id, args_pw, args_s, args_i, args_z, args_fid, args_a, args_d, args_sup, args_log, args_nl = \
-            _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_s, _DEBUG_i, _DEBUG_z, _DEBUG_fid, _DEBUG_a, _DEBUG_d, _DEBUG_sup, \
-            _DEBUG_log, _DEBUG_nl
-    else:
-        e_buf = 'Required unless -i is specified. '
-        buf = 'Creates, deletes, and modifies zone objects from a workbook. See zone_sample.xlsx for details and '\
-              'examples. This module is primarily for examples but can be used for simple zone changes. Minimal '\
-              'error checking is performed. Minimal batching of zone operations is performed. For more complex '\
-              'zoning transactions and higher performance, use applications zone_restore.py or zone_merge.py.'
-        parser = argparse.ArgumentParser(description=buf)
-        parser.add_argument('-ip', help=e_buf + 'IP address', required=False)
-        parser.add_argument('-id', help=e_buf + 'User ID', required=False)
-        parser.add_argument('-pw', help=e_buf + 'Password', required=False)
-        parser.add_argument('-s', help='(Optional) "none" for HTTP, default, or "self" for HTTPS mode.',
-                            required=False)
-        buf = '(Optional) Output of capture.py, multi_capture.py, or combine.py. When this option is specified, -ip, '\
-              '-id, -pw, -s, and -a are ignored. This is for offline test purposes only.'
-        parser.add_argument('-i', help=buf, required=False)
-        parser.add_argument('-fid', help='Fabric ID of logical switch', required=True)
-        buf = 'Workbook with zone definitions. ".xlsx" is automatically appended. See zone_sample.xlsx.'
-        parser.add_argument('-z', help=buf, required=True)
-        buf = 'Optional. No parameters. Activate or save zone changes. By default, this module is in a test mode. '\
-              'Test mode validates that the zone changes can be made but does not make any zone changes.'
-        parser.add_argument('-a', help=buf, action='store_true', required=False)
-        buf = 'Optional. Suppress all output to STD_IO except the exit code and argument parsing errors. Useful with ' \
-              'batch processing where only the exit status code is desired. Messages are still printed to the log ' \
-              'file. No operands.'
-        parser.add_argument('-sup', help=buf, action='store_true', required=False)
-        buf = '(Optional) No parameters. When set, a pprint of all content sent and received to/from the API, except ' \
-              'login information, is printed to the log.'
-        parser.add_argument('-d', help=buf, action='store_true', required=False)
-        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The ' \
-              'log file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-        parser.add_argument('-log', help=buf, required=False, )
-        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-        parser.add_argument('-nl', help=buf, action='store_true', required=False)
-        args = parser.parse_args()
-        args_ip, args_id, args_pw, args_s, args_i, args_z, args_fid, args_a, args_d, args_sup, args_log, args_nl = \
-            args.ip, args.id, args.pw, args.s, args.i, args.z, args.fid, args.a, args.d,  args.sup, args.log, args.nl
+    # Get command line input
+    buf = 'Creates, deletes, and modifies zone objects from a workbook. See zone_sample.xlsx for details and ' \
+          'examples. This module is primarily for examples but can be used for simple zone changes. Minimal ' \
+          'error checking is performed. Minimal batching of zone operations is performed. For more complex ' \
+          'zoning transactions and higher performance, use applications zone_restore.py or zone_merge.py.'
+    try:
+        args_d = gen_util.get_input(buf, _input_d)
+    except TypeError:
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR  # gen_util.get_input() already posted the error message.
 
     # Set up logging
-    if args_d:
-        brcdapi_rest.verbose_debug = True
-    if args_sup:
-        brcdapi_log.set_suppress_all()
-    if not args_nl:
-        brcdapi_log.open_log(args_log)
+    if args_d['d']:
+        brcdapi_rest.verbose_debug(True)
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
 
     # If an input file wasn't specified, make sure all the login credentials were.
-    if args_i is None:
+    if args_d['i'] is None:
         el = list()
-        for key, buf in dict(ip=args_ip, id=args_id, pw=args_pw).items():
+        for key, buf in dict(ip=args_d['ip'], id=args_d['id'], pw=args_d['pw']).items():
             if buf is None:
                 el.append('Missing -' + key + ' parameter. Rerun with -h for additional help')
         if len(el) > 0:
             brcdapi_log.log(el, echo=True)
             return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    # Is the security method valid?
-    if args_s is None:
-        args_s = 'none'
-    elif args_s != 'self' and args_s != 'none':
-        ec, args_s_append = brcddb_common.EXIT_STATUS_INPUT_ERROR, ' *ERROR: Unsupported HTTP method'
-
     # Read in the workbook with the zone definitions
-    args_z = brcdapi_file.full_file_name(args_z, '.xlsx')
-    try:
-        workbook_l = excel_util.read_workbook(args_z, dm=3, sheets='zone')
-        if len(workbook_l) != 1:
-            ec, args_i_append = brcddb_common.EXIT_STATUS_INPUT_ERROR, ' *ERROR: worksheet "zone" missing'
-    except (FileExistsError, FileNotFoundError):
-        ec, args_i_append = brcddb_common.EXIT_STATUS_INPUT_ERROR, ' *ERROR: ' + args_z + ' not found'
-    if ec == 0:
+    args_z = brcdapi_file.full_file_name(args_d['z'], '.xlsx')
+    error_l, workbook_l = excel_util.read_workbook(args_z, dm=3, sheets='zone')
+    if len(error_l) > 0:
+        brcdapi_log.log(error_l, echo=True)
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    elif len(workbook_l) != 1:
+        error_l.append(' *ERROR: worksheet "zone" missing')
+    else:
         el, zone_l = _parse_zone_workbook(workbook_l[0]['al'])
         if len(el) > 0:
-            ec, args_i_append = brcddb_common.EXIT_STATUS_INPUT_ERROR, ' Invalid worksheet. See below for details.'
+            error_l.extend(el)
+            args_i_help = ' *ERROR: Invalid worksheet. See below for details.'
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    fid, args_fid_append = 0, ''
-    try:
-        fid = int(args_fid)
-        if fid < 1 or fid > 128:
-            raise ValueError
-    except ValueError:
-        args_fid_append = ' Invalid. Must be a number from 1-128'
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-
-    # User feedback
+    # Command line feedback
     ml = [
         'zone_config_x.py version: ' + __version__,
-        'IP address, -ip:          ' + brcdapi_util.mask_ip_addr(args_ip),
-        'ID, -id:                  ' + str(args_id),
-        'HTTPS, -s:                ' + str(args_s) + args_s_append,
-        'Input file, -i:           ' + str(args_i),
-        'Fabric ID (FID), -fid:    ' + str(args_fid) + args_fid_append,
-        'Activate or save, -a:     ' + str(args_a),
-        'Zone workbook:            ' + str(args_z) + args_i_append,
+        'IP address, -ip:          ' + brcdapi_util.mask_ip_addr(args_d['ip']),
+        'ID, -id:                  ' + str(args_d['id']),
+        'HTTPS, -s:                ' + str(args_d['s']),
+        'Input file, -i:           ' + str(args_d['i']),
+        'Fabric ID (FID), -fid:    ' + str(args_d['fid']),
+        'Activate or save, -a:     ' + str(args_d['a']),
+        'Zone workbook:            ' + str(args_d['z']) + args_i_help,
+        'Log, -log:                ' + str(args_d['log']),
+        'No log, -nl:              ' + str(args_d['nl']),
+        'Debug, -d:                ' + str(args_d['d']),
+        'Supress, -sup:            ' + str(args_d['sup']),
+        '',
         ]
-    if _DEBUG:
-        ml.insert(0, 'WARNING!!! Debug is enabled')
-    brcdapi_log.log(ml + el, echo=True)
+    ml.extend(error_l)
+    brcdapi_log.log(ml + error_l, echo=True)
     
     """Initially, "test mode" was a "-t" option. By default, all actions were taken unless -t was specified. Then one
     day someone forgot to enter "-t". I'll assume no additional explanation is needed as to why I modified this script
@@ -827,11 +851,17 @@ def _get_input():
     Furthermore, adding the ability to test against previously captured data, -i, was an after thought. Since you can't
     do anything but test without a connection to a switch, test mode is artificially forced by setting args_a to False.
     Don't forget we are passing "not args_a" to pseudo_main())"""
-    if isinstance(args_i, str):
-        args_a = False
-    args_i = brcdapi_file.full_file_name(args_i, '.json')
+    if isinstance(args_d['i'], str):
+        args_d['a'] = False
     return ec if ec != brcddb_common.EXIT_STATUS_OK else \
-        pseudo_main(args_id, args_pw, args_ip, args_s, fid, not args_a, args_i, zone_l)
+        pseudo_main(args_d['id'],
+                    args_d['pw'],
+                    args_d['ip'],
+                    args_d['s'],
+                    args_d['fid'],
+                    not args_d['a'],
+                    brcdapi_file.full_file_name(args_d['i'], '.json'),
+                    zone_l)
 
 
 ###################################################################
@@ -839,8 +869,11 @@ def _get_input():
 #                    Main Entry Point
 #
 ###################################################################
-_ec = brcddb_common.EXIT_STATUS_OK
-if not _DOC_STRING:
+if _DOC_STRING:
+    print('_DOC_STRING is True. No processing')
+    exit(0)
+
+if _STAND_ALONE:
     _ec = _get_input()
-    brcdapi_log.close_log('Exit code: ' + str(_ec), echo=True)
-exit(_ec)
+    brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
+    exit(_ec)

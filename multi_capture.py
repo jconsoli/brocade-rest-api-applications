@@ -1,20 +1,19 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`multi_capture` - Captures all switch data from a list and generates a report.
 
 This is effectively an intelligent batch file that does the following:
@@ -31,120 +30,100 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | 06 Mar 2024   | Added port stats clear, -clr, maps_report, and comparison report                  |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 Aug 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = '06 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack_consoli@yahoo.com'
+__email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 
 import signal
-import argparse
 import datetime
 import os
 import subprocess
 import brcdapi.log as brcdapi_log
 import brcdapi.brcdapi_rest as brcdapi_rest
+import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
 import brcdapi.excel_util as excel_util
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
 
+# debug input (for copy and paste into Run->Edit Configurations->script parameters):
+# -i multi_capture_gsh -bp bp -sfp sfp_rules_r12 -r -c * -nm -log _logs
+
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'test_copy'
-_DEBUG_f = None
-_DEBUG_sfp = 'sfp_rules_r10'
-_DEBUG_group = None
-_DEBUG_iocp = None  # 'test_iocp'
-_DEBUG_r = False
-_DEBUG_c = None
-_DEBUG_bp = 'bp'
-_DEBUG_sup = False  # If true, all logging to STD_OUT is suppressed
-_DEBUG_d = None
-_DEBUG_log = '_logs'
-_DEBUG_nl = False
+# _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
+# execute. This is useful when importing this module into another module that calls psuedo_main().
+_STAND_ALONE = True  # See note above
+
+_DEBUG = True   # When True, echos additional status and debug information to STD_IO
+
+# Input parameter definitions
+_input_d = dict(
+    i=dict(h='Required. Excel file of switch login credentials. See multi_capture_example.xlsx. ".xlsx" is '
+             'automatically appended.'),
+    f=dict(r=False,
+           h='Optional. Folder name where captured data is to be placed. If not specified, a folder with the default '
+             'name _capture_yyyy_mmm_dd_hh_mm_ss is created. The individual switch data is put in this folder with the '
+             'switch name. A file named combined.json, output of combine.py, and report.xlsx, output of report.py, is '
+             'added to this folder.'),
+    bp=dict(r=False,
+            h='Optional. Name of the Excel Workbook with best practice checks. This parameter is passed to report.py '
+              'if -r is specified. Otherwise it is not used. ".xlsx" is automatically appended.'),
+    sfp=dict(r=False,
+             h='Optional. Name of the Excel Workbook with SFP thresholds. This parameter is passed to report.py if -r '
+               'is specified. Otherwise it is not used. ".xlsx" is automatically appended.'),
+    group=dict(r=False,
+               h='Optional. Name of Excel file containing group definitions. This parameter is passed to report.py if '
+                 '-r is specified. Otherwise it is not used. ".xlsx" is automatically appended.'),
+    iocp=dict(r=False,
+              h='Optional. Name of folder with IOCP files. All files in this folder must be IOCP files (build I/O '
+                'configuration statements from HCD) and must begin with the CEC serial number followed by \'_\'. '
+                'Leading 0s are not required. Example, for a CPC with serial number 12345: 12345_M90_iocp.txt'),
+    r=dict(r=False, t='bool', d=False,
+           h='Optional. No parameters. When specified, generates a report (report.py), MAPS report (maps_report.py) '
+             'and a comparison (compare_report.py). See -f option for location. The name of the reports are: '
+             '"report_yyyy_mm_dd_hh_mm_ss.xlsx", "maps_report_yyyy_mm_dd_hh_mm_ss.xlsx" and '
+             '"compare_to_yyyy_mm_dd_hh_mm_ss.xlsx"'),
+    c=dict(r=False,
+           h='Optional. Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. The '
+             'default is to capture all KPIs required for the report.'),
+    clr=dict(r=False, t='bool', d=False, h='Optional. No parameters. Clear port statistics after successful capture'),
+    nm=dict(r=False, t='bool', d=False,
+            h='Optional. No parameters. By default, all but the last octet of IP addresses are masked before being '
+              'stored in the output file. This option preserves the full IP address which is useful for having full '
+              'IP addresses in reports and when using restore_all.py.'),
+)
+_input_d.update(gen_util.parseargs_log_d.copy())
+_input_d.update(gen_util.parseargs_debug_d.copy())
 
 
-def parse_args():
-    """Parses the module load command line when launching from stand-alone desk top application
+def psuedo_main(addl_parms_all, addl_parms_capture, addl_parms_report, file, folder, r_flag, b_file, date_str):
+    """Basically the main(). Did it this way so that it can easily be used as a standalone module or called externally.
 
-    :return i: Name of input file, Excel workbook with login credentials. See multi_capture_example.xlsx
-    :rtype i: str
-    :return f: Name of log folder. None if not specified.
-    :rtype f: str, None
-    :return sfp: Name of SFP rules file. None if not specified.
-    :rtype sfp: str, None
-    :return group: Name of SFP rules file. None if not specified.
-    :rtype group: str, None
-    :return iocp: Name of folder containing IOCP files. None if not specified.
-    :rtype iocp: str, None
-    :return r: If True, generate a report.
-    :rtype r: bool
-    :return c: Custom report parameters passed to _custom_report(). Typically not used.
-    :rtype c: str, None
-    :return sup: If True, suppress echo of messages to STD_OUT.
-    :rtype sup: bool
-    :return d: Debug flag. When True, a pprint of all I/O is sent to the log and console
-    :rtype d: bool
-    :return log: Folder for the log file. None if not specified.
-    :rtype log: bool
-    :return nl: No log. When True, a log file is not created.
-    :rtype nl: bool
-    """
-    global _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_group, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_bp, _DEBUG_sup
-    global _DEBUG_d, _DEBUG_log, _DEBUG_nl
-
-    if _DEBUG:
-        return _DEBUG_i, _DEBUG_f, _DEBUG_sfp, _DEBUG_iocp, _DEBUG_r, _DEBUG_c, _DEBUG_bp, _DEBUG_sup, _DEBUG_d, \
-               _DEBUG_log, _DEBUG_nl
-    buf = 'Capture all report data from multiple chassis and optionally generate a report.'
-    parser = argparse.ArgumentParser(description=buf)
-    buf = 'Required. Excel file of switch login credentials. See multi_capture_example.xlsx. ".xlsx" is automatically '\
-          'appended if no extension is specified.'
-    parser.add_argument('-i', help=buf, required=True)
-    buf = 'Optional. Folder name where captured data is to be placed. If not specified, a folder with the default name'\
-          ' _capture_yyyy_mmm_dd_hh_mm_ss is created. The individual switch data is put in this folder with the switch'\
-          ' name. A file named combined.json, output of combine.py, and report.xlsx, output of report.py, is '\
-          'added to this folder.'
-    parser.add_argument('-f', help=buf, required=False)
-    buf = 'Optional. Name of the Excel Workbook with best practice checks. This parameter is passed to report.py if '\
-          '-r is specified. Otherwise it is not used. ".xlsx" is automatically appended.'
-    parser.add_argument('-bp', help=buf, required=False)
-    buf = 'Optional. Name of the Excel Workbook with SFP thresholds. This parameter is passed to report.py if -r is ' \
-          'specified. Otherwise it is not used. ".xlsx" is automatically appended.'
-    parser.add_argument('-sfp', help=buf, required=False)
-    buf = 'Optional. Name of Excel file containing group definitions. This parameter is passed to report.py if -r is ' \
-          'specified. Otherwise it is not used. ".xlsx" is automatically appended.'
-    parser.add_argument('-group', help=buf, required=False)
-    buf = 'Optional. Name of folder with IOCP files. All files in this folder must be IOCP files (build I/O '\
-          'configuration statements from HCD) and must begin with the CEC serial number followed by \'_\'. Leading 0s '\
-          'are not required. Example, for a CPC with serial number 12345: 12345_M90_iocp.txt'
-    parser.add_argument('-iocp', help=buf, required=False)
-    buf = '(Optional). No parameters. When specified, generates a report. See -f option for location. The name of the '\
-          'report is "report_yyyy_mm_dd_hh_mm_ss.xlsx"'
-    parser.add_argument('-r', help=buf, action='store_true', required=False)
-    buf = '(Optional) Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. The ' \
-          'default is to capture all KPIs required for the report.'
-    parser.add_argument('-c', help=buf, required=False,)
-    buf = 'Suppress all library generated output to STD_IO except the exit message. Useful with batch processing'
-    parser.add_argument('-sup', help=buf, action='store_true', required=False)
-    parser.add_argument('-d', help='Enable debug logging', action='store_true', required=False)
-    buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
-          'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-    parser.add_argument('-log', help=buf, required=False,)
-    buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-    parser.add_argument('-nl', help=buf, action='store_true', required=False)
-    args = parser.parse_args()
-    return args.i, args.f, args.sfp, args.group, args.iocp, args.r, args.c, args.bp, args.sup, args.d, args.log, args.nl
-
-
-def psuedo_main():
-    """Basically the main(). Did it this way so it can easily be used as a standalone module or called from another.
-
+    :param addl_parms_all: Additional parameters for invoked scripts.
+    :type addl_parms_all: list
+    :param addl_parms_capture: Additional parameters for capture.py
+    :type addl_parms_capture: list
+    :param addl_parms_report: Additional parameters for report.py
+    :type addl_parms_report: list
+    :param file: Login credentials file
+    :type file: str
+    :param folder: Output folder, -f, for capture.py
+    :type folder: str
+    :param r_flag: If True, execute report.py
+    :type r_flag: bool
+    :param b_file: Name of base file, -b, for compare_report.py
+    :type b_file: str, None
+    :param date_str: Date and time stamp used for naming report files.
+    :type date_str: str, None
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
@@ -152,63 +131,24 @@ def psuedo_main():
 
     signal.signal(signal.SIGINT, brcdapi_rest.control_c)
 
-    addl_parms_all, addl_parms_capture, addl_parms_report = list(), list(), list()
-
-    # Get and parse the input data
-    ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    ml.append(os.path.basename(__file__) + ' version: ' + __version__)
-    in_file, folder, sfp, group, iocp, report_flag, kpi_file, bp_file, s_flag, vd, log, nl = parse_args()
-    if kpi_file is not None:
-        addl_parms_capture.extend(['-c', kpi_file])
-    if vd:
-        brcdapi_rest.verbose_debug = True
-        addl_parms_capture.append('-d')
-    if s_flag:
-        brcdapi_log.set_suppress_all()
-        addl_parms_all.append('-sup')
-    if nl:
-        addl_parms_all.append('-nl')
-    else:
-        brcdapi_log.open_log(log)
-        if log is not None:
-            addl_parms_all.extend(['-log', log])
-    if iocp is not None:
-        addl_parms_report.extend(['-iocp', iocp])
-    ml.append('Input file:    ' + in_file)
-    date_str = '_' + datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-    if folder is None:
-        folder = '_capture' + date_str
-        ml.append('Output Folder: (Automatic) ' + folder)
-    else:
-        ml.append('Output Folder: ' + folder)
-    ml.append('SFP, -sfp:           ' + str(sfp))
-    ml.append('Group, -group:       ' + str(group))
-    ml.append('Best Practices, -bp: ' + str(bp_file))
-    ml.append('IOCP, -iocp:         ' + str(iocp))
-    ml.append('Report, -r:          ' + str(report_flag))
-    ml.append('KPI File, -c:        ' + str(kpi_file))
-    ml.append('Suppress, -sup:      ' + str(s_flag))
-    ml.append('Verbose Debug, -d:   ' + str(vd))
-    brcdapi_log.log(ml, echo=True)
+    c_file = folder + '/combined.json'
 
     # Read the file with login credentials and perform some basic validation
-    ml, switch_parms = list(), list()
-    for k, v in {'-sfp': sfp, '-group': group, '-bp': bp_file}.items():
-        if k is not None:
-            addl_parms_report.extend([k, v])
-    file = brcdapi_file.full_file_name(in_file, '.xlsx')
+    ml, switch_params = list(), list()
     row = 1
     try:
         for d in excel_util.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=file)['content']:
             row += 1
             buf = brcdapi_file.full_file_name(d['name'].split('/').pop().split('\\').pop(), '.json')  # Just file name
-            switch_parms.append(['-id', d['user_id'],
-                                 '-pw', d['pw'],
-                                 '-ip', d['ip_addr'],
-                                 '-s', 'none' if d['security'] is None else d['security'],
-                                 '-f', folder + '/' + buf])
+            switch_params.append(['-id', d['user_id'],
+                                  '-pw', d['pw'],
+                                  '-ip', d['ip_addr'],
+                                  '-s', 'none' if d['security'] is None else d['security'],
+                                  '-f', folder + '/' + buf])
     except FileNotFoundError:
         ml.extend(['', file + ' not found.'])
+    except FileExistsError:
+        ml.extend(['', 'Path in ' + file + ' does not exist.'])
     except AttributeError:
         ml.extend(['',
                    'Invalid login credentials in row ' + str(row) + ' in ' + file,
@@ -231,10 +171,18 @@ def psuedo_main():
     # Kick off all the data captures
     try:
         pid_l = list()
-        for temp_l in switch_parms:
+        for temp_l in switch_params:
             params = ['python.exe', 'capture.py'] + temp_l + addl_parms_capture + addl_parms_all
-            if _DEBUG:
-                brcdapi_log.log(' '.join(params), echo=True)
+            debug_params, ip_flag = list(), False
+            for buf in params:
+                if ip_flag:
+                    debug_params.append(brcdapi_util.mask_ip_addr(buf, keep_last=True))
+                    ip_flag = False
+                else:
+                    debug_params.append(buf)
+                    if buf == '-ip' and '-nm' not in params:
+                        ip_flag = True
+            brcdapi_log.log('DEBUG: ' + ' '.join(debug_params), echo=_DEBUG)
             pid_l.append(subprocess.Popen(params))
 
         # Below waits for all processes to complete before generating the report.
@@ -247,30 +195,124 @@ def psuedo_main():
                          'WARNING: This module starts other capture sessions which must be terminated individually'],
                         echo=True)
 
-
-    # Combine the captured data
     try:
+        # Combine the captured data
         brcdapi_log.log('Combining captured data. This may take several seconds', echo=True)
-        params = ['python.exe', 'combine.py', '-i', folder, '-o', 'combined.json'] + addl_parms_all
-        if _DEBUG:
-            brcdapi_log.log('DEBUG: ' + ' '.join(params), echo=True)
+        params = ['python.exe', 'combine.py', '-i', folder, '-o', 'combined'] + addl_parms_all
+        brcdapi_log.log('DEBUG: ' + ' '.join(params), echo=_DEBUG)
         ec = subprocess.Popen(params).wait()
         brcdapi_log.log('Combine completed with status: ' + str(ec), echo=True)
 
         # Generate the report
-        if report_flag and ec == brcddb_common.EXIT_STATUS_OK:
-            brcdapi_log.log('Data collection complete. Generating report.', echo=True)
-            buf = folder + '/report_' + date_str + '.xlsx'
-            params = ['python.exe', 'report.py', '-i', folder + '/combined.json', '-o', buf]
+        if r_flag and ec == brcddb_common.EXIT_STATUS_OK:
+            brcdapi_log.log('Creating report.', echo=True)
+            buf = folder + '/report' + date_str + '.xlsx'
+            params = ['python.exe', 'report.py', '-i', c_file, '-o', buf]
             params.extend(addl_parms_report + addl_parms_all)
-            if _DEBUG:
-                brcdapi_log.log('DEBUG: ' + ' '.join(params), echo=True)
+            brcdapi_log.log('DEBUG: ' + ' '.join(params), echo=_DEBUG)
             ec = subprocess.Popen(params).wait()
+
+        # Generate the MAPS report
+        if r_flag and ec == brcddb_common.EXIT_STATUS_OK:
+            brcdapi_log.log('Creating MAPS report.', echo=True)
+            buf = folder + '/maps_report' + date_str + '.xlsx'
+            params = ['python.exe', 'maps_report.py', '-i', c_file, '-o', buf]
+            params.extend(addl_parms_all)
+            brcdapi_log.log('DEBUG: ' + ' '.join(params), echo=_DEBUG)
+            ec = subprocess.Popen(params).wait()
+
+        # Generate the comparison report
+        if r_flag and isinstance(b_file, str) and ec == brcddb_common.EXIT_STATUS_OK:
+            # Figure out what the base file should be
+            buf = folder + '/compare' + date_str + '_to' + b_file.split('/')[0].replace('_capture', '')
+            brcdapi_log.log('Creating comparison report.', echo=True)
+            params = ['python.exe', 'compare_report.py', '-b', b_file, '-c', c_file, '-r', buf]
+            params.extend(addl_parms_all)
+            brcdapi_log.log('DEBUG: ' + ' '.join(params), echo=_DEBUG)
+            ec = subprocess.Popen(params).wait()
+
     except KeyboardInterrupt:
         brcdapi_log.log('Processing terminating with Control-C from keyboard.', echo=True)
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec
+
+
+def _get_input():
+    """Parses the module load command line when launching from stand-alone desk top application
+
+    :return: Exit code. See exist codes in brcddb.brcddb_common
+    :rtype: int
+    """
+    global __version__, _input_d
+
+    addl_parms_capture, addl_parms_report, addl_parms_all = list(), list(), list()
+
+    # Get command line input
+    args_d = gen_util.get_input('Capture (GET) requests from a chassis', _input_d)
+
+    # Set up logging
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    if args_d['log'] is not None:
+        addl_parms_all.extend(['-log', args_d['log']])
+    for k in ('sup', 'nl'):
+        if args_d[k]:
+            addl_parms_all.append('-' + k)
+
+    # Additional input for capture.py
+    if isinstance(args_d['c'], str):
+        addl_parms_capture.extend(['-c', args_d['c']])
+    for k, v in {'-clr': args_d['clr'], '-nm': args_d['nm']}.items():
+        if v:
+            addl_parms_capture.append(k)
+
+    # Additional input report.py
+    r_d = {'-iocp': args_d['iocp'], '-sfp': args_d['sfp'], '-group': args_d['group'], '-bp': args_d['bp']}
+    for k, v in r_d.items():
+        if v is not None:
+            addl_parms_report.extend([k, v])
+
+    # Figure out the file name for the most recent report for compare_report.py
+    b_file = None
+    in_file = brcdapi_file.full_file_name(args_d['i'], '.xlsx')
+    if args_d['r']:
+        c_time = 0.0
+        for d in brcdapi_file.read_full_directory('.'):
+            if d['name'] == 'combined.json':
+                b_folder_l = d['folder'].split('_')
+                if len(b_folder_l) == 8 and b_folder_l[1] == 'capture':  # A leap of faith the rest is right
+                    if d['st_ctime'] > c_time:
+                        c_time = d['st_ctime']
+                        b_file = '_' + '_'.join(b_folder_l[1:]) + '/' + 'combined.json'
+
+    # Get file names for the reports and data capture
+    date_str = '_' + datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+    folder = '_capture' + date_str if args_d['f'] is None else args_d['f']
+
+    # User feedback
+    buf = '(Default) ' if args_d['f'] is None else ''
+    ml = [
+        'multi_capture.py version: ' + __version__,
+        'Input file, -i:           ' + args_d['i'],
+        'Output folder, -f:        ' + buf + folder,
+        'SFP, -sfp:                ' + str(args_d['sfp']),
+        'Group, -group:            ' + str(args_d['group']),
+        'Best Practices, -bp:      ' + str(args_d['bp']),
+        'IOCP, -iocp:              ' + str(args_d['iocp']),
+        'Report, -r:               ' + str(args_d['r']),
+        'Zone groups, -group:      ' + str(args_d['group']),
+        'KPI File, -c:             ' + str(args_d['c']),
+        'Clear stats, -clr:        ' + str(args_d['clr']),
+        'Log, -log:                ' + str(args_d['log']),
+        'No log, -nl:              ' + str(args_d['nl']),
+        'Debug, -d:                ' + str(args_d['d']),
+        'Supress, -sup:            ' + str(args_d['sup']),
+        '',
+    ]
+    brcdapi_log.log(ml, echo=True)
+
+    return psuedo_main(addl_parms_all, addl_parms_capture, addl_parms_report, in_file, folder, args_d['r'], b_file,
+                       date_str)
 
 
 ###################################################################
@@ -282,6 +324,7 @@ if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
     exit(brcddb_common.EXIT_STATUS_OK)
 
-_ec = psuedo_main()
-brcdapi_log.close_log('Processing complete. Exit code: ' + str(_ec))
-exit(_ec)
+if _STAND_ALONE:
+    _ec = _get_input()
+    brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
+    exit(_ec)

@@ -1,20 +1,19 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`parse_iocp` - Parses IOCP files and generates planning workbooks
 
 **Description**
@@ -28,18 +27,19 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | 06 Mar 2024   | Fixed error message when there is an error adding a sheet.                        |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 Aug 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = '06 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 
-import argparse
 import datetime
 import sys
 import collections
@@ -56,14 +56,28 @@ import brcddb.brcddb_common as brcddb_common
 import brcddb.util.iocp as brcddb_iocp
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_p = 'test/test'
-_DEBUG_t = None  # 'x68'
-_DEBUG_iocp = 'test/iocp'
-_DEBUG_map = 'F0,20;F1,21;F2,22;F3,23;F4,24;F5,25;00,10'
-_DEBUG_sup = False
-_DEBUG_log = '_logs'
-_DEBUG_nl = False
+
+_config_d = dict(x64='templates/X6-4_Switch_Configuration.xlsx',
+                 x68='templates/X6-8_Switch_Configuration.xlsx',
+                 x74='templates/X7-4_Switch_Configuration.xlsx',
+                 x78='templates/X7-8_Switch_Configuration.xlsx',
+                 fixed='templates/Fixed_Port_Switch_Configuration.xlsx')
+_switch_types_l = ('x78', 'x74', 'x68', 'x64', 'fixed')
+
+_valid_switch_type_l = [str(k) for k in _config_d.keys()]
+_buf = 'Optional. Switch type. Valid switch types are: ' + ', '.join(_valid_switch_type_l) + '. The default is x78'
+_input_d = dict(
+    p=dict(h='Required. Prefix for the name of the switch configuration workbooks. The name of this workbook begins '
+             'with this prefix followed by an "_", the switch DID and ".xlsx". A file path may be embedded in the'
+             'prefix.'),
+    t=dict(r=False, d='x78', v=_valid_switch_type_l, h=_buf),
+    iocp=dict(h='Required. Name of folder containing IOCP files to be parsed.'),
+    map=dict(r=False,
+             h='Optional. A map of Switch IDs to domain Both values must be in hex. Separate multiple pairs with a '
+               '";". For example, to map Switch ID F0 to DID 32 (0x20) and Switch ID F1 to DID 33 (0x21): '
+               '"F0,20;F1,21".'),
+)
+_input_d.update(gen_util.parseargs_log_d.copy())
 
 # Common worksheet cell formatting
 _hdr1_font = excel_fonts.font_type('hdr_1')
@@ -76,12 +90,6 @@ _border = excel_fonts.border_type('thin')
 _alignment = excel_fonts.align_type('wrap')
 _center_align = excel_fonts.align_type('wrap_center')
 
-# $ToDo - Specify the file in _get_input()
-_config_d = dict(x64='templates/X6-4_Switch_Configuration.xlsx',
-                 x68='templates/X6-8_Switch_Configuration.xlsx',
-                 x74='templates/X7-4_Switch_Configuration.xlsx',
-                 x78='templates/X7-8_Switch_Configuration.xlsx',
-                 fixed='templates/Fixed_Port_Switch_Configuration.xlsx')
 _skip_sheets = ('CLI_Bind',)
 _copy_sheets_d = collections.OrderedDict()
 _copy_sheets_d['VC'] = dict(font=_std_font)
@@ -89,7 +97,6 @@ _copy_sheets_d['lists'] = dict(font=_std_font)
 _copy_sheets_d['Chassis'] = dict(width_l=(25, 20, 80), font=_std_font, border=_border, align=_alignment)
 _copy_sheets_d['Instructions'] = dict(width_l=(88,), font=_std_font, border=_border, align=_alignment)
 
-_switch_types_l = ('x78', 'x74', 'x68', 'x64', 'fixed')
 _com_switch_type_d = dict(x64='x4', x74='x4', x68='x8', x78='x8', fixed='fixed')
 _generic_blade_type_d = dict(x4={3: 'pc_48', 4: 'pc_48', 5: 'core_4', 6: 'core_4', 7: 'pc_48', 8: 'pc_48'},
                              x8={3: 'pc_48', 4: 'pc_48', 5: 'pc_48', 6: 'pc_48', 7: 'core_8', 8: 'core_8',
@@ -338,6 +345,7 @@ _fill_asic_d = {0: excel_fonts.fill_type('config_asic_0'), 1: excel_fonts.fill_t
 
 class InvalidDID(Exception):
     pass
+
 
 """
 The following are used in _row_val_x_l and _special_d. When generating the tables, they are used as follows:
@@ -812,16 +820,16 @@ def _iocp_summary(iocp_obj_l, switch_map_d):
     |           |       | Each dictionary is as follows:                                                            |
     |           |       | Key       Type    Value                                                                   |
     |           |       | iocp      str     Name of the CPC (server) for this CHPID                                 |
-    |           |       | lpars_l   list    List of LPARS using this CHPID                                          |
-    |           |       | link_l    list    List of link addresses (keys for link_d)                                |
+    |           |       | lpars_l   list    LPARS using this CHPID                                                  |
+    |           |       | link_l    list    link addresses (keys for link_d)                                        |
     +-----------+-------+-------------------------------------------------------------------------------------------+
     | link_d    | dict  | Essentially the reverse of chpid_d. The key is the 2-byte link address. The value is a    |
     |           |       | a dictionaries as follows:                                                                |
     |           |       | Key       Type    Value                                                                   |
-    |           |       | chpid_l   list    List of CHPIDs. Text is CPC: CSS CHPID                                  |
-    |           |       | cu_type_l list    List of control unit types. The only time more than one is valid is if  |
-    |           |       |                   CUP, type 2032, is also defined.                                        |
-    |           |       | cu_num_l  list    List of control unit numbers as str.                                    |
+    |           |       | chpid_l   list    CHPIDs. Text is CPC: CSS CHPID                                          |
+    |           |       | cu_type_l list    Control unit types. The only time more than one is valid is if CUP,     |
+    |           |       |                   type 2032, is also defined.                                             |
+    |           |       | cu_num_l  list    Control unit numbers as str.                                            |
     +-----------+-------+-------------------------------------------------------------------------------------------+
     | error_d   | dict  | Error messages.                                                                           |
     +-----------+-------+-------------------------------------------------------------------------------------------+
@@ -932,7 +940,7 @@ def _about_sheet(wb, sheet_index):
 
 # Case statements for _summary_sheet()
 def _summary_chpid(k, d):
-    return (k, d['iocp'] + ': ' + brcddb_iocp.tag_to_text(k), ', '.join(d['link_l']))
+    return k, d['iocp'] + ': ' + brcddb_iocp.tag_to_text(k), ', '.join(d['link_l'])
 
 
 def _summary_link(k, d):
@@ -944,7 +952,7 @@ def _summary_link(k, d):
 
 
 def _summary_errors(k, d):
-    return (d['area'], d['type'], d['desc'])
+    return d['area'], d['type'], d['desc']
 
 
 _summary_case = dict(
@@ -1073,7 +1081,7 @@ def _port_sheets(wb, sheet_index, switch_type, did, did_d):
     :type wb: openpyxl class object
     :param sheet_index: Index as to where to start inserting worksheets
     :type sheet_index: int
-    :param switch_type: The switch type. See _switch_types_l
+    :param switch_type: The switch type. See _config_d
     :type switch_type: str
     :param did: Domain ID in hex. No leading '0x'
     :type did: str
@@ -1082,7 +1090,7 @@ def _port_sheets(wb, sheet_index, switch_type, did, did_d):
     global _config_d, _generic_blade_type_d, _row_val_d, _com_switch_type_d, _special_d, _fill_d
     global _center_align, _white_bold_font, _border, _config_slot, _std_font, _fill_asic_d
 
-    # Build a cross reference dictionary using the cell as a key and the value the content
+    # Build a cross-reference dictionary using the cell as a key and the value the content
     link_d = dict()
     for link_addr, cu_d in did_d['link_d'].items():
         cu_type = ', '.join(gen_util.remove_duplicates(cu_d['cu_type_l']))
@@ -1095,7 +1103,10 @@ def _port_sheets(wb, sheet_index, switch_type, did, did_d):
     # Read the template
     local_did = '00'
     common_switch_type = _com_switch_type_d[switch_type]
-    sheet_l = excel_util.read_workbook(_config_d[switch_type], dm=3, order='col', skip_sheets=_skip_sheets)
+    error_l, sheet_l = excel_util.read_workbook(_config_d[switch_type], dm=3, order='col', skip_sheets=_skip_sheets)
+    if len(error_l) > 0:
+        brcdapi_log.exception(error_l, echo=True)
+        return
     for sheet_d in [d for d in sheet_l if d['sheet'][0: min(len(d['sheet']), len('Slot '))] == 'Slot ']:
 
         # Set up the local data structures
@@ -1157,9 +1168,9 @@ def _write_report(summary_d, prefix, switch_type, sheet_l):
     :type prefix: str
     :param switch_type: Type of switch. See _switch_types
     :type switch_type: str
-    :param sheet_l: Sheet list returned from excel_util.read_workbook
+    :param sheet_l: Sheets returned from excel_util.read_workbook
     :type sheet_l: list
-    :return: List of error messages. Empty list if no errors encountered
+    :return: Error messages. Empty list if no errors encountered
     :rtype: list
     """
     global _copy_sheets_d, _hdr1_font, _std_font, _border, _alignment
@@ -1199,135 +1210,25 @@ def _write_report(summary_d, prefix, switch_type, sheet_l):
     return rl
 
 
-def parse_args():
-    """Parses the module load command line
-    
-    :return: file
-    :rtype: str
-    """
-    global _switch_types_l, _DEBUG, _DEBUG_p, _DEBUG_t, _DEBUG_iocp, _DEBUG_map, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
+def psuedo_main(proj_obj, prefix, switch_type, iocp, switch_id_map, sheet_l):
+    """Basically the main(). Did it this way so that it can easily be used as a standalone module or called from another
 
-    if _DEBUG:
-        return _DEBUG_p, _DEBUG_t, _DEBUG_iocp, _DEBUG_map, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
-    buf = 'Parses IOCP files and generates planning workbooks. WARNING: For openpyxl to read the workbooks generated '\
-          'by this script, which uses the same openpyxl library, the files must be opened and saved in Excel. There '\
-          'is no need to make any changes. This affects switch_confi.py and switch_config_cli.py.'
-    parser = argparse.ArgumentParser(description=buf)
-    buf = 'Required. Prefix for the name of the switch configuration workbooks. The name of this workbook begins '\
-          'with this prefix followed by an "_", the switch DID and ".xlsx". A file path may be embedded in the prefix.'
-    parser.add_argument('-p', help=buf, required=True)
-    buf = 'Optional. Switch type. Valid switch types are: ' + ', '.join(_switch_types_l) + '. The default is '
-    buf += _switch_types_l[0]
-    parser.add_argument('-t', help=buf, required=False)
-    parser.add_argument('-iocp', help='Required. Name of folder containing IOCP files to be parsed.', required=True)
-    buf = 'Optional. A map of Switch IDs to domain Both values must be in hex. Separate multiple pairs with a ";". '\
-          'For example, to map Switch ID F0 to DID 32 (0x20) and Switch ID F1 to DID 33 (0x21): "F0,20;F1,21".'
-    parser.add_argument('-map', help=buf, required=False)
-    buf = 'Optional. Suppress all output to STD_IO except the exit code and argument parsing errors. Useful with '\
-          'batch processing where only the exit status code is desired. Messages are still printed to the log file'\
-          '. No operands.'
-    parser.add_argument('-sup', help=buf, action='store_true', required=False)
-    buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log ' \
-          'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-    parser.add_argument('-log', help=buf, required=False, )
-    buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-    parser.add_argument('-nl', help=buf, action='store_true', required=False)
-    args = parser.parse_args()
-
-    return args.p, args.t, args.iocp, args.map, args.sup, args.log, args.nl
-
-
-def _get_input():
-    """Gets the shell invocation parameters, validates input, opens log file, gets project object, gets switch map
-
-    :return proj_obj: Project object. If None, an error was encountered.
-    :rtype proj_obj: None, brcddb.classes.project.ProjectObj
-    :return prefix: Switch workbook prefix
-    :rtype prefix: str
-    :return switch_type: Switch type
-    :rtype switch_type: str
-    :return iocp: Folder containing IOCP files
-    :rtype iocp: str
-    :return switch_map: Dictionary of switch IDs to domain IDs
-    :rtype switch_map: dict
-    :return sheets_l: Workbook template sheets read from excel_util.read_workbook()
-    :rtype sheets_l: list
-    """
-    global _DEBUG, __version__, _switch_types_l
-
-    proj_obj, error_l, switch_map_d = None, list(), dict()
-
-    # Get and validate user input
-    prefix, switch_type, iocp, switch_map, s_flag, log, nl = parse_args()
-    if not nl:
-        brcdapi_log.open_log(log)
-    if s_flag:
-        brcdapi_log.set_suppress_all()
-    ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    ml.append('parse_iocp.py version ' + __version__)
-    ml.append('Workbook prefix:      ' + prefix)
-    ml.append('Switch type:          ' + str(switch_type))
-    ml.append('IOCP folder:          ' + iocp)
-    ml.append('Switch ID to DID map: ' + str(switch_map))
-    ml.append('Template file:        ' + str(_config_d.get(switch_type)))
-    brcdapi_log.log(ml, True)
-
-    if switch_type is None:
-        switch_type = _switch_types_l[0]
-    elif switch_type not in _switch_types_l:
-        brcdapi_log.log('Invalid switch type, -t. Switch type must be: ' + ', '.join(_switch_types_l), echo=True)
-        return None, prefix, switch_type, iocp, dict()
-
-    # Parse the switch ID to DID map
-    if isinstance(switch_map, str):
-        for buf in switch_map.split(';'):
-            temp_l = buf.split(',')
-            if len(temp_l) != 2:
-                error_l.append(buf + ' is not valid in ' + switch_map)
-            else:
-                try:
-                    x = int(temp_l[1], 16)
-                    if x < 1 or x > 239:
-                        raise InvalidDID
-                except (InvalidDID, ValueError):
-                    error_l.append('Domain ID ' + temp_l[1] + ' is not valid in ' + switch_map)
-            if len(error_l) == 0:
-                switch_map_d.update({temp_l[0]: '0' + temp_l[1] if len(temp_l[1]) == 1 else temp_l[1]})
-
-    # Read in template
-    temp_file = brcdapi_file.full_file_name(_config_d[switch_type], '.xlsx')
-    try:
-        sheets_l = excel_util.read_workbook(temp_file, dm=3, order='col', skip_sheets=_skip_sheets)
-        if len(sheets_l) == 0:  # excel_util.read_workbook() logs the error message.
-            error_l.append()
-    except FileExistsError:
-        error_l.append('A folder in template file does not exist: ' + temp_file)
-    except FileNotFoundError:
-        error_l.append('Template file not found: ' + temp_file)
-
-    # Get a project object if there were no errors
-    if len(error_l) > 0:
-        brcdapi_log.log(error_l, echo=True)
-    else:
-        proj_obj = brcddb_project.new('parse_iocp.py', datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
-        proj_obj.s_python_version(sys.version)
-        proj_obj.s_description('Parsed IOCPs')
-
-    return proj_obj, prefix, switch_type, iocp, switch_map_d, sheets_l
-
-
-def psuedo_main():
-    """Basically the main(). Did it this way so it can easily be used as a standalone module or called from another.
-
+    :param proj_obj: Project object. If None, an error was encountered.
+    :type proj_obj: None, brcddb.classes.project.ProjectObj
+    :param prefix: Switch workbook prefix
+    :type prefix: str
+    :param switch_type: Switch type
+    :type switch_type: str
+    :param iocp: Folder containing IOCP files
+    :type iocp: str
+    :param switch_id_map: Dictionary of switch IDs to domain IDs
+    :type switch_id_map: dict
+    :param sheet_l: Workbook template sheets read from excel_util.read_workbook()
+    :type sheet_l: list
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _DEBUG, __version__
-
-    # Get and validate user input
-    proj_obj, prefix, switch_type, iocp, switch_id_map, sheet_l = _get_input()
-    if proj_obj is None or len(sheet_l) == 0:
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
+    global __version__
 
     # Parse the IOCP files
     file_l = brcdapi_file.read_directory(iocp)
@@ -1347,6 +1248,77 @@ def psuedo_main():
     return brcddb_common.EXIT_STATUS_OK
 
 
+def _get_input():
+    """Gets the shell invocation parameters, validates input, opens log file, gets project object, gets switch map
+
+    :return: Exit code. See exist codes in brcddb.brcddb_common
+    :rtype: int
+    """
+    global __version__, _input_d
+
+    proj_obj, error_l, switch_map_d, sheets_l, el = None, list(), dict(), list(), list()
+
+    # Get command line input
+    buf = 'Parses IOCP files and generates planning workbooks. WARNING: For openpyxl to read the workbooks generated '\
+          'by this script, which uses the same openpyxl library, the files must be opened and saved in Excel. There '\
+          'is no need to make any changes. This affects switch_confi.py and switch_config_cli.py.'
+    args_d = gen_util.get_input(buf, _input_d)
+
+    # Set up logging
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+
+    # User feedback
+    ml = [
+        'parse_iocp.py version       ' + __version__,
+        'Workbook prefix, -p:        ' + args_d['p'],
+        'Switch type, -t:            ' + args_d['t'],
+        'IOCP folder, -iocp:         ' + args_d['iocp'],
+        'Switch ID to DID map, -map: ' + str(args_d['map']),
+        'Template file, -t:          ' + str(_config_d.get(args_d['t'])),
+        'Log, -log:           ' + str(args_d['log']),
+        'No log, -nl:         ' + str(args_d['nl']),
+        'Supress, -sup:       ' + str(args_d['sup']),
+        '',
+    ]
+    brcdapi_log.log(ml, echo=True)
+
+    # Parse the switch ID to DID map
+    if isinstance(args_d['map'], str):
+        for buf in args_d['map'].split(';'):
+            temp_l = buf.split(',')
+            if len(temp_l) != 2:
+                error_l.append(buf + ' is not valid in ' + args_d['map'])
+            else:
+                try:
+                    x = int(temp_l[1], 16)
+                    if x < 1 or x > 239:
+                        raise InvalidDID
+                except (InvalidDID, ValueError):
+                    error_l.append('Domain ID ' + temp_l[1] + ' is not valid in ' + args_d['map'])
+            if len(error_l) == 0:
+                switch_map_d.update({temp_l[0]: '0' + temp_l[1] if len(temp_l[1]) == 1 else temp_l[1]})
+
+    # Read in template
+    temp_file = brcdapi_file.full_file_name(_config_d[args_d['t']], '.xlsx')
+    try:
+        el, sheets_l = excel_util.read_workbook(temp_file, dm=3, order='col', skip_sheets=_skip_sheets)
+        error_l.extend(el)
+    except FileExistsError:
+        error_l.append('A folder in template file does not exist: ' + temp_file)
+    except FileNotFoundError:
+        error_l.append('Template file not found: ' + temp_file)
+
+    # Get a project object run the script if there were no errors
+    if len(error_l) == 0:
+        proj_obj = brcddb_project.new('parse_iocp.py', datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
+        proj_obj.s_python_version(sys.version)
+        proj_obj.s_description('Parsed IOCPs')
+        return psuedo_main(proj_obj, args_d['p'], args_d['t'], args_d['iocp'], switch_map_d, sheets_l)
+
+    brcdapi_log.log(error_l, echo=True)
+    return brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+
 ##################################################################
 #
 #                    Main Entry Point
@@ -1360,6 +1332,6 @@ if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
     exit(brcddb_common.EXIT_STATUS_OK)
 else:
-    _ec = psuedo_main()
+    _ec = _get_input()
     brcdapi_log.close_log('Processing complete with ending status: ' + str(_ec), echo=True)
     exit(_ec)

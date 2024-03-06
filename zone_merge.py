@@ -1,20 +1,19 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`zone_merge` - Merges the zones from multiple fabrics
 
 Version Control::
@@ -24,18 +23,20 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | xx xxx 2024   | Use brcddb_project.scan() with -scan option. Removed deprecated parameter in      |
+    |           |               | enable_zonecfg()                                                                  |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 August 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = 'xx xxx 2024'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack_consoli@yahoo.com'
+__email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Released'
-__version__ = '4.0.0'
+__status__ = 'Development'
+__version__ = '4.0.1'
 
-import argparse
 import sys
 import datetime
 import os
@@ -60,17 +61,30 @@ import brcddb.util.copy as brcddb_copy
 import brcddb.util.util as brcddb_util
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_i = 'sac_zone/zone_merge_230428'
-_DEBUG_cfg = 'ZS_SAC_PROD_EVEN'
-_DEBUG_a = False
-_DEBUG_t = False
-_DEBUG_scan = False
-_DEBUG_cli = False
-_DEBUG_sup = False
-_DEBUG_d = False
-_DEBUG_log = '_logs'
-_DEBUG_nl = False
+# _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
+# execute. This is useful when importing this module into another module that calls psuedo_main().
+_STAND_ALONE = True  # See note above
+
+_input_d = dict(
+    i=dict(h='Required. Zone merge data file. See zone_merge_sample.xlsx for details. ".xlsx" is automatically '
+             'appended.'),
+    cfg=dict(r=False,
+             h='Optional. Typically used. The specified zone configuration is a merge of all zone configuration '
+               'defined in the workbook specified with the -i parameter. If the zone configuration does not exist, it '
+               'is created in all fabrics where the "Update" column in the workbook is "Yes". When this option is not '
+               'used, only the aliases and zones are copied.'),
+    a=dict(r=False, d=False, t='bool',
+           h='Optional. No parameters. Activates the zone configuration specified with the -cfg option.'),
+    t=dict(r=False, d=False, t='bool',
+           h='Optional. No parameters. Perform the merge test only. No fabric changes are made.'),
+    scan=dict(r=False, d=False, t='bool',
+              h='Optional. No parameters. Scan switches and files for fabric information. No other actions are taken.'),
+    cli=dict(r=False, d=False, t='bool',
+             h='Optional. No parameters. Prints the zone merge CLI commands to the log and console whether -t is '
+               'specified or not.'),
+)
+_input_d.update(gen_util.parseargs_log_d.copy())
+_input_d.update(gen_util.parseargs_debug_d.copy())
 
 _kpis_for_capture = ('running/brocade-fibrechannel-switch/fibrechannel-switch',
                      'running/brocade-interface/fibrechannel',
@@ -98,7 +112,15 @@ _control_tables = {
 }
 
 # Used in _condition_input() to translate column header names in the Workbook to input names used by capture.py
-_check_d = dict(user_id='id', pw='pw', ip_addr='ip', security='sec', fid='fid', fab_wwn='fab_wwn', cfg='cfg')
+_check_d = dict(user_id='id',
+                pw='pw',
+                ip_addr='ip',
+                security='sec',
+                fid='fid',
+                fab_wwn='fab_wwn',
+                cfg='cfg',
+                row='row',
+                c_file='c_file')
 
 
 def _zone_cli(proj_obj):
@@ -111,41 +133,13 @@ def _zone_cli(proj_obj):
     """
     rl = ['', '# To avoid input buffer overflow, copy and paste 20 commands at a time']
     zd = proj_obj.r_get('zone_merge')
-    if not isinstance(zd, dict):
-        return rl  # This is just belt and suspenders. We should never get here.
-    base_fab_obj = zd.get('base_fab_obj')
+    base_fab_obj = proj_obj.r_get('zone_merge_fabric')
     for fab_obj in proj_obj.r_fabric_objects():
         zd = fab_obj.r_get('zone_merge')
         if zd is not None:
             rl.extend(brcddb_util.zone_cli(base_fab_obj, fab_obj))
 
     return rl
-
-
-def _scan_fabrics(proj_obj):
-    """Scan the project for each fabric and list the fabric WWN, FID , and zone configurations
-
-    :param proj_obj: Project object
-    :type proj_obj: brcddb.classes.project.ProjectObj
-    :return: List of fabric detail messages
-    :rtype: list
-    """
-
-    # Prepare the fabric display
-    ml = ['', 'Fabric Scan (* indicates the effective zone config)', '']
-    for fab_obj in proj_obj.r_fabric_objects():
-        eff_zonecfg = fab_obj.r_defined_eff_zonecfg_key()
-        ml.append('From: ' + fab_obj.r_get('zone_merge/file'))
-        ml.append(brcddb_fabric.best_fab_name(fab_obj, wwn=True))
-        ml.append('  FID:         ' + ', '.join([str(fid) for fid in brcddb_fabric.fab_fids(fab_obj)]))
-        for buf in fab_obj.r_zonecfg_keys():
-            if isinstance(eff_zonecfg, str) and eff_zonecfg == buf:
-                ml.append('  Zone Config: ' + '*' + buf)
-            elif buf != '_effective_zone_cfg':
-                ml.append('  Zone Config: ' + buf)
-        ml.append('')
-
-    return ml
 
 
 def _patch_zone_db(proj_obj, eff_cfg):
@@ -159,26 +153,23 @@ def _patch_zone_db(proj_obj, eff_cfg):
     :rtype: list()
     """
     rl = list()  # List of error messages to return
-    base_fab_obj = proj_obj.r_get('zone_merge/base_fab_obj')
-    if base_fab_obj is None:
-        rl.append('base_fab_obj is None')  # There is a code bug if this happens
-        return rl
+    base_fab_obj = proj_obj.r_fabric_obj('zone_merge_fabric')
 
     update_count = 0
     for fab_obj in proj_obj.r_fabric_objects():
 
         # Get the login credentials
         ip_addr = fab_obj.r_get('zone_merge/ip')
-        id = fab_obj.r_get('zone_merge/id')
+        user_id = fab_obj.r_get('zone_merge/id')
         pw = fab_obj.r_get('zone_merge/pw')
         sec = fab_obj.r_get('zone_merge/sec')
         fid = fab_obj.r_get('zone_merge/fid')
         update = fab_obj.r_get('zone_merge/update')
-        if ip_addr is None or id is None or pw is None or sec is None or fid is None or update is None or not update:
+        if ip_addr is None or user_id is None or pw is None or sec is None or fid is None or not update:
             continue
 
         # Login
-        session = api_int.login(id, pw, ip_addr, sec, proj_obj)
+        session = api_int.login(user_id, pw, ip_addr, sec, proj_obj=proj_obj)
         if fos_auth.is_error(session):
             rl.append(fos_auth.formatted_error_msg(session))
             return rl
@@ -193,14 +184,13 @@ def _patch_zone_db(proj_obj, eff_cfg):
             else:
                 update_count += 1
                 if isinstance(eff_cfg, str):
-                    obj = api_zone.enable_zonecfg(session, None, fid, eff_cfg)
+                    obj = api_zone.enable_zonecfg(session, fid, eff_cfg)
                     if fos_auth.is_error(obj):
                         rl.append(fos_auth.formatted_error_msg(obj))
         except BaseException as e:
             brcdapi_log.log('Unexpected error. Aborting zone transaction. Current zone state unknown.', echo=True)
             brcdapi_zone.abort(session, fid)
-            rl.append('Software fault in api_zone.replace_zoning(). Fault detail:')
-            rl.append(str(e))
+            rl.extend(['Software fault in api_zone.replace_zoning().', str(type(e)) + ': ' + str(e)])
 
         # Logout
         obj = brcdapi_rest.logout(session)
@@ -215,13 +205,13 @@ def _patch_zone_db(proj_obj, eff_cfg):
 def _get_project(sl, pl, addl_parms):
     """Reads or captures project data
 
-    :param sl: List of switches to poll via the API
+    :param sl: Switches to poll via the API
     :type sl: list
-    :param pl: List of project files to combine
+    :param pl: Project files to combine
     :type pl: list
     :param addl_parms: Additional parameters (debug and logging) to be passed to capture.py.
     :type addl_parms: list
-    :return rl: List of error messages
+    :return rl: Error messages
     :rtype: list
     :return proj_obj: Project object. None if there was an error obtaining the project object
     :rtype proj_obj: brcddb.classes.project.ProjObj, None
@@ -237,8 +227,7 @@ def _get_project(sl, pl, addl_parms):
 
     # Get a unique folder name for multi_capture.py and combine.py
     folder_l = [f for f in os.listdir('.') if not isfile(f)]
-    base_folder = '_zone_merge_work_folder_'
-    i = 0
+    file_name, base_folder, i = '', '_zone_merge_work_folder_', 0
     work_folder = base_folder + str(i)
     while work_folder in folder_l:
         i += 1
@@ -255,7 +244,7 @@ def _get_project(sl, pl, addl_parms):
     if len(sl) > 0:
         brcdapi_log.log('Collecting zoning data from switches', echo=True)
     captured_d = dict()
-    pid_l = list()
+    pid_l, sub_d_l = list(), list()
     for sub_d in sl:
         ip_addr = sub_d['ip']
         file_name = work_folder + '/switch_' + ip_addr.split('.').pop() + '_' + str(len(pid_l))
@@ -263,7 +252,6 @@ def _get_project(sl, pl, addl_parms):
         file_name = brcdapi_file.full_file_name(file_name, '.json')
         d = captured_d.get(ip_addr)
         if d is None:
-            sub_d_l = list()
             captured_d.update({ip_addr: dict(sub_d_l=sub_d_l, file=file_name)})
             params = ['python.exe',
                       'capture.py',
@@ -305,14 +293,9 @@ def _get_project(sl, pl, addl_parms):
                     if fid in brcddb_fabric.fab_fids(fab_obj):
                         s_buf = 'none' if sub_d['sec'] is None else sub_d['sec']
                         zm_d = fab_obj.r_get('zone_merge')
-                        zm_d.update(fab_wwn=fab_obj.r_obj_key(),
-                                    update=sub_d['update'],
-                                    cfg=sub_d['cfg'],
-                                    fid=sub_d['fid'],
-                                    ip=sub_d['ip'],
-                                    id=sub_d['id'],
-                                    pw=sub_d['pw'],
-                                    sec=s_buf)
+                        zm_d.update(fab_wwn=fab_obj.r_obj_key(), sec=s_buf)
+                        for k in ('update', 'cfg', 'fid', 'ip', 'id', 'pw', 'row', 'c_file'):
+                            zm_d.update({k: sub_d[k]})
                         fab_obj.s_new_key('zone_merge', zm_d)
                         found = True
                         break
@@ -320,7 +303,7 @@ def _get_project(sl, pl, addl_parms):
                     rl.append('Could not find FID ' + str(fid) + ' in ' +
                               brcdapi_util.mask_ip_addr(sub_d['ip'], keep_last=True))
 
-    # Add in all the read in project files
+    # Read all the project files
     if len(pl) > 0:
         brcdapi_log.log('Reading project files', echo=True)
     for sub_d in pl:
@@ -444,6 +427,30 @@ def _merge_zone_cfgs(change_d, base_fab_obj, add_fab_obj, zl):
     return rl
 
 
+def _create_zone_cfg(change_d, base_fab_obj, add_fab_obj, zl):
+    """Merges the zone configurations from two fabrics. See _merge_aliases() for parameter definitions"""
+    # Basic prep
+    rl = list()
+    if change_d is None:
+        return rl
+    base_fab_name = brcddb_fabric.best_fab_name(base_fab_obj, wwn=True, fid=True)
+    add_fab_name = brcddb_fabric.best_fab_name(add_fab_obj, wwn=True, fid=True)
+    zl.extend(['', 'Zone Configuration Changes:', '  From: ' + add_fab_name, '  To:   ' + base_fab_name])
+
+    # Add what needs to be added or report differences
+    for zonecfg, change_obj in change_d.items():
+        if zonecfg != '_effective_zone_cfg':
+            change_type = change_obj.get('r')
+            if isinstance(change_type, str) and change_type == 'Added':
+                add_obj = add_fab_obj.r_zonecfg_obj(zonecfg)
+                ml = add_obj.r_members()
+                base_fab_obj.s_add_zonecfg(zonecfg, ml)
+                zl.append('  Add: ' + zonecfg)
+                zl.extend(['    ' + b for b in ml])
+
+    return rl
+
+
 _merge_case = collections.OrderedDict()  # Used essentially as case statement actions in _merge_zone_db()
 _merge_case['_alias_objs'] = _merge_aliases
 _merge_case['_zone_objs'] = _merge_zones
@@ -459,121 +466,57 @@ def _merge_zone_db(proj_obj, new_zone_cfg, a_flag):
     :type new_zone_cfg: str, None
     :param a_flag: If True, make new_zone_cfg the effective zone configuration
     :type a_flag: bool
-    :return rl: Error message list. If empty, no errors encountered
+    :return rl: Error message. If empty, no errors encountered
     :rtype rl: list
     :return zl: Zone merge report in lists of text messages to print
     :rtype zl: list
     """
-    rl, zl, fab_l, base_fab_obj, new_zonecfg_obj = list(), list(), list(), None, None
+    global _merge_case
 
-    # Find a fabric to start with, base_fab_obj, and get a list of the remaining fabrics to add to it.
-    for fab_obj in proj_obj.r_fabric_objects():
-        zd = fab_obj.r_get('zone_merge')  # zd should never be None. This is just future proofing.
-        if zd is None or zd.get('fab_wwn') is None:
-            continue
-        if base_fab_obj is None:
-            base_fab_obj = brcddb_fabric.copy_fab_obj(fab_obj, fab_key=None, full_copy=False)
-            if isinstance(new_zone_cfg, str):
-                mem_l = list()
-                if isinstance(zd['cfg'], str):
-                    zonecfg_obj = fab_obj.r_zonecfg_obj(zd['cfg'])
-                    if zonecfg_obj is not None:
-                        mem_l = zonecfg_obj.r_members()
-                if isinstance(new_zone_cfg, str):
-                    new_zonecfg_obj = base_fab_obj.s_add_zonecfg(new_zone_cfg, mem_l)
-            brcddb_util.add_to_obj(proj_obj, 'zone_merge/base_fab_obj', base_fab_obj)
-        else:
-            fab_l.append(fab_obj)
-    if base_fab_obj is None:
-        rl.append('Could not find a fabric containing any of the specified zone configurations.')
-    if len(fab_l) < 1:
-        rl.append('Could not find any fabrics to merge. Must have at least 2.')
-    if len(rl) > 0:
-        return rl, zl
+    rl, zl, fab_l, new_zonecfg_obj = list(), list(), list(), None
 
-    # The compare utility checks lists 1 for 1 (each item at each index must match) so sort all membership lists
-    for obj_l in [base_fab_obj.r_alias_objects(), base_fab_obj.r_zone_objects(), base_fab_obj.r_zonecfg_objects()]:
-        for obj in obj_l:
-            obj.s_sort_members()
+    # Get a list of fabrics to work on
+    fab_l = [obj for obj in proj_obj.r_fabric_objects() if obj.r_get('zone_merge').get('fab_wwn') is not None]
+    if len(fab_l) < 2:
+        rl.append('Found ' + str(len(fab_l)) + ' fabrics to merge. Must have at least two fabrics to merge.')
 
+    # Create a fabric to contain the merged zone database.
+    base_fab_obj = proj_obj.s_add_fabric('zone_merge_fabric')
+    if isinstance(new_zone_cfg, str):
+        new_zonecfg_obj = base_fab_obj.s_add_zonecfg(new_zone_cfg)
 
-    # Merge the individual zone items
     for fab_obj in fab_l:
+        zd = fab_obj.r_get('zone_merge')
 
         # The compare utility checks lists 1 for 1 (each item at each index must match) so sort all membership lists
         for obj_l in [fab_obj.r_alias_objects(), fab_obj.r_zone_objects(), fab_obj.r_zonecfg_objects()]:
             for obj in obj_l:
                 obj.s_sort_members()
 
+        # Validate what to merge
         change_count, change_d = brcddb_compare.compare(base_fab_obj, fab_obj, brcddb_control_tbl=_control_tables)
         for local_key, action in _merge_case.items():
             rl.extend(action(change_d.get(local_key), base_fab_obj, fab_obj, zl))
 
         # Add the zones to the merged zone configuration
-        zd = fab_obj.r_get('zone_merge')  # zd should never be None. This is just future proofing.
-        if new_zonecfg_obj is None or zd is None or zd.get('cfg') is None:
-            continue
-        add_zonecfg_obj = fab_obj.r_zonecfg_obj(zd.get('cfg'))
-        if add_zonecfg_obj is not None:
-            new_zonecfg_obj.s_add_member(add_zonecfg_obj.r_members())
+        if new_zonecfg_obj is not None and isinstance(zd['cfg'], str):
+            zonecfg_obj = fab_obj.r_zonecfg_obj(zd['cfg'])
+            if zonecfg_obj is None:
+                rl.append('Zone configuration ' + zd['cfg'] + ' does not exist. File: ' + zd['c_file'] + ' Row: ' +
+                          zd['row'])
+            else:
+                new_zonecfg_obj.s_add_member(zonecfg_obj.r_members())
 
     # If the new zone configuration is to be enabled, set it as the effective zone configuration
     if a_flag:
-        base_fab_obj.s_del_eff_zonecfg()
         base_fab_obj.s_add_eff_zonecfg(new_zonecfg_obj.r_members())
 
     return rl, zl
 
 
-def parse_args():
-    """Parses the module load command line
-    
-    :return: file
-    :rtype: str
-    """
-    global _DEBUG, _DEBUG_i, _DEBUG_cfg, _DEBUG_a, _DEBUG_t, _DEBUG_scan, _DEBUG_cli, _DEBUG_d, _DEBUG_sup, _DEBUG_log
-    global _DEBUG_nl
-
-    if _DEBUG:
-        return _DEBUG_i, _DEBUG_cfg, _DEBUG_a, _DEBUG_t, _DEBUG_scan, _DEBUG_cli, _DEBUG_d, _DEBUG_sup, _DEBUG_log, \
-               _DEBUG_nl
-
-    buf = 'The zone_merge utility merges the zone databases from two or more fabrics by reading the zone database from'\
-          ' a project file or a live switch.'
-    parser = argparse.ArgumentParser(description=buf)
-    buf = 'Required. Zone merge data file. See zone_merge_sample.xlsx for details. ".xlsx" is automatically appended.'
-    parser.add_argument('-i', help=buf, required=True)
-    buf = 'Optional. Typically used. The specified zone configuration is a merge of all zone configuration defined in '\
-          'the workbook specified with the -i parameter. If the zone configuration does not exist, it is created in '\
-          'all fabrics where the "Update" column in the workbook is "Yes". When this option is not used, only the '\
-          'aliases and zones are copied.'
-    parser.add_argument('-cfg', help=buf, required=False)
-    buf = 'Optional. No parameters. Activates the zone configuration specified with the -cfg option.'
-    parser.add_argument('-a', help=buf, action='store_true', required=False)
-    buf = 'Optional. No parameters. Perform the merge test only. No fabric changes are made.'
-    parser.add_argument('-t', help=buf, action='store_true', required=False)
-    buf = 'Optional. No parameters. Scan switches and files for fabric information.'
-    parser.add_argument('-scan', help=buf, action='store_true', required=False)
-    buf = 'Optional. No parameters. Prints the zone merge CLI commands to the log and console whether -t is specified '\
-          'or not.'
-    parser.add_argument('-cli', help=buf, action='store_true', required=False)
-    buf = 'Optional. Suppress all output to STD_IO except the exit code and argument parsing errors. Useful with '\
-          'batch processing where only the exit status code is desired. Messages are still printed to the log file. '\
-          'No operands.'
-    parser.add_argument('-sup', help=buf, action='store_true', required=False)
-    buf = '(Optional) No parameters. When set, a pprint of all content sent and received to/from the API, except ' \
-          'login information, is printed to the log.'
-    parser.add_argument('-d', help=buf, action='store_true', required=False)
-    buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log ' \
-          'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-    parser.add_argument('-log', help=buf, required=False, )
-    buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-    parser.add_argument('-nl', help=buf, action='store_true', required=False)
-    args = parser.parse_args()
-    return args.i, args.cfg, args.a, args.t, args.scan, args.cli, args.d, args.sup, args.log, args.nl
-
-
 def _condition_input(in_d):
+    global _check_d
+
     rd = dict(
         update=True if in_d.get('update') is not None and in_d['update'].lower() == 'yes' else False,
         sec='none' if in_d.get('security') is None else 'none' if in_d['security'] == '' else in_d['security']
@@ -584,99 +527,40 @@ def _condition_input(in_d):
     return rd
 
 
-def _get_input():
-    """Retrieves the command line input, reads the input Workbook, and minimally validates the input
+def pseudo_main(sl, pl, cfg_name, a_flag, t_flag, scan_flag, cli_flag, addl_parms):
+    """Basically the main(). Did it this way so that it can easily be used as a standalone module or called externally.
 
-    :return ec: Error code from brcddb.brcddb_common
-    :rtype ec: int
-    :return sl: List of switches to poll as read from the input Workbook
-    :rtype sl: list
-    :return pl: List of project files to combine
-    :rtype pl: list
-    :return cfg_name: Name of zone configuration file to create
-    :rtype cfg_name: str, None
-    :return a_cfg: Activation flag. If True, activate the zone configuration specified by cfg_name
-    :rtype a_cfg: bool
-    :return t_flag: Test flag. If True, test only. Do not make any changes
-    :rtype t_flag: bool
-    :return scan_flag: Scan flag. If True, scan files and switches for fabric information
-    :rtype scan_flag: bool
-    :return cli_flag: If True, generate CLI
-    :rtype cli_flag: bool
-    :return addl_parms: Additional parameters (logging and debug flags) to pass to multi_capture.py
-    :rtype addl_parms: list
-    """
-    global _DEBUG, __version__
-
-    # Initialize the return variables
-    ec = brcddb_common.EXIT_STATUS_OK
-    sl, pl, addl_parms = list(), list(), list()
-
-    # Get the user input
-    c_file, cfg_name, a_flag, t_flag, scan_flag, cli_flag, d_flag, s_flag, log, nl = parse_args()
-    if s_flag:
-        addl_parms.append('-sup')
-        brcdapi_log.set_suppress_all()
-    if nl:
-        addl_parms.append('-nl')
-    else:
-        brcdapi_log.open_log(log)
-    if log is not None:
-        addl_parms.extend(['-log', log])
-    if d_flag:
-        addl_parms.append('-d')
-        brcdapi_rest.verbose_debug = True
-    ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
-    ml.append('zone_merge.py version: ' + __version__)
-    ml.append('Login credential file: ' + str(c_file))
-    ml.append('Common zone cfg name:  ' + str(cfg_name))
-    ml.append('Activate zone cfg:     ' + str(a_flag))
-    ml.append('Scan flag, -scan:      ' + str(scan_flag))
-    ml.append('CLI flag, -cli:        ' + str(cli_flag))
-    ml.append('Test:                  ' + str(t_flag))
-    brcdapi_log.log(ml, echo=True)
-    c_file = brcdapi_file.full_file_name(c_file, '.xlsx')
-
-    # Parse the input file
-    ml = list()
-    switch_l = excel_util.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=c_file)['content']
-    if a_flag and not isinstance(cfg_name, str):
-        ml.append('Configuration activate flag, -a, specified without a valid zone configuration name, -cfg')
-    if len(ml) == 0:
-        for i in range(0, len(switch_l)):
-            sub_d = switch_l[i]
-            buf = sub_d.get('project_file')
-            if buf is None:
-                if sub_d['ip_addr'] is not None:  # Sometimes empty rows are returned from reading the worksheet
-                    sl.append(_condition_input(sub_d))
-            else:
-                pl.append(sub_d)
-                if not scan_flag and not gen_util.is_wwn(sub_d.get('fab_wwn'), full_check=True):
-                    ml.append('fab_wwn is not a valid WWN in row ' + str(i+2))
-    if len(ml) > 0:
-        brcdapi_log.log(ml, echo=True)
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-
-    return ec, sl, pl, cfg_name, a_flag, t_flag, scan_flag, cli_flag, addl_parms
-
-
-def pseudo_main():
-    """Basically the main(). Did it this way so it can easily be used as a standalone module or called from another.
-
+    :param sl: Switches to poll as read from the input Workbook
+    :type sl: list
+    :param pl: Project files to combine
+    :type pl: list
+    :param cfg_name: Name of zone configuration file to create
+    :type cfg_name: str, None
+    :param a_flag: Activation flag. If True, activate the zone configuration specified by cfg_name
+    :type a_flag: bool
+    :param t_flag: Test flag. If True, test only. Do not make any changes
+    :type t_flag: bool
+    :param scan_flag: Scan flag. If True, scan files and switches for fabric information
+    :type scan_flag: bool
+    :param cli_flag: If True, generate CLI
+    :type cli_flag: bool
+    :param addl_parms: Additional parameters (logging and debug flags) to pass to multi_capture.py
+    :type addl_parms: list
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
     global __version__
 
-    ec, sl, pl, cfg_name, a_flag, t_flag, scan_flag, cli_flag, addl_parms = _get_input()
-    if ec != brcddb_common.EXIT_STATUS_OK:
-        return ec
-
     # Capture the zoning data
+    ec = brcddb_common.EXIT_STATUS_OK
     ml, proj_obj = _get_project(sl, pl, addl_parms)
 
+    if proj_obj is None or len(ml) > 0:
+        ml.insert(0, 'Error reading project file.')
+        brcdapi_log.log(ml, echo=True)
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR
     if scan_flag and proj_obj is not None:
-        brcdapi_log.log(_scan_fabrics(proj_obj), echo=True)
+        brcdapi_log.log(brcddb_project.scan(proj_obj, fab_only=True), echo=True)
         return brcddb_common.EXIT_STATUS_OK
     if len(ml) > 0:
         ml.insert(0, 'Merge test failed:')
@@ -708,6 +592,79 @@ def pseudo_main():
     return ec
 
 
+def _get_input():
+    """Retrieves the command line input, reads the input Workbook, and minimally validates the input
+
+    :return: Exit code. See exit codes in brcddb.brcddb_common
+    :rtype: int
+    """
+    global __version__, _input_d
+
+    # Initialize the return variables
+    ec = brcddb_common.EXIT_STATUS_OK
+    sl, pl = list(), list()
+
+    # Get command line input
+    buf = 'The zone_merge utility merges the zone databases from two or more fabrics by reading the zone database from'\
+          ' a project file or a live switch. All aliases, zones, and zone configurations are merged. If an alias or '\
+          'zone with the same name is defined in more than one of the fabrics but have different members, an error is '\
+          'reported and the zone transactions aborted. If a zone configuration with the same name is defined in '\
+          'multiple fabrics, the membership lists are merged. REMINDER: If the effective zone configuration is '\
+          'modified but not activated using the -cfg and -a options, the defined zone configuration will not match '\
+          'the effective zone configuration.'
+    args_d = gen_util.get_input(buf, _input_d)
+
+    # Set up logging
+    if args_d['d']:
+        brcdapi_rest.verbose_debug(True)
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+
+    # Command line feedback
+    c_file = brcdapi_file.full_file_name(args_d['i'], '.xlsx')
+    ml = [
+        'zone_merge.py version: ' + __version__,
+        'Input file, -i:        ' + str(c_file),
+        'Common zonecfg, -cfg:  ' + str(args_d['cfg']),
+        'Activate zone cfg:     ' + str(args_d['a']),
+        'Scan flag, -scan:      ' + str(args_d['scan']),
+        'CLI flag, -cli:        ' + str(args_d['cli']),
+        'Test:                  ' + str(args_d['t']),
+        'Log, -log:             ' + str(args_d['log']),
+        'No log, -nl:           ' + str(args_d['nl']),
+        'Debug, -d:             ' + str(args_d['d']),
+        'Supress, -sup:         ' + str(args_d['sup']),
+        '',
+    ]
+    brcdapi_log.log(ml, echo=True)
+
+    # Parse the input file
+    ml = list()
+    switch_l = excel_util.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=c_file)['content']
+    if args_d['a'] and not isinstance(args_d['cfg'], str):
+        ml.append('Configuration activate flag, -a, specified without a valid zone configuration name, -cfg')
+    if len(ml) == 0:
+        for i in range(0, len(switch_l)):
+            sub_d = switch_l[i]
+            sub_d.update(row=str(i+2), c_file=c_file)  # Used for error reporting
+            buf = sub_d.get('project_file')
+            if buf is None:
+                if sub_d['ip_addr'] is not None:  # Sometimes empty rows are returned from reading the worksheet
+                    sl.append(_condition_input(sub_d))
+            else:
+                pl.append(sub_d)
+                if not args_d['scan'] and not gen_util.is_wwn(sub_d.get('fab_wwn'), full_check=True):
+                    ml.append('fab_wwn is not a valid WWN in row ' + str(i+2))
+    if len(ml) > 0:
+        brcdapi_log.log(ml, echo=True)
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    addl_parms_l = ['-' + k for k in ('nl', 'd', 'sup') if args_d[k]]
+    addl_parms_l.extend(['-log', args_d['log']])
+
+    return ec if ec != brcddb_common.EXIT_STATUS_OK else \
+        pseudo_main(sl, pl, args_d['cfg'], args_d['a'], args_d['t'], args_d['scan'], args_d['cli'], addl_parms_l)
+
+
 ##################################################################
 #
 #                    Main Entry Point
@@ -715,8 +672,9 @@ def pseudo_main():
 ###################################################################
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-    exit(brcddb_common.EXIT_STATUS_OK)
+    exit(0)
 
-_ec = pseudo_main()
-brcdapi_log.close_log(['', 'Processing complete. Exit status: ' + str(_ec)], echo=True)
-exit(_ec)
+if _STAND_ALONE:
+    _ec = _get_input()
+    brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
+    exit(_ec)

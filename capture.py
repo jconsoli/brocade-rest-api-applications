@@ -1,20 +1,19 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`capture` - Reads all information for all FIDs in a chassis and parses that data into brcddb objects.
 
 **Description**
@@ -39,50 +38,47 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | 06 Mar 2024   | Added collection of maps URIs, -clr, -nm option, CLI command processing.          |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 Aug 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = '06 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack_consoli@yahoo.com'
+__email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 
-import http.client
 import signal
-import argparse
 import sys
 import datetime
-import brcddb.brcddb_project as brcddb_project
 import brcdapi.log as brcdapi_log
+import brcdapi.gen_util as gen_util
+import brcdapi.fos_auth as fos_auth
 import brcdapi.util as brcdapi_util
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.file as brcdapi_file
+import brcdapi.port as brcdapi_port
+import brcdapi.fos_cli as fos_cli
+import brcddb.brcddb_project as brcddb_project
 import brcddb.util.copy as brcddb_copy
 import brcddb.api.interface as api_int
-import brcdapi.fos_auth as brcdapi_auth
 import brcddb.brcddb_common as brcddb_common
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
+# _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
+# execute. This is useful when importing this module into another module that calls psuedo_main().
+_STAND_ALONE = True  # See note above
 _WRITE = True  # Should always be True. Used for debug only. Prevents the output file from being written when False
-_DEBUG = False   # When True, use _DEBUG_xxx below instead of parameters passed from the command line.
-_DEBUG_ip = 'xx.xxx.x.xx'
-_DEBUG_f = 'test/test_output'
-_DEBUG_id = 'admin'
-_DEBUG_pw = 'password'
-_DEBUG_s = 'self'
-_DEBUG_sup = False
-_DEBUG_d = True
-_DEBUG_c = None  # 'test/test_kpis.txt'
-_DEBUG_fid = None
-_DEBUG_log = '_logs'
-_DEBUG_nl = False
 
-_report_kpi_l = (
+# debug input (for copy and paste into Run->Edit Configurations->script parameters):
+# -ip xx.xxx.xx.xx -id admin -pw password -s self -log _logs
+
+_report_kpi_l = [
     # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface._get_chassis()
-    # 'running/brocade-logging/audit-log',  # $ToDo Fix this
+    # 'running/brocade-logging/audit-log',  # $ToDo Fix - FOS encounters an error which I'm assuming is when it wraps
     'running/brocade-logging/error-log',
     'running/brocade-fibrechannel-switch/fibrechannel-switch',
     'running/brocade-fibrechannel-switch/topology-domain',
@@ -124,10 +120,10 @@ _report_kpi_l = (
     'running/brocade-fru/wwn',
     'running/brocade-chassis/chassis',
     'running/brocade-chassis/ha-status',
-    # 'running/brocade-maps/maps-config',
-    # 'running/brocade-maps/rule',
-    # 'running/brocade-maps/maps-policy',
-    # 'running/brocade-maps/group',
+    'running/brocade-maps/maps-config',
+    'running/brocade-maps/rule',
+    'running/brocade-maps/maps-policy',
+    'running/brocade-maps/group',
     'running/brocade-maps/dashboard-rule',
     'running/brocade-maps/dashboard-history',
     'running/brocade-maps/dashboard-misc',
@@ -139,130 +135,88 @@ _report_kpi_l = (
     'running/brocade-time/clock-server',
     'running/brocade-time/time-zone',
     'running/brocade-license/license',
+]
+_all_fos_cli_l = [
+    'fos_cli/portcfgshow',
+    'fos_cli/portbuffershow',
+]
+_report_kpi_l.extend(_all_fos_cli_l)
+
+_input_c_help = ('Optional. Name of file with list of KPIs to capture and/or FOS commands to execute. Note that FOS '
+                 'commands are executed on all logical switches specified with the -fid option. FOS commands must '
+                 'begin with "fos_cli/". Use * to capture all data the chassis supports + ' + ', '.join(_all_fos_cli_l))
+_input_c_help += ' all FOS. The default is to capture all KPIs and FOS commands required for the report.'
+_input_d = gen_util.parseargs_login_d.copy()
+_input_d.update(
+    f=dict(h='Required. Output file for captured data'),
+    c=dict(r=False, h=_input_c_help),
+    fid=dict(r=False,
+             h='Optional. CSV list or range of FIDs to capture logical switch specific data. The default is to '
+               'automatically, determine all logical switch FIDs defined in the chassis.'),
+    clr=dict(r=False, t='bool', d=False,
+             h='Optional. No parameters. Clear port statistics after successful capture'),
+    nm=dict(r=False, t='bool', d=False,
+            h='Optional. No parameters. By default, all but the last octet of IP addresses are masked before being '
+              'stored in the output file. This option preserves the full IP address which is useful for having full '
+              'IP addresses in reports and when using restore_all.py.'),
 )
+_input_d.update(gen_util.parseargs_log_d.copy())
+_input_d.update(gen_util.parseargs_debug_d.copy())
 
 
 def _kpi_list(session, c_file):
     """Returns the list of KPIs to capture
 
-    :param session: Session object returned from brcdapi.brcdapi_auth.login()
+    :param session: Session object returned from brcdapi.fos_auth.login()
     :type session: dict
     :param c_file: Name of file with KPIs to read
     :type c_file: str, None
     :return: List of KPIs
     :rtype: list
     """
-    global _report_kpi_l
+    global _report_kpi_l, _all_fos_cli_l
 
     kpi_l = _report_kpi_l if c_file is None else brcdapi_util.uris_for_method(session, 'GET', uri_d_flag=False) if \
         c_file == '*' else brcdapi_file.read_file(c_file)
-
+    if c_file == '*':
+        kpi_l.extend(_all_fos_cli_l)
     rl = list()
     for kpi in kpi_l:
-        uri_d = brcdapi_util.uri_d(session, kpi)
-        if uri_d is not None:
-            if 'GET' in uri_d['methods'] and uri_d['area'] != brcdapi_util.NULL_OBJ:
-                rl.append(kpi)
+        if isinstance(fos_cli.parse_cli(kpi), str):
+            rl.append(kpi)
         else:
-            # Different versions of FOS support different KPIs so log it but don't pester the operator with it.
-            brcdapi_log.log(':UNKNOWN KPI: ' + kpi)
+            uri_d = brcdapi_util.uri_d(session, kpi)
+            if uri_d is not None:
+                if 'GET' in uri_d['methods'] and uri_d['area'] != brcdapi_util.NULL_OBJ:
+                    rl.append(kpi)
+            else:
+                # Different versions of FOS support different KPIs so log it but don't pester the operator with it.
+                brcdapi_log.log(':UNKNOWN KPI: ' + kpi)
+
     return rl
 
 
-def _get_input():
-    """Parses the module load command line
+def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
+    """Basically the main(). Did it this way so that it can be imported and called from another program.
 
-    :return ec: Error code
-    :rtype ec: int
-    :return args_ip: IP address
-    :rtype args_ip: str
-    :return args_id: User ID
-    :rtype args_id: str
-    :return args_pw: Password
-    :rtype args_pw: str
-    :return args_f: Name of output file
-    :rtype args_f: str
-    :return args_s: Type of HTTP security. Should be 'none' or 'self'
-    :rtype args_s: str
-    :return args_c: Name of file containing URIs to GET.
-    :rtype args_c: str, None
-    :return args_fid: CSV list of FIDs to capture data for
-    :rtype args_fid: list, None
-    """
-    global _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_f, _DEBUG_s, _DEBUG_sup, _DEBUG_d, _DEBUG_c
-    global _DEBUG_fid, _DEBUG_log, _DEBUG_nl, _DEBUG
-
-    ec = brcddb_common.EXIT_STATUS_OK
-
-    if _DEBUG:
-        args_ip, args_id, args_pw, args_f, args_s, args_sup, args_d, args_c, args_fid, args_log, args_nl = \
-            _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_f, _DEBUG_s, _DEBUG_sup, _DEBUG_d, _DEBUG_c, _DEBUG_fid, \
-            _DEBUG_log, _DEBUG_nl
-    else:
-        parser = argparse.ArgumentParser(description='Capture (GET) requests from a chassis')
-        parser.add_argument('-f', help='Output file for captured data', required=True)
-        parser.add_argument('-ip', help='IP address', required=True)
-        parser.add_argument('-id', help='User ID', required=True)
-        parser.add_argument('-pw', help='Password', required=True)
-        parser.add_argument('-s', help='\'CA\' or \'self\' for HTTPS mode.', required=False,)
-        buf = '(Optional) Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. '\
-              'The default is to capture all KPIs required for the report.'
-        parser.add_argument('-c', help=buf, required=False,)
-        buf = '(Optional) CSV list of FIDs to capture logical switch specific data. The default is to automatically '\
-              'determine all logical switch FIDs defined in the chassis.'
-        parser.add_argument('-fid', help=buf, required=False)
-        buf = '(Optional) No parameters. Suppress all library generated output to STD_IO except the exit code. Useful '\
-              'with batch processing'
-        parser.add_argument('-sup', help=buf, action='store_true', required=False)
-        buf = '(Optional) No parameters. When set, a pprint of all content sent and received to/from the API, except '\
-              'login information, is printed to the log.'
-        parser.add_argument('-d', help=buf, action='store_true', required=False)
-        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The ' \
-              'log file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-        parser.add_argument('-log', help=buf, required=False, )
-        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-        parser.add_argument('-nl', help=buf, action='store_true', required=False)
-        args = parser.parse_args()
-
-        args_ip, args_id, args_pw, args_f, args_s, args_sup, args_d, args_c, args_fid, args_log, args_nl = \
-            args.ip, args.id, args.pw, args.f, args.s, args.sup, args.d, args.c, args.fid, args.log, args.nl
-
-    # Set up logging
-    if args_d:
-        brcdapi_rest.verbose_debug = True
-    if args_sup:
-        brcdapi_log.set_suppress_all()
-    if not args_nl:
-        brcdapi_log.open_log(args_log)
-
-    # Is the security method valid?
-    if args_s is None:
-        args_s = 'none'
-    elif args_s != 'self' and args_s != 'none':
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-
-    # User feedback
-    ml = [
-        'capture.py version: ' + __version__,
-        'IP:          ' + brcdapi_util.mask_ip_addr(args_ip, keep_last=True),
-        'ID:          ' + args_id,
-        'security:    ' + args_s + ' UNSUPPORTED HTTPS method!' if ec != brcddb_common.EXIT_STATUS_OK else '',
-        'Output file: ' + args_f,
-        'KPI file:    ' + str(args_c),
-        'FID List:    ' + str(args_fid)
-    ]
-    if _DEBUG:
-        ml.insert(0, 'WARNING!!! Debug is enabled')
-    brcdapi_log.log(ml, echo=True)
-
-
-    return ec, args_ip, args_id, args_pw, brcdapi_file.full_file_name(args_f, '.json'),\
-           'none' if args_s is None else args_s, args_c, None if args_fid is None else args_fid.split(',')
-
-
-def pseudo_main():
-    """Basically the main(). Did it this way so it can easily be used as a standalone module or called from another.
-
+    :param ip: IP address
+    :type ip: str
+    :param user_id: User ID
+    :type user_id: str
+    :param pw: Password
+    :type pw: str
+    :param outf: Name of output file
+    :type outf: str
+    :param sec: Type of HTTP security. Should be 'none' or 'self'
+    :type sec: str
+    :param c_file: Name of file containing URIs to GET.
+    :type c_file: str, None
+    :param fid_l: CSV list of FIDs to capture data for
+    :type fid_l: list, None
+    :param args_clr: If True, clear port stats after a capture
+    :type: bool
+    :param args_nm:
+    :type args_nm: bool
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
@@ -270,9 +224,7 @@ def pseudo_main():
 
     signal.signal(signal.SIGINT, brcdapi_rest.control_c)
 
-    ec, ip, user_id, pw, outf, sec, c_file, fid_l = _get_input()
-    if ec != brcddb_common.EXIT_STATUS_OK:
-        return ec
+    ec, write_file = None, False
 
     # Create project
     proj_obj = brcddb_project.new("Captured_data", datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -281,44 +233,103 @@ def pseudo_main():
 
     # Login
     session = api_int.login(user_id, pw, ip, sec, proj_obj)
-    if brcdapi_auth.is_error(session):
+    if fos_auth.is_error(session):
         return brcddb_common.EXIT_STATUS_API_ERROR
 
     # Collect the data
     try:
-        api_int.get_batch(session, proj_obj, _kpi_list(session, c_file), fid_l)
+        api_int.get_batch(session, proj_obj, _kpi_list(session, c_file), fid_l, args_nm)
+        write_file = _WRITE
+        if args_clr:
+            for chassis_obj in proj_obj.r_chassis_objects():  # There should only be one chassis object
+                for fid in gen_util.convert_to_list(fid_l):
+                    switch_obj = chassis_obj.r_switch_obj_for_fid(fid)
+                    if switch_obj is not None:
+                        brcdapi_port.clear_stats(session, fid, switch_obj.r_port_keys())
     except KeyboardInterrupt:
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
         brcdapi_log.log('Processing terminated by user.', echo=True)
+        write_file = False
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     except RuntimeError:
-        ec = brcddb_common.EXIT_STATUS_API_ERROR
         brcdapi_log.log('Programming error encountered. See previous message', echo=True)
-    except BaseException as e:
+        write_file = False
         ec = brcddb_common.EXIT_STATUS_ERROR
-        e_buf = str(e, errors='ignore') if isinstance(e, (bytes, str)) else str(type(e))
-        brcdapi_log.log('Programming error encountered. Exception is: ' + e_buf, echo=True)
+    except (FileExistsError, FileNotFoundError):
+        brcdapi_log.log(['', 'File not found: ' + str(c_file), ''], echo=True)
+        write_file = False
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    except brcdapi_util.VirtualFabricIdError:
+        brcdapi_log.log('Software error. Search the log for "Invalid FID" for details.', echo=True)
+        ec = brcddb_common.EXIT_STATUS_API_ERROR
+    except BaseException as e:
+        brcdapi_log.log('Programming error encountered.: ' + str(type(e)) + ': ' + str(e), echo=True)
+        write_file = False
+        ec = brcddb_common.EXIT_STATUS_ERROR
+
+    ec = ec if ec is not None else proj_obj.r_exit_code()
 
     # Logout
-    try:
-        obj = brcdapi_rest.logout(session)
-        if brcdapi_auth.is_error(obj):
-            brcdapi_log.log(['Logout failed. Error is:', brcdapi_auth.formatted_error_msg(obj)], echo=True)
-        else:
-            brcdapi_log.log('Logout succeeded', echo=True)
-    except (http.client.CannotSendRequest, http.client.ResponseNotReady):
-        brcdapi_log.log(['Could not logout. You may need to terminate this session via the CLI',
-                         'mgmtapp --showsessions, mgmtapp --terminate'], echo=True)
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    brcdapi_log.log(api_int.logout(session), echo=True)
 
     # Dump the database to a file
-    if _WRITE and ec == brcddb_common.EXIT_STATUS_OK:
+    if write_file:
         brcdapi_log.log('Saving project to: ' + outf, echo=True)
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
         brcdapi_file.write_dump(plain_copy, outf)
         brcdapi_log.log('Save complete', echo=True)
 
-    return proj_obj.r_exit_code()
+    return ec
+
+
+def _get_input():
+    """Parses the module load command line
+
+    :return ec: Error code
+    :rtype ec: int
+    """
+    global __version__, _input_d
+
+    ec = brcddb_common.EXIT_STATUS_OK
+
+    # Get command line input
+    args_d = gen_util.get_input('Capture (GET) requests from a chassis', _input_d)
+
+    # Set up logging
+    if args_d['d']:
+        brcdapi_rest.verbose_debug(True)
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+
+    # Is the FID or FID range valid?
+    args_fid_l = gen_util.range_to_list(args_d['fid']) if isinstance(args_d['fid'], str) else None
+    args_fid_help = brcdapi_util.validate_fid(args_fid_l)
+    if len(args_fid_help) > 0:
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    # Command line feedback
+    ml = [
+        'capture.py version:  ' + __version__,
+        'IP, -ip:             ' + brcdapi_util.mask_ip_addr(args_d['ip'], keep_last=True),
+        'ID, -id:             ' + args_d['id'],
+        'Security, -s:        ' + args_d['s'],
+        'Output file, -f:     ' + args_d['f'],
+        'KPI file, -c:        ' + str(args_d['c']),
+        'FID List, -fid:      ' + str(args_d['fid']),
+        'Clear stats, -clr:   ' + str(args_d['clr']),
+        'Log, -log:           ' + str(args_d['log']),
+        'No log, -nl:         ' + str(args_d['nl']),
+        'Debug, -d:           ' + str(args_d['d']),
+        'Supress, -sup:       ' + str(args_d['sup']),
+        '',
+    ]
+    brcdapi_log.log(ml, echo=True)
+
+    if ec != brcddb_common.EXIT_STATUS_OK:
+        return ec
+
+    args_f = brcdapi_file.full_file_name(args_d['f'], '.json')
+    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_f, args_d['s'], args_d['c'], args_fid_l,
+                       args_d['clr'], args_d['nm'])
 
 
 ###################################################################
@@ -330,6 +341,7 @@ if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
     exit(brcddb_common.EXIT_STATUS_OK)
 
-_ec = pseudo_main()
-brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
-exit(_ec)
+if _STAND_ALONE:
+    _ec = _get_input()
+    brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
+    exit(_ec)

@@ -1,20 +1,19 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2023 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`switch_config.py` - Configure logical switch(es) from a workbook
 
 $ToDo running/brocade-fibrechannel-switch/fibrechannel-switch/principal (0 for no, 1 for yes)
@@ -46,18 +45,18 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | 06 Mar 2024   | Improved handling of ports that could not be moved due to errors.                 |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023 Consoli Solutions, LLC'
-__date__ = '04 August 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = '06 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack_consoli@yahoo.com'
+__email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 
-import argparse
 import sys
 import datetime
 import os
@@ -79,18 +78,24 @@ import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_switch as brcddb_switch
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_ip = 'xx.xxx.x.xx'
-_DEBUG_id = 'admin'
-_DEBUG_pw = 'password'
-_DEBUG_s = 'self'
-_DEBUG_i = 'bd_test/FCIP_switch_wip'
-_DEBUG_force = True
-_DEBUG_sup = False
-_DEBUG_echo = False
-_DEBUG_d = False
-_DEBUG_log = '_logs'
-_DEBUG_nl = False
+# _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
+# execute. This is useful when importing this module into another module that calls psuedo_main().
+_STAND_ALONE = True  # See note above
+
+# debug input (for copy and paste into Run->Edit Configurations->script parameters):
+# -ip 10.144.72.15 -id admin -pw AdminPassw0rd! -s self -i test/gsh_test -log _logs
+
+_input_d = gen_util.parseargs_login_d.copy()
+_input_d.update(
+    i=dict(h='Required. File name of Excel Workbook to read.'),
+    force=dict(r=False, d=False, t='bool',
+               h='Optional. No parameters. If specified, move ports even if they are online.'),
+    echo=dict(r=False, d=False, t='bool',
+              h='Optional. Echoes activity detail to STD_OUT. Recommended because there are multiple operations that '
+                'can be very time consuming.'),
+)
+_input_d.update(gen_util.parseargs_log_d.copy())
+_input_d.update(gen_util.parseargs_debug_d.copy())
 
 _PORT_ENABLE_WAIT = 1  # Time in seconds to wait after enabling a switch before enabling the ports
 
@@ -111,9 +116,9 @@ _basic_capture_kpi_l = [
 def _configuration_checks(switch_d_list):
     """Some basic chassis configuration checks.
 
-    :param switch_d_list: List of switch object as returned from report_utils.parse_switch_file()
+    :param switch_d_list: Switch object as returned from report_utils.parse_switch_file()
     :type switch_d_list: list
-    :return: List of error messages. List is empty if no errors found
+    :return: Error messages. Empty if no errors found
     :rtype: list
     """
     rl, base_l = list(), list()
@@ -126,7 +131,7 @@ def _configuration_checks(switch_d_list):
             base_l.append(switch_d)  # Used to check for, and report if necessary, duplicate base switches
 
         # Does the domain ID in the switch definition match the domain ID in the port worksheets?
-        # When written, rl_index will always be 0 here. This was setup so that message could be added to rl prior to
+        # When written, rl_index will always be 0 here. This was set up so that message could be added to rl prior to
         # getting here.
         rl_index = len(rl)
         for port_d in switch_d['port_d'].values():
@@ -165,7 +170,7 @@ def _configure_chassis(session, chassis_d):
     :type session: dict
     :param chassis_d: Switch object as returned from report_utils.parse_switch_file()
     :type chassis_d: dict
-    :return: Completion code - see brcddb.common
+    :return: Completion code - See brcddb/common.py for more details.
     :rtype: int
     """
     if chassis_d is None:
@@ -207,6 +212,10 @@ def _ports_to_move(switch_obj, switch_d, force):
     +-------------------+-------------------------------------------------------------------------------------------|
     | already_present_l | List of ports in s/p notation to add but were already in the switch                       |
     +-------------------+-------------------------------------------------------------------------------------------|
+    | success_l         | List of port in s/p notation that were successfully added                                 |
+    +-------------------+-------------------------------------------------------------------------------------------|
+    | fault_l           | List of ports in s/p notation that could not be moved due to errors                       |
+    +-------------------+-------------------------------------------------------------------------------------------|
 
     :param switch_obj: Switch object of the switch being configured
     :type switch_obj: brcddb.classes.switch.SwitchObj
@@ -221,7 +230,9 @@ def _ports_to_move(switch_obj, switch_d, force):
                     remove_ge_port_l=list(),
                     add_port_l=list(),
                     add_ge_port_l=list(),
-                    already_present_l=list())
+                    already_present_l=list(),
+                    success_l=list(),
+                    fault_l=list())
     chassis_obj = switch_obj.r_chassis_obj()
     switch_pl = switch_obj.r_port_keys()
 
@@ -234,7 +245,7 @@ def _ports_to_move(switch_obj, switch_d, force):
                 switch_d['not_found_port_l'].append(port)
             elif not force and port_obj.r_is_online():
                 switch_d['online_port_l'].append(brcddb_port.best_port_name(port_obj, True) + ', ' +
-                                                brcddb_port.port_best_desc(port_obj))
+                                                 brcddb_port.port_best_desc(port_obj))
             else:
                 switch_d['remove_port_l'].append(port)
 
@@ -269,12 +280,11 @@ def _create_switch(session, chassis_obj, switch_d, echo):
     fid = switch_d['switch_info']['fid']
     if chassis_obj.r_switch_obj_for_fid(fid) is not None:
         return brcddb_common.EXIT_STATUS_OK  # The switch already exists
-    buf = 'Creating FID ' + str(fid) + '. This will take about 20 sec per switch + 25 sec per group of 32 ports.'
+    buf = 'Creating FID ' + str(fid) + '. This will take about 20 sec per switch + 40 sec per group of 32 ports.'
     brcdapi_log.log(buf, echo=True)
     base = True if switch_d['switch_info']['switch_type'] == 'base' else False
     ficon = True if switch_d['switch_info']['switch_type'] == 'ficon' else False
     obj = brcdapi_switch.create_switch(session, fid, base, ficon, echo=echo)
-
     if fos_auth.is_error(obj):
         switch_d['err_msgs'].append('Error creating FID ' + str(fid))
         brcdapi_log.exception([switch_d['err_msgs'][len(switch_d['err_msgs']) - 1],
@@ -315,7 +325,7 @@ def _fiberchannel_switch(session, switch_obj, switch_d, echo):
         for k, v in api_d.items():
             current_v = switch_obj.r_get(prefix+k)
             if v is not None:
-                if type(current_v) != type(v) or current_v != v:  # We're only sending changes (PATCH)
+                if type(current_v) is not type(v) or current_v != v:  # We're only sending changes (PATCH)
                     sub_content.update({k: v})
     if len(sub_content) > 0:
         obj = brcdapi_switch.fibrechannel_switch(session, fid, sub_content, wwn=switch_obj.r_obj_key(), echo=echo)
@@ -351,7 +361,7 @@ def _switch_config(session, switch_obj, switch_d, echo):
             for k, v in api_d.items():
                 current_v = switch_obj.r_get(prefix+k)
                 if v is not None:
-                    if type(current_v) != type(v) or current_v != v:  # We're only sending changes (PATCH)
+                    if type(current_v) is not type(v) or current_v != v:  # We're only sending changes (PATCH)
                         sub_content.update({k: v})
         if len(sub_content) > 0:
             obj = brcdapi_rest.send_request(session,
@@ -391,7 +401,7 @@ def _ficon_config(session, switch_obj, switch_d, echo):
         for k, v in api_d.items():
             current_v = switch_obj.r_get(prefix+k)
             if v is not None:
-                if type(current_v) != type(v) or current_v != v:  # We're only sending changes (PATCH)
+                if type(current_v) is not type(v) or current_v != v:  # We're only sending changes (PATCH)
                     sub_content.update({k: v})
     if len(sub_content) > 0:
         obj = brcdapi_rest.send_request(session, _fc_ficon_cup, 'PATCH', dict(cup=sub_content), fid)
@@ -416,11 +426,11 @@ def _add_ports(session, chassis_obj, switch_d_l, echo):
     :type session: dict
     :param chassis_obj: Chassis object
     :type chassis_obj: brcddb.classes.chassis.ChassisObj
-    :param switch_d_l: List of switch object as returned from report_utils.parse_switch_file()
+    :param switch_d_l: Switch object as returned from report_utils.parse_switch_file()
     :type switch_d_l: list
     :param echo: If True, echo switch configuration details to STD_OUT
     :type echo: bool
-    :return: Ending status. See brcddb.common
+    :return: Ending status. See brcddb/common.py for more details.
     :rtype: int
     """
     ec = brcddb_common.EXIT_STATUS_OK
@@ -428,11 +438,11 @@ def _add_ports(session, chassis_obj, switch_d_l, echo):
     for switch_d in switch_d_l:
         fid = switch_d['switch_info']['fid']
 
-        # Figure out what FID all the port to move are in so they can be moved by groups for each FID
+        # Figure out what FID all the port to move are in so that they can be moved by groups for each FID
         from_fid_d = dict()
         for key in ('add_port_l', 'add_ge_port_l'):
             for port in switch_d[key]:
-                from_fid = brcddb_switch.switch_fid(chassis_obj.r_port_obj(port).r_switch_obj())
+                from_fid = chassis_obj.r_port_obj(port).r_switch_obj().r_fid()
                 fid_d = from_fid_d.get(from_fid)
                 if fid_d is None:
                     fid_d = dict(add_port_l=list(), add_ge_port_l=list())
@@ -441,20 +451,14 @@ def _add_ports(session, chassis_obj, switch_d_l, echo):
 
         # Add ports
         for from_fid, fid_d in from_fid_d.items():
-            obj = brcdapi_switch.add_ports(session,
-                                           fid,
-                                           from_fid,
-                                           i_ports=fid_d['add_port_l'],
-                                           i_ge_ports=fid_d['add_ge_port_l'],
-                                           echo=echo)
-            if fos_auth.is_error(obj):
-                buf = 'Error moving ports from FID ' + str(from_fid) + ' to ' + str(fid)
-                switch_d['err_msgs'].append(buf)
-                brcdapi_log.exception(['switch_d:',
-                                       pprint.pformat(switch_d),
-                                       buf,
-                                       fos_auth.formatted_error_msg(obj)],
-                                      echo=True)
+            switch_d['success_l'], switch_d['fault_l'] = brcdapi_switch.add_ports(session,
+                                                                                  fid,
+                                                                                  from_fid,
+                                                                                  ports=fid_d['add_port_l'],
+                                                                                  ge_ports=fid_d['add_ge_port_l'],
+                                                                                  echo=echo,
+                                                                                  best=True)
+            if len(switch_d['fault_l']) > 0:
                 ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
@@ -471,7 +475,7 @@ def _remove_ports(session, chassis_obj, switch_d_l, echo):
     :type switch_d_l: list
     :param echo: If True, echo switch configuration details to STD_OUT
     :type echo: bool
-    :return: Ending status. See brcddb.common
+    :return: Ending status. See brcddb/common.py for more details.
     :rtype: int
     """
     ec = brcddb_common.EXIT_STATUS_OK
@@ -484,15 +488,15 @@ def _remove_ports(session, chassis_obj, switch_d_l, echo):
         # Remove ports
         port_l = [p for p in switch_d['remove_port_l'] if switch_obj.r_port_obj(p) is not None]
         ge_port_l = [p for p in switch_d['remove_ge_port_l'] if switch_obj.r_port_obj(p) is not None]
-        obj = brcdapi_switch.add_ports(session, default_fid, fid, i_ports=port_l, i_ge_ports=ge_port_l, echo=echo)
-        if fos_auth.is_error(obj):
-            buf = 'Error moving ports from FID ' + str('fid') + ' to ' + str(default_fid)
-            switch_d['err_msgs'].append(buf)
-            brcdapi_log.exception(['switch_d:',
-                                   pprint.pformat(switch_d),
-                                   buf,
-                                   fos_auth.formatted_error_msg(obj)],
-                                  echo=True)
+        success_l, fault_l = brcdapi_switch.add_ports(session,
+                                                      default_fid,
+                                                      fid,
+                                                      ports=port_l,
+                                                      ge_ports=ge_port_l,
+                                                      echo=echo,
+                                                      best=True)
+        if len(fault_l) > 0:
+            switch_d['err_msgs'].append('Error moving ports from FID ' + str('fid') + ' to ' + str(default_fid))
             ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
@@ -509,7 +513,7 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
     :type switch_d_l: list
     :param echo: If True, echo switch configuration details to STD_OUT
     :type echo: bool
-    :return: Ending status. See brcddb.common
+    :return: Ending status. See brcddb/common.py for more details.
     :rtype: int
     """
     ec = brcddb_common.EXIT_STATUS_OK
@@ -525,8 +529,7 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
             if '0/' not in port:
                 break  # Port POD licenses only need to be reserved on fixed port switches
             port_obj = switch_obj.r_port_obj(port)
-            if port_obj is not None and \
-                    port_obj.r_get('') != 'running/'+brcdapi_util.bifc_pod != 'reserved':
+            if port_obj is not None and port_obj.r_get('') != 'running/'+brcdapi_util.bifc_pod != 'reserved':
                 # If the port doesn't exist in the chassis, it is reported in switch_d['not_found_port_l']. If the port
                 # was already in the logical switch it may not have been reserved.
                 port_l.append(port)
@@ -545,7 +548,14 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
         if switch_d['switch_info']['bind']:
             bind_d = dict()
             for port, d in port_d.items():
-                bind_d.update({port: '0x' + d['port_addr'] + '00'})
+                port_obj = switch_obj.r_port_obj(port)
+                if port_obj is None:
+                    continue  # There was an error moving the port which should have been reported elsewhere
+                bound_l = [a.lower() for a in
+                           gen_util.convert_to_list(port_obj.r_get('fibrechannel/bound-address-list/bound-address'))]
+                a = '0x' + d['port_addr'] + '00'
+                if a.lower() not in bound_l:  # FOS returns an error even if the bound address is the same so check
+                    bind_d.update({port: a})
             if len(bind_d) > 0:
                 obj = brcdapi_switch.bind_addresses(session, fid, bind_d, echo)
                 if fos_auth.is_error(obj):
@@ -589,7 +599,7 @@ def _enable_switch_and_ports(session, chassis_obj, switch_d_l, echo):
     :type switch_d_l: list
     :param echo: If True, echo switch configuration details to STD_OUT
     :type echo: bool
-    :return: Ending status. See brcddb.common
+    :return: Ending status. See brcddb/common.py for more details.
     :rtype: int
     """
     global _basic_capture_kpi_l, _PORT_ENABLE_WAIT
@@ -631,112 +641,55 @@ def _print_summary(chassis_obj, switch_d_list):
     :param switch_d_list: List of switch dictionaries
     :type switch_d_list: list
     """
+    port_errors = 0
     ml = ['', 'Summary', '_______', '']
     for switch_d in switch_d_list:
         switch_obj = chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid'])
         try:
+            port_errors += len(switch_d['fault_l'])
             ml.append('FID: ' + str(switch_d['switch_info']['fid']))
             ml.append('  Switch Name:             ' + brcddb_switch.best_switch_name(switch_obj, wwn=True))
-            ml.append('  Ports Added:             ' + str(len(switch_d['add_port_l'])))
+            ml.append('  Ports Added:             ' + str(len(switch_d['success_l'])))
             ml.append('  Ports Removed:           ' + str(len(switch_d['remove_port_l'])))
             ml.append('  Online Ports Not Moved:  ' + str(len(switch_d['online_port_l'])))
             ml.append('  Ports Not Found:         ' + str(len(switch_d['not_found_port_l'])))
             ml.append('  Ports Already in Switch: ' + str(len(switch_d['already_present_l'])))
+            ml.append('  Not moved due to errors: ' + str(len(switch_d['fault_l'])) + ': ' +
+                      ', '.join(switch_d['fault_l']))
             if len(switch_d['err_msgs']) > 0:
                 ml.append('  Error Messages:         ')
                 ml.extend(['    ' + buf for buf in switch_d['err_msgs']])
         except (AttributeError, KeyError):
             brcdapi_log.exception(['Malformed "switch_d":', pprint.pformat(switch_d)], echo=True)
+    if port_errors > 0:
+        ml.extend(['',
+                   'Failures moving ports are typically due to long distance settings which,',
+                   'as of FOS 9.1.1b, could not be cleared via the API. To fix this, manually',
+                   'set ports to the default with the portcfgdefault command.'])
     brcdapi_log.log(ml, echo=True)
 
 
-def _get_input():
-    """Retrieves the command line input, minimally validates the input, and sets up logging
-
-    :return args_ip: IP address
-    :rtype args_ip: str
-    :return args_id: User ID
-    :rtype args_id: str
-    :return args_pw: Password
-    :rtype args_pw: str
-    :return args_f: Name of output file
-    :rtype args_f: str
-    :return args_s: Type of HTTP security. Should be 'none' or 'self'
-    :rtype args_s: str
-    :return args_i: Name of switch configuratyion workbook
-    :rtype args_i: str
-    :return args_f: If True, move ports even if they are online
-    :rtype args_f: bool
-    :return args_echo: If True, echo switch configuration details to STD_OUT
-    :rtype args_echo: bool
-    """
-    global _DEBUG, _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_s, _DEBUG_i, _DEBUG_force, _DEBUG_sup, _DEBUG_echo,\
-        _DEBUG_d, _DEBUG_log, _DEBUG_nl
-
-    if _DEBUG:
-        args_ip, args_id, args_pw, args_s, args_i, args_force, args_sup, args_echo, args_d, args_log, args_nl = \
-            _DEBUG_ip, _DEBUG_id, _DEBUG_pw, _DEBUG_s, _DEBUG_i, _DEBUG_force, _DEBUG_sup, _DEBUG_echo, \
-            _DEBUG_d, _DEBUG_log, _DEBUG_nl
-    else:
-        buf = 'Reads a switch configuration workbook and configures each logical switch accordingly.'
-        parser = argparse.ArgumentParser(description=buf)
-        parser.add_argument('-ip', help='(Required) IP address', required=True)
-        parser.add_argument('-id', help='(Required) User ID', required=True)
-        parser.add_argument('-pw', help='(Required) Password', required=True)
-        buf = '(Optional) "self" for HTTPS mode. "none", for HTTP, is the default.'
-        parser.add_argument('-s', help=buf, required=False,)
-        parser.add_argument('-i', help='(Required) File name of Excel Workbook to read.', required=True)
-        buf = '(Optional) No parameters. If specified, move ports even if they are online.'
-        parser.add_argument('-force', help=buf, action='store_true', required=False)
-        buf = '(Optional) Suppress all library generated output to STD_IO except the exit code. Useful with batch ' \
-              'processing'
-        parser.add_argument('-sup', help=buf, action='store_true', required=False)
-        buf = '(Optional) Echoes activity detail to STD_OUT. Recommended because there are multiple operations that ' \
-              'can be very time consuming.'
-        parser.add_argument('-echo', help=buf, action='store_true', required=False)
-        parser.add_argument('-d', help='Enable debug logging', action='store_true', required=False)
-        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
-              'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-        parser.add_argument('-log', help=buf, required=False,)
-        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-        parser.add_argument('-nl', help=buf, action='store_true', required=False)
-        args = parser.parse_args()
-        args_ip, args_id, args_pw, args_s, args_i, args_force, args_sup, args_echo, args_d, args_log, args_nl = \
-            args.ip, args.id, args.pw, args.s, args.i, args.force, args.sup, args.echo, args.d, args.log, args.nl
-
-    # Set up the logging options
-    if args_sup:
-        brcdapi_log.set_suppress_all()
-    if not args_nl:
-        brcdapi_log.open_log(args_log)
-    if args_d:
-        brcdapi_rest.verbose_debug = True
-
-    # User feedback
-    ml = ['switch_config.py: ' + __version__,
-          'File, -i:         ' + args_i,
-          'IP address, -ip:  ' + brcdapi_util.mask_ip_addr(args_ip),
-          'ID, -id:          ' + str(args_id),
-          's, -s:            ' + str(args_s),
-          'force, -force     ' + str(args_force),
-          'echo, -echo       ' + str(args_echo)]
-    if _DEBUG:
-        ml.insert(0, 'WARNING!!! Debug is enabled')
-    brcdapi_log.log(ml, echo=True)
-
-    return args_ip, args_id, args_pw, args_s if args_s else 'none', brcdapi_file.full_file_name(args_i, '.xlsx'), \
-           args_force, args_echo
-
-
-def pseudo_main():
+def pseudo_main(ip, user_id, pw, sec, file, force, echo):
     """Basically the main().
 
+    :param ip: IP address
+    :type ip: str
+    :param user_id: User ID
+    :type user_id: str
+    :param pw: Password
+    :type pw: str
+    :param sec: Type of HTTP security. Should be 'none' or 'self'
+    :type sec: str
+    :param file: Name of switch configuration workbook
+    :type file: str
+    :param force: If True, move ports even if they are online
+    :type force: bool
+    :param echo: If True, echo switch configuration details to STD_OUT
+    :type echo: bool
     :return: Exit code
     :rtype: int
     """
-    # Get and validate command line input.
-    ec_l = [brcddb_common.EXIT_STATUS_OK]
-    ip, user_id, pw, sec, file, force, echo = _get_input()
+    ec, ec_l, switch_d, chassis_obj = brcddb_common.EXIT_STATUS_OK, [brcddb_common.EXIT_STATUS_OK], None, None
 
     # Read in the switch configuration Workbook
     brcdapi_log.log('Reading ' + file, echo=True)
@@ -758,12 +711,11 @@ def pseudo_main():
     proj_obj.s_description('Creating logical switches from ' + os.path.basename(__file__))
 
     # Login
-    session = api_int.login(user_id, pw, ip, sec, proj_obj)
+    session = api_int.login(user_id, pw, ip, https=sec, proj_obj=proj_obj)
     if fos_auth.is_error(session):  # Errors are sent to the log in api_int.login()
         return brcddb_common.EXIT_STATUS_API_ERROR
 
     try:
-
         # Read some basic chassis information. Primarily to see if defined switches and ports already exist
         api_int.get_batch(session, proj_obj, _basic_capture_kpi_l, None)
         if proj_obj.r_is_any_error():  # Error details are logged in api_int.get_batch()
@@ -785,6 +737,7 @@ def pseudo_main():
         # Configure the switches and fabric parameters
         for method in (_fiberchannel_switch, _switch_config, _ficon_config):
             for switch_d in switch_d_list:
+
                 switch_obj = chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid'])
                 if switch_obj is not None:  # Alert was posted during switch creation time if the switch wasn't created
                     ec_l.append(method(session, switch_obj, switch_d, echo))
@@ -815,11 +768,10 @@ def pseudo_main():
             ec_l.append(method(session, chassis_obj, switch_d_list, echo))
 
     except BaseException as e:
-        buf = 'Programming error encountered. Exception: '
-        buf += str(e, errors='ignore') if isinstance(e, (bytes, str)) else str(type(e))
+        buf_l = ['Programming error encountered.', str(type(e)) + ': ' + str(e)]
         if isinstance(switch_d, dict):
-            switch_d['err_msgs'].append(buf)
-        brcdapi_log.log(buf, echo=True)
+            switch_d['err_msgs'].extend(buf_l)
+        brcdapi_log.log(buf_l, echo=True)
         ec_l.append(brcddb_common.EXIT_STATUS_ERROR)
 
     # Logout and display a summary report
@@ -838,6 +790,44 @@ def pseudo_main():
     return ec
 
 
+def _get_input():
+    """Retrieves the command line input, minimally validates the input, and sets up logging
+
+    :return: Exit code
+    :rtype: int
+    """
+    global __version__, _input_d
+
+    # Get command line input
+    buf = 'Reads a switch configuration workbook and configures each logical switch accordingly.'
+    args_d = gen_util.get_input(buf, _input_d)
+
+    # Set up logging
+    if args_d['d']:
+        brcdapi_rest.verbose_debug(True)
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+
+    # Command line feedback
+    ml = [
+        'switch_config.py: ' + __version__,
+        'IP address, -ip:  ' + brcdapi_util.mask_ip_addr(args_d['ip']),
+        'ID, -id:          ' + str(args_d['id']),
+        's, -s:            ' + str(args_d['s']),
+        'Workbook, -i:     ' + args_d['i'],
+        'force, -force     ' + str(args_d['force']),
+        'echo, -echo       ' + str(args_d['echo']),
+        'Log, -log:        ' + str(args_d['log']),
+        'No log, -nl:      ' + str(args_d['nl']),
+        'Debug, -d:        ' + str(args_d['d']),
+        'Supress, -sup:    ' + str(args_d['sup']),
+        '',
+    ]
+    brcdapi_log.log(ml, echo=True)
+
+    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'],
+                       brcdapi_file.full_file_name(args_d['i'], '.xlsx'), args_d['force'], args_d['echo'])
+
+
 ###################################################################
 #
 #                    Main Entry Point
@@ -845,8 +835,9 @@ def pseudo_main():
 ###################################################################
 if _DOC_STRING:
     print('_DOC_STRING is True. No processing')
-    exit(brcddb_common.EXIT_STATUS_OK)
+    exit(0)
 
-_ec = pseudo_main()
-brcdapi_log.close_log('Processing complete. Exit status: ' + str(_ec))
-exit(_ec)
+if _STAND_ALONE:
+    _ec = _get_input()
+    brcdapi_log.close_log(['', 'Processing Complete. Exit code: ' + str(_ec)], echo=True)
+    exit(_ec)
