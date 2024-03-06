@@ -3,7 +3,7 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
-**Updates 6 March 2024
+**Updates 6 March 2024**
 
 * Added restore.py
 * Improved error messaging
