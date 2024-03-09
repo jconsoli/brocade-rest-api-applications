@@ -86,16 +86,18 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 06 Mar 2024   | Initial Launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.1     | 09 Mar 2024   | Added tip for -scan option. Fixed errors when target switch does not exist.       |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '06 Mar 2024'
+__date__ = '09 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.1'
 
 import collections
 import pprint
@@ -125,10 +127,10 @@ import brcddb.util.maps as util_maps
 import brcddb.util.compare as brcddb_compare
 
 # debug input (for copy and paste into Run->Edit Configurations->script parameters):
-# -ip 10.144.72.15 -id admin -pw AdminPassw0rd! -s self -i _capture_2024_01_12_06_30_39/combined -log _logs
+# -ip 10.144.72.15 -id admin -pw AdminPassw0rd! -s self -i _capture_2024_01_12_06_30_39/combined -p * -log _logs
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = True   # When True, prints status to the log and console
+_DEBUG = False   # When True, prints status to the log and console
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
@@ -152,8 +154,10 @@ _input_d.update(
                'restore the chassis are created in this file. No attempts are made to make changes via the API. Future '
                'consideration. This feature is not yet supported.'),
     scan=dict(r=False, d=False, t='bool',
-              h='Optional. No parameters. Extended Help. When specified, additional help detail is displayed. No other '
-                'processing is performed.'),
+              h='Optional. No parameters. Displays a list of all chassis by name and WWN. Also includes a list of each'
+                'logical switch in each chassis by name, WWN, FID, and DID. No other processing is performed. TIP: '
+                'Instead of using -scan, run restore_all.py to generate a batch file to restore all chassis. Copy, '
+                'paste, an edit as needed.'),
     eh=dict(r=False, d=False, t='bool',
             h='Optional. No parameters. When specified, additional help is displayed. No other processing is '
               'performed'),
@@ -236,7 +240,7 @@ _eh = [
     dict(b=('', 'The typical use for this module is to modify a chassis for:', '')),
     dict(b=('A service action replacement', 'An upgrade', 'Reallocation of a SAN resource', 'Template',), p='  * '),
     dict(b=('It may be useful to configure chassis and switches to use as a template and make further modifications '
-           'via other modules.', 'The most common use as a template is to distribute MAPS policies'), p='      - '),
+            'via other modules.', 'The most common use as a template is to distribute MAPS policies'), p='      - '),
     dict(b=('', 'Nomenclature:', '')),
     dict(b='Refers to the reference chassis (chassis being restored from).', p='Restore  '),
     dict(b=''),
@@ -644,6 +648,7 @@ def _vf_enable(cd, d):
 def _restore_switches(cd, d):
     """Re-creates logical switches. See _data_capture() for parameter definitions"""
     el = list()
+
     try:
         for t_fid, fm_d in cd['fid_map_d'].items():
             if cd['t_chassis_obj'].r_switch_obj_for_fid(t_fid) is None:
@@ -656,7 +661,7 @@ def _restore_switches(cd, d):
                                                    r_switch_obj.r_is_ficon(),
                                                    echo=True)
                 if fos_auth.is_error(obj):
-                    el.extend(['Error creating ' + switch_name + ' ' + fm_d['e'], fos_auth.formatted_error_msg(obj)])
+                    el.extend(['Error creating ' + switch_name + ', ' + d['e'], fos_auth.formatted_error_msg(obj)])
                 else:
                     _switch_summary(cd, switch_name)['Added'] = True
 
@@ -669,10 +674,10 @@ def _restore_switches(cd, d):
                 if fos_auth.is_error(obj):
                     buf = 'Error setting Domain ID, ' + str(fm_d['t_did']) + ' and switch name ' + switch_name +\
                           fm_d['t_switch_name'] + ' for FID ' + str(t_fid)
-                    el.extend([buf, fm_d['e'] + ': FOS error is:', fos_auth.formatted_error_msg(obj)])
+                    el.extend([buf, d['e'] + ': FOS error is:', fos_auth.formatted_error_msg(obj)])
 
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, cd], full=True))
+        brcdapi_log.exception(_fmt_errors(['Exception:', e, 'Parameter d:', d], full=True))
         el.append('Software error. Check the log for details')
 
     return el
@@ -685,6 +690,9 @@ def _restore_ports(cd, d):
         for t_fid, fm_d in cd['fid_map_d'].items():
             r_switch_obj = fm_d['r_switch_obj']
             t_switch_obj = t_chassis_obj.r_switch_obj_for_fid(t_fid)
+            if t_switch_obj is None:
+                el.append('Could not restore ports. FID ' + str(t_fid) + ' does not exist')
+                continue
             switch_name = fm_d['t_switch_name'] + ' FID: ' + str(t_fid)
 
             # Figure out where the ports are to add. If vfc wasn't specified, they might not be in the default switch
@@ -855,6 +863,9 @@ def _zone_enable(cd, d):
     el, t_chassis_obj, control_d = list(), cd['t_chassis_obj'], dict(_effective_zone_cfg=dict(skip=True))
     for t_fid, fm_d in cd['fid_map_d'].items():
         r_switch_obj, t_switch_obj = fm_d['r_switch_obj'], t_chassis_obj.r_switch_obj_for_fid(t_fid)
+        if t_switch_obj is None:
+            el.append('Could not enable zone configuration. FID ' + str(t_fid) + ' does not exist')
+            continue
 
         # Make sure the switch exists in both chassis
         if r_switch_obj is None or t_switch_obj is None:
@@ -923,6 +934,9 @@ def _switch_update_act(cd, d):
 
     for t_fid, fm_d in cd['fid_map_d'].items():
         t_switch_obj = cd['t_chassis_obj'].r_switch_obj_for_fid(t_fid)
+        if t_switch_obj is None:
+            el.append('Could not update switch configuration. FID ' + str(t_fid) + ' does not exist')
+            continue
         r_switch_obj = cd['fid_map_d'][t_fid]['r_switch_obj']
         try:
             key, rw_d = d['k'], d['rw']
@@ -1056,6 +1070,9 @@ def _port_update_act(cd, d):
         rw_d, key = d['rw'], d['k'].replace('brocade-interface/', '')
         for t_fid, fm_d in cd['fid_map_d'].items():
             t_switch_obj = cd['t_chassis_obj'].r_switch_obj_for_fid(t_fid)
+            if t_switch_obj is None:
+                el.append('Could not update port configurations. FID ' + str(t_fid) + ' does not exist')
+                continue
             r_switch_obj = cd['fid_map_d'][t_fid]['r_switch_obj']
 
             # Update the ports
@@ -1110,6 +1127,9 @@ def _port_cli_update_act(cd, d):
     for t_fid, fm_d in cd['fid_map_d'].items():
         cli_l = list()
         t_switch_obj = cd['t_chassis_obj'].r_switch_obj_for_fid(t_fid)
+        if t_switch_obj is None:
+            el.append('Could not update port configurations. FID ' + str(t_fid) + ' does not exist')
+            continue
         for r_port_obj in cd['fid_map_d'][t_fid]['r_switch_obj'].r_port_objects():
             cli_l.extend(_port_config_cli(el, r_port_obj, t_switch_obj.r_port_obj(r_port_obj.r_obj_key())))
 

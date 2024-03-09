@@ -33,18 +33,18 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | 06 Mar 2024   | Updated versions references.                                                      |
+    | 4.0.2     | 09 Mar 2024   | Updated versions references.                                                      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Mar 2024'
+__date__ = '09 Mar 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.1'
+__version__ = '4.0.2'
 
 import sys
 import os
@@ -118,7 +118,7 @@ _imports = (
     {'l': 'brcddb.brcddb_bp', 'd': 'Required for the report.py application', 'r': '4.0.1'},
     {'l': 'brcddb.brcddb_chassis', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.brcddb_common', 'd': 'Required for most applications and brcddb libraries', 'r': '4.0.1'},
-    {'l': 'brcddb.brcddb_fabric', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
+    {'l': 'brcddb.brcddb_fabric', 'd': 'Required for most brcddb libraries', 'r': '4.0.2'},
     {'l': 'brcddb.brcddb_login', 'd': 'Required for most applications', 'r': '4.0.1'},
     {'l': 'brcddb.brcddb_port', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.brcddb_project', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
