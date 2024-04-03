@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,15 +16,11 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`lib_check.py` - Validates the Python development environment by checking the Python version and import path.
-Also Checks to ensure that all imported libraries required the modules in brcdapi and brcddb are in the Python path.
+**Description**
 
-Intended as a tool to validate the supported version of Python and proper installation of libraries used for:
+Validates the Python development environment by checking the Python version and import path. Also Checks to ensure that
+all imported libraries required the modules in brcdapi and brcddb are in the Python path.
 
-* brcdapi
-* brcddb
-* api_examples
-* applications
 
 For a generic but more detailed library validation report, use lib_validate.py
 
@@ -33,18 +31,18 @@ Version Control::
     +===========+===============+===================================================================================+
     | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.2     | 09 Mar 2024   | Updated versions references.                                                      |
+    | 4.0.3     | 03 Apr 2024   | Updated versions references.                                                      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '09 Mar 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import sys
 import os
@@ -99,11 +97,11 @@ _imports = (
     {'d': ''},
     {'l': 'brcdapi.fos_auth', 'd': 'Required by brcdapi.brcdapi_rest.', 'r': '4.0.1'},
     {'l': 'brcdapi.brcdapi_rest', 'd': 'FOS RESTConf API driver.', 'r': '4.0.1'},
-    {'l': 'brcdapi.excel_util', 'd': 'Required by modules that read or write Excel workbooks', 'r': '4.0.1'},
+    {'l': 'brcdapi.excel_util', 'd': 'Required by modules that read or write Excel workbooks', 'r': '4.0.2'},
     {'l': 'brcdapi.excel_fonts', 'd': 'Required by modules that read or write Excel workbooks', 'r': '4.0.1'},
-    {'l': 'brcdapi.file', 'd': 'Required by modules that perform file I/O.', 'r': '4.0.1'},
-    {'l': 'brcdapi.gen_util', 'd': 'Required by most scripts.', 'r': '4.0.1'},
-    {'l': 'brcdapi.log', 'd': 'Required by all scripts.', 'r': '4.0.1'},
+    {'l': 'brcdapi.file', 'd': 'Required by modules that perform file I/O.', 'r': '4.0.2'},
+    {'l': 'brcdapi.gen_util', 'd': 'Required by most scripts.', 'r': '4.0.2'},
+    {'l': 'brcdapi.log', 'd': 'Required by all scripts.', 'r': '4.0.2'},
     {'l': 'brcdapi.port', 'd': 'Required for reading and configuring ports.', 'r': '4.0.1'},
     {'l': 'brcdapi.switch', 'd': 'Required for reading and configuring switches.', 'r': '4.0.1'},
     {'l': 'brcdapi.util', 'd': 'Utilities supporting the FOS RESTConf API driver.', 'r': '4.0.1'},
@@ -112,13 +110,13 @@ _imports = (
     {'d': 'FOS API database libraries from github/jconsoli - brcddb'},
     {'d': ''},
     {'l': 'brcddb.api.interface', 'd': 'Required for all access to the API', 'r': '4.0.1'},
-    {'l': 'brcddb.api.zone', 'd': 'Required for zoning applications', 'r': '4.0.1'},
+    {'l': 'brcddb.api.zone', 'd': 'Required for zoning applications', 'r': '4.0.2'},
     {'l': 'brcddb.apps.report', 'd': 'Required for the report.py application', 'r': '4.0.1'},
     {'l': 'brcddb.apps.zone', 'd': 'Required for the cli_zone.py application', 'r': '4.0.1'},
     {'l': 'brcddb.brcddb_bp', 'd': 'Required for the report.py application', 'r': '4.0.1'},
     {'l': 'brcddb.brcddb_chassis', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.brcddb_common', 'd': 'Required for most applications and brcddb libraries', 'r': '4.0.1'},
-    {'l': 'brcddb.brcddb_fabric', 'd': 'Required for most brcddb libraries', 'r': '4.0.2'},
+    {'l': 'brcddb.brcddb_fabric', 'd': 'Required for most brcddb libraries', 'r': '4.0.3'},
     {'l': 'brcddb.brcddb_login', 'd': 'Required for most applications', 'r': '4.0.1'},
     {'l': 'brcddb.brcddb_port', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.brcddb_project', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
@@ -133,15 +131,15 @@ _imports = (
     {'l': 'brcddb.classes.project', 'd': 'Required for all brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.classes.switch', 'd': 'Required for all brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.classes.util', 'd': 'Required for all brcddb libraries', 'r': '4.0.1'},
-    {'l': 'brcddb.classes.zone', 'd': 'Required for all brcddb libraries', 'r': '4.0.1'},
+    {'l': 'brcddb.classes.zone', 'd': 'Required for all brcddb libraries', 'r': '4.0.2'},
     {'l': 'brcddb.util.copy', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.util.compare', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.util.iocp', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.util.maps', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.util.obj_convert', 'd': 'Required for search.py application', 'r': '4.0.1'},
-    {'l': 'brcddb.util.parse_cli', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
-    {'l': 'brcddb.util.search', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
-    {'l': 'brcddb.util.util', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
+    {'l': 'brcddb.util.parse_cli', 'd': 'Required for most brcddb libraries', 'r': '4.0.2'},
+    {'l': 'brcddb.util.search', 'd': 'Required for most brcddb libraries', 'r': '4.0.2'},
+    {'l': 'brcddb.util.util', 'd': 'Required for most brcddb libraries', 'r': '4.0.2'},
     {'l': 'brcddb.report.bp', 'd': 'Required for generating Excel reports', 'r': '4.0.1'},
     {'l': 'brcddb.report.chassis', 'd': 'Required for generating Excel reports', 'r': '4.0.1'},
     {'l': 'brcddb.report.fabric', 'd': 'Required for generating Excel reports', 'r': '4.0.1'},
@@ -155,7 +153,7 @@ _imports = (
     {'l': 'brcddb.app_data.alert_tables', 'd': 'Alert format tables. Required for best practice analysis.',
      'r': '4.0.1'},
     {'l': 'brcddb.app_data.report_tables', 'd': 'Required for controlling the formats when generating Excel reports',
-     'r': '4.0.1'},
+     'r': '4.0.2'},
     {'d': ''},
     {'d': 'FOS API driver libraries from github/jconsoli, brcdapi, required for SANnav scripts.'},
     {'d': ''},
@@ -207,9 +205,7 @@ def pseudo_main():
     # Display the lib path
     print('\nPython library path(s):\n  * ' + '\n  * '.join(lib_paths))
 
-    summary_updates = list()
-    summary_missing = list()
-    modules = dict()
+    summary_updates, summary_missing, modules = list(), list(), dict()
     modules['Module'] = {'v': 'Version', 'i': 'Status', 'r': 'Rec Ver'}
     for d in _imports:
         lib = d.get('l')
@@ -227,7 +223,7 @@ def pseudo_main():
                         buf = 'Update'
                         summary_updates.append(lib)
                 else:
-                    buf = buf = 'Success'
+                    buf = 'Success'
                 modules[lib] = {'v': ver, 'i': buf}
             except ModuleNotFoundError:
                 modules[lib] = {'v': '', 'i': 'Failed'}
