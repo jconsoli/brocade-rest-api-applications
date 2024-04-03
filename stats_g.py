@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,13 +16,13 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`stats_g` - Add statistics to Excel Workbook
+**Description**
 
-**Overview**
+Add statistics to Excel Workbook
 
 Reads in the output of stats_c (which collects port statistics) and creates an Excel Workbook for each port.
 
-Version Control::
+**Version Control**
 
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
@@ -29,16 +31,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 4.0.1     | 06 Mar 2024   | Documentation updates only.                                                       |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Mar 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.1'
+__version__ = '4.0.2'
 
 import sys
 import os
@@ -60,6 +63,23 @@ import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.util.search as brcddb_search
 import brcddb.report.graph as report_graph
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    excel_util=excel_util.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcddb_project=brcddb_project.__version__,
+    brcddb_util=brcddb_util.__version__,
+    brcddb_common=brcddb_common.__version__,
+    report_utils=report_utils.__version__,
+    rt=rt.__version__,
+    report_port=report_port.__version__,
+    brcddb_copy=brcddb_copy.__version__,
+    brcddb_port=brcddb_port.__version__,
+    brcddb_fabric=brcddb_fabric.__version__,
+    brcddb_search=brcddb_search.__version__,
+    report_graph=report_graph.__version__,
+)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -680,7 +700,7 @@ def _get_input():
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d
+    global __version__, _input_d, _version_d
 
     # Get command line input
     buf = 'Create Excel Workbook from statistics gathered with stats_c.py. WARNING: Graphing parameters are not yet '\
@@ -689,7 +709,7 @@ def _get_input():
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Command line feedback
     ml = [

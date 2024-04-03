@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,28 +16,33 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`zone_restore` - Sets the zone configuration DB to that of a previously captured zone DB
+**Description**
 
-Version Control::
+Sets the zone configuration DB to that of a previously captured zone DB
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | xx xxx 2024   | Removed deprecated parameter in enable_zonecfg()                                  |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
+**Version Control**
+
++-----------+---------------+-----------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                       |
++===========+===============+===================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
++-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Removed deprecated parameter in enable_zonecfg()                                  |
++-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries. Fixed user ID.                       |
++-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = 'xx xxx 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Development'
-__version__ = '4.0.1'
+__status__ = 'Released'
+__version__ = '4.0.2'
 
-import argparse
+import signal
+import os
 import brcdapi.gen_util as gen_util
 import brcdapi.log as brcdapi_log
 import brcdapi.fos_auth as fos_auth
@@ -48,6 +55,20 @@ import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
 
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    brcdapi_rest=brcdapi_rest.__version__,
+    fos_auth=fos_auth.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcdapi_util=brcdapi_util.__version__,
+    brcddb_project=brcddb_project.__version__,
+    brcddb_common=brcddb_common.__version__,
+    brcddb_fabric=brcddb_fabric.__version__,
+    api_int=api_int.__version__,
+    api_zone=api_zone.__version__,
+)
+
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
@@ -55,9 +76,9 @@ _STAND_ALONE = True  # See note above
 
 _input_d = gen_util.parseargs_login_false_d.copy()
 _input_d.update(
-    fid=dict(r=False, t='int', v=gen_util.range_to_list('1-128'),
-             h='Optional with -scan. Otherwise, required. Fabric ID of logical switch whose DB is be restored from the '
-               'fabric specified with the -wwn parameter.'),
+    fid=dict(t='int', v=gen_util.range_to_list('1-128'),
+             h='Required. Ignored with scan but must be a valid FID, 1-128. Fabric ID of logical switch whose DB is '
+               'be restored from the fabric specified with the -wwn parameter.'),
     i=dict(h='Required. Captured data file from the output of capture.py, combine.py, or multi_capture.py.'),
     wwn=dict(r=False,
              h='Optional with -scan. Otherwise, required. Fabric WWN whose zone DB is to be read and set in the fabric '
@@ -302,7 +323,7 @@ def pseudo_main(ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, cli_
     try:
         # Make the zoning change
         brcdapi_log.log('Sending zone updates to FID ' + str(fid), echo=True)
-        obj = api_zone.replace_zoning(session, fab_obj, fid)
+        obj = api_zone.replace_zoning(session, fab_obj, fid, fab_obj.r_defined_eff_zonecfg_key())
         if fos_auth.is_error(obj):
             brcdapi_log.log(fos_auth.formatted_error_msg(obj), echo=True)
         else:
@@ -313,6 +334,8 @@ def pseudo_main(ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, cli_
             brcdapi_log.log('Enabling zone configuration ' + zone_cfg + ', fid: ' + str(fid), echo=True)
             api_zone.enable_zonecfg(session, fid, zone_cfg)
 
+    except FileNotFoundError:
+        pass
     except BaseException as e:
         brcdapi_log.log(['', 'Software error.', str(type(e)) + ': ' + str(e)], echo=True)
 
@@ -330,7 +353,7 @@ def _get_input():
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _required_input
+    global __version__, _input_d, _required_input, _version_d
 
     # Initialize the return variables
     ec, el = brcddb_common.EXIT_STATUS_OK, list()
@@ -343,7 +366,7 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Validate the input
     args_fid_help = ''
@@ -355,7 +378,7 @@ def _get_input():
                 el.append('Missing ' + key)
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    ml = ['zone_restore.py version: ' + __version__,
+    ml = [os.path.basename(__file__) + ', ' + __version__,
           'IP address, -ip:         ' + brcdapi_util.mask_ip_addr(args_d['ip']),
           'ID, -id:                 ' + str(args_d['id']),
           'HTTPS, -s:               ' + str(args_d['s']),
@@ -381,8 +404,10 @@ def _get_input():
     cfile = brcdapi_file.full_file_name(args_d['i'], '.json')
     cli_file = brcdapi_file.full_file_name(args_d['cli'], '.txt')
 
+    signal.signal(signal.SIGINT, brcdapi_rest.control_c)
+
     return ec if ec != brcddb_common.EXIT_STATUS_OK else \
-        pseudo_main(args_d['ip'], args_d['ip'], args_d['pw'], args_d['s'], args_d['scan'], args_d['fid'], cfile,
+        pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'], args_d['scan'], args_d['fid'], cfile,
                     args_d['wwn'], args_d['a'], cli_file)
 
 

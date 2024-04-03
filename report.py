@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,30 +16,34 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`report` - Creates a report in Excel Workbook format from a brcddb project
+**Description**
 
-Version Control::
+Creates a report in Excel Workbook format from a brcddb project
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | 06 Mar 2024   | Improved error messaging.                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.2     | 09 Mar 2024   | Addd input parameters to the project object                                       |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
+**Version Control**
+
++-----------+---------------+-----------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                       |
++===========+===============+===================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
++-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Improved error messaging.                                                         |
++-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.2     | 09 Mar 2024   | Addd input parameters to the project object                                       |
++-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.3     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
++-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '09 Mar 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
+import os
 import brcdapi.log as brcdapi_log
 import brcdapi.file as brcdapi_file
 import brcdapi.excel_util as excel_util
@@ -53,6 +59,23 @@ import brcddb.util.iocp as brcddb_iocp
 import brcddb.util.obj_convert as brcddb_conv
 import brcddb.brcddb_port as brcddb_port
 import brcddb.util.search as brcddb_search
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcddb_common=brcddb_common.__version__,
+    excel_util=excel_util.__version__,
+    brcdapi_port=brcdapi_port.__version__,
+    brcddb_project=brcddb_project.__version__,
+    brcddb_report=brcddb_report.__version__,
+    zone_report=zone_report.__version__,
+    brcddb_bp=brcddb_bp.__version__,
+    al=al.__version__,
+    brcddb_iocp=brcddb_iocp.__version__,
+    brcddb_conv=brcddb_conv.__version__,
+    brcddb_port=brcddb_port.__version__,
+    brcddb_search=brcddb_search.__version__,
+)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -301,16 +324,16 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d
+    global __version__, _input_d, _version_d
 
     # Get command line input
     args_d = gen_util.get_input('Creates a general report in Excel ', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Command line feedback
-    ml = ['report.py:            ' + __version__,
+    ml = [os.path.basename(__file__) + ', ' + __version__,
           'In file, -i:          ' + args_d['i'],
           'Out file, -o:         ' + args_d['o'],
           'SFP rules file, -sfp: ' + str(args_d['sfp']),
@@ -334,13 +357,13 @@ def _get_input():
     # Read the project file, -i
     try:
         proj_obj = brcddb_project.read_from(in_file)
+        if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
+            return brcddb_common.EXIT_STATUS_INPUT_ERROR
     except FileNotFoundError:
         brcdapi_log.log('Input file, ' + in_file + ', not found', echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     except FileExistsError:
         brcdapi_log.log('Folder in ' + in_file + ' does not exist', echo=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     proj_obj.s_description('\n'.join(ml))
 

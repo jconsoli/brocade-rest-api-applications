@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,7 +16,9 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`multi_capture` - Captures all switch data from a list and generates a report.
+**Description**
+
+Captures all switch data from a list and generates a report.
 
 This is effectively an intelligent batch file that does the following:
 
@@ -23,7 +27,7 @@ This is effectively an intelligent batch file that does the following:
     * Start combine.py once the data capture completes
     * Start report.py once the combine completes
 
-Version Control::
+**Version Control**
 
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
@@ -32,28 +36,38 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 4.0.1     | 06 Mar 2024   | Added port stats clear, -clr, maps_report, and comparison report                  |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Mar 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.1'
+__version__ = '4.0.2'
 
 import signal
 import datetime
 import os
 import subprocess
 import brcdapi.log as brcdapi_log
-import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.gen_util as gen_util
+import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.util as brcdapi_util
 import brcdapi.excel_util as excel_util
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    brcdapi_util=brcdapi_util.__version__,
+    brcdapi_rest=brcdapi_rest.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcddb_common=brcddb_common.__version__,
+    excel_util=excel_util.__version__,
+)
 
 # debug input (for copy and paste into Run->Edit Configurations->script parameters):
 # -i multi_capture_gsh -bp bp -sfp sfp_rules_r12 -r -c * -nm -log _logs
@@ -244,7 +258,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d
+    global __version__, _input_d, _version_d
 
     addl_parms_capture, addl_parms_report, addl_parms_all = list(), list(), list()
 
@@ -252,7 +266,7 @@ def _get_input():
     args_d = gen_util.get_input('Capture (GET) requests from a chassis', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
     if args_d['log'] is not None:
         addl_parms_all.extend(['-log', args_d['log']])
     for k in ('sup', 'nl'):
@@ -292,7 +306,7 @@ def _get_input():
     # User feedback
     buf = '(Default) ' if args_d['f'] is None else ''
     ml = [
-        'multi_capture.py version: ' + __version__,
+        os.path.basename(__file__) + ', ' + __version__,
         'Input file, -i:           ' + args_d['i'],
         'Output folder, -f:        ' + buf + folder,
         'SFP, -sfp:                ' + str(args_d['sfp']),

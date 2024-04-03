@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,9 +16,9 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`stats_c` - Collects port statistics at a user specified interval
+**Description**
 
-**Overview**
+Collects port statistics at a user specified interval
 
 Initially collects switch and name server information plus the first sample. This is done to make it so that ports can
 be associated with what is logged in. From thereafter, only port statistics are gathered. All data collected from the
@@ -43,28 +45,30 @@ Excel Workbook
 Control-C is supported so data collection can be terminated without incident prior to the maximum number of samples
 being collected.
 
-Version Control::
+**Version Control**
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | 06 Mar 2024   | Set verbose debug via brcdapi.brcdapi_rest.verbose_debug()                        |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+-----------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                       |
++===========+===============+===================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
++-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Set verbose debug via brcdapi.brcdapi_rest.verbose_debug()                        |
++-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
++-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Mar 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.1'
+__version__ = '4.0.2'
 
 import http.client
 import sys
+import os
 import signal
 import time
 import datetime
@@ -79,6 +83,18 @@ import brcddb.brcddb_common as brcddb_common
 import brcddb.util.copy as brcddb_copy
 import brcddb.api.interface as brcddb_int
 import brcddb.classes.util as class_util
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    fos_auth=fos_auth.__version__,
+    brcdapi_rest=brcdapi_rest.__version__,
+    brcddb_project=brcddb_project.__version__,
+    brcddb_common=brcddb_common.__version__,
+    brcddb_copy=brcddb_copy.__version__,
+    brcddb_int=brcddb_int.__version__,
+    class_util=class_util.__version__,
+)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -348,7 +364,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _MIN_POLL, _MIN_SAMPLES
+    global __version__, _input_d, _MIN_POLL, _MIN_SAMPLES, _version_d
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -362,7 +378,7 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Is the poll interval valid?
     args_p_help = ''
@@ -388,7 +404,7 @@ def _get_input():
 
     # Command line feedback
     ml = [
-        'stats_c.py version: ' + __version__,
+        os.path.basename(__file__) + ', ' + __version__,
         'IP Address, -ip:    ' + brcdapi_util.mask_ip_addr(args_d['ip']),
         'User ID, -id:       ' + args_d['id'],
         'FID:                ' + str(args_d['fid']),

@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,9 +16,9 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`cli_zone` - Reads a list of CLI commands from a file and converts those commands to an equivalent brcddb object
+**Description**
 
-**Overview**
+Reads a list of CLI commands from a file and converts those commands to an equivalent brcddb object
 
 Using the API as a replacement for an SSH CLI session isn't useful; however, since there are numerous CLI zoning
 scripts, this was a useful tool to test brcddb.apps.zone.py. This module was posted for those familiar with the CLI to
@@ -28,7 +30,7 @@ use as an example with the following caveats and features:
     * Processes made up command, zonecleanup, which was used to test the zone cleanup feature of brcddb.apps.zone.py
     * Unsupported commands: zoneobjectexpunge, zoneobjectrename, zoneobjectreplace, defzone
 
-Version Control::
+**Version Control**
 
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
@@ -37,24 +39,37 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 4.0.1     | 06 Mar 2024   | Improved error messaging.                                                         |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.2     | xx xxx 2024   | Added version numbers of imported libraries.                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Mar 2024'
+__date__ = 'xx xxx 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.1'
+__version__ = '4.0.2'
 
+import os
 import brcdapi.log as brcdapi_log
-import brcdapi.brcdapi_rest as brcdapi_rest
-import brcdapi.util as brcdapi_util
 import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
+import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
-import brcddb.apps.zone as brcddb_zone
+import brcddb.apps.zone as action_c
 import brcddb.util.util as brcddb_util
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    brcdapi_util=brcdapi_util.__version__,
+    brcdapi_rest=brcdapi_rest.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcddb_common=brcddb_common.__version__,
+    action_c=action_c.__version__,
+    brcddb_util=brcddb_util.__version__,
+)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 
@@ -81,7 +96,7 @@ _input_d.update(gen_util.parseargs_debug_d.copy())
 def _format_fault(obj, line_num, file_content):
     """Formats a fault into printable text
 
-    :param obj: Dictionary as defined in return from brcddb_zone.send_zoning()
+    :param obj: Dictionary as defined in return from action_c.send_zoning()
     :type obj: dict
     :param line_num: Line number
     :type line_num: int
@@ -152,7 +167,7 @@ def pseudo_main(ip, user_id, pw, sec, cli_file, fid, t_flag, f_flag):
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     content.update(changes=brcddb_util.parse_cli(file_contents))
-    response = brcddb_zone.send_zoning(content)
+    response = action_c.send_zoning(content)
 
     # General information
     ec = brcddb_common.EXIT_STATUS_OK
@@ -188,7 +203,7 @@ def _get_input():
     :return ec: Error code
     :rtype ec: int
     """
-    global __version__, _input_d
+    global __version__, _input_d, _version_d
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -202,7 +217,7 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # If not in test mode, were the switch parameters entered?
     help_msg_d = dict(ip='', id='', pw='')
@@ -212,21 +227,15 @@ def _get_input():
                 help_msg_d[k] = ' Required parameters when -t is not specified.'
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    # Is the FID valid?
-    args_fid_l = gen_util.range_to_list(args_d['fid']) if isinstance(args_d['fid'], str) else None
-    args_fid_help = brcdapi_util.validate_fid(args_fid_l)
-    if len(args_fid_help) > 0:
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-
     # Command line feedback
     ip_help_msg = 'None' if args_d['ip'] is None else brcdapi_util.mask_ip_addr(args_d['ip'], keep_last=True)
     ml = [
-        'cli_zone.py:   ' + __version__,
+        os.path.basename(__file__) + ', ' + __version__,
         'IP, -ip:       ' + ip_help_msg + help_msg_d['ip'],
         'ID, -id:       ' + str(args_d['id']) + help_msg_d['id'],
         'PW, -pw:       xxxxx' + help_msg_d['pw'],
         'CLI file:      ' + args_d['cli'],
-        'FID:           ' + str(args_d['fid']) + args_fid_help,
+        'FID:           ' + str(args_d['fid']),
         'Test flag:     ' + str(args_d['t']),
         'Force flag:    ' + str(args_d['f']),
         'Log, -log:     ' + str(args_d['log']),

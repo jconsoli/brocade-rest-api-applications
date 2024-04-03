@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,21 +16,21 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`stats_to_db_app` - Example on how to capture port statistics and add them to your own database
-
 **Description**
 
-  Simlimar to api_examples.stats_to_db. The difference is that this module relies on the brcddb methods. Using these
-  methods make it easier to capture data for multiple switches and provide port descriptions based on what is logged in
-  to the port.
+Example on how to capture port statistics and add them to your own database
 
-  Comments from api_examples.stats_to_db:
+Similar to api_examples.stats_to_db. The difference is that this module relies on the brcddb methods. Using these
+methods make it easier to capture data for multiple switches and provide port descriptions based on what is logged in to
+the port.
 
-  For any database to work, the keys must be unique. Since multiple switches can have the same port and in environments
-  with multiple fabrics, it's possible to have the same fibre channel address. In this example, a unique key is a hash
-  of the switch WWN and port number. Note that the switch WWN will always be unique.
+Comments from api_examples.stats_to_db:
 
-Version Control::
+For any database to work, the keys must be unique. Since multiple switches can have the same port and in environments
+with multiple fabrics, it's possible to have the same fibre channel address. In this example, a unique key is a hash
+of the switch WWN and port number. Note that the switch WWN will always be unique.
+
+**Version Control**
 
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
@@ -37,17 +39,19 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 4.0.1     | 06 Mar 2024   | Set verbose debug via brcdapi.brcdapi_rest.verbose_debug()                        |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Mar 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.1'
+__version__ = '4.0.2'
 
+import os
 import datetime
 import brcdapi.gen_util as gen_util
 import brcdapi.util as brcdapi_util
@@ -59,6 +63,18 @@ import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
 import brcddb.api.interface as api_int
 import brcddb.brcddb_port as brcddb_port
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    brcdapi_util=brcdapi_util.__version__,
+    gen_util=gen_util.__version__,
+    brcdapi_rest=brcdapi_rest.__version__,
+    fos_auth=fos_auth.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcddb_project=brcddb_project.__version__,
+    brcddb_common=brcddb_common.__version__,
+    api_int=api_int.__version__,
+    brcddb_port=brcddb_port.__version__,
+)
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -260,7 +276,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d
+    global __version__, _input_d, _version_d
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -272,7 +288,7 @@ def _get_input():
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Is the FID or FID range valid?
     args_fid_l = gen_util.range_to_list(args_d['fid']) if isinstance(args_d['fid'], str) else None
@@ -282,7 +298,7 @@ def _get_input():
 
     # Command line feedback
     ml = [
-        'stats_to_db_app.py version: ' + str(__version__),
+        os.path.basename(__file__) + ', ' + __version__,
         'Login credentials file, -i: ' + args_d['i'],
         'Fabric ID, -fid:            ' + args_d['fid'],
         'Log, -log:                  ' + str(args_d['log']),

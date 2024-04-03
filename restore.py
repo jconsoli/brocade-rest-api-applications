@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,40 +16,42 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`restore` - Restores a switch to a previously captured chassis DB
+**Description**
+
+Restores a switch to a previously captured chassis DB
 
 TODO enable effective zone configuration
 
 **Prominent Data Structures**
 
-    A dictionary, local_control_d, is created in pseudo_main() and passed to functions as parameter cd. It is defined as
-    follows:
+A dictionary, local_control_d, is created in pseudo_main() and passed to functions as parameter cd. It is defined as
+follows:
 
-    +---------------+---------------+-------------------------------------------------------------------------------+
-    | Key           | Type          | Description                                                                   |
-    +===============+===============+===============================================================================+
-    | session       | dict          | Session object returned from brcdapi.fos_auth.login()                         |
-    +---------------+---------------+-------------------------------------------------------------------------------+
-    | t_proj_obj    | ProjectObj    | Project object for the target chassis                                         |
-    +---------------+---------------+-------------------------------------------------------------------------------+
-    | r_proj_obj    | ProjectObj    | Project object for the restore project                                        |
-    +---------------+---------------+-------------------------------------------------------------------------------+
-    | r_chassis_obj | ChassisObj    | Chassis object for the restore chassis                                        |
-    +---------------+---------------+-------------------------------------------------------------------------------+
-    | r_default_fid | int           | Fabric ID of the default fabric of the restore chassis                        |
-    +---------------+---------------+-------------------------------------------------------------------------------+
-    | act_d         | dict          | See description where _action_l is defined                                    |
-    +---------------+---------------+-------------------------------------------------------------------------------+
-    | fid_map_d     | dict          | See function description for _build_fid_map()                                 |
-    +---------------+---------------+-------------------------------------------------------------------------------+
-    | args_cli      | str           | Not yet implemented. Intended as a file name for CLI commands to restore a    |
-    |               |               | chassis                                                                       |
-    +---------------+---------------+-------------------------------------------------------------------------------+
-    | summary_d     | dict          | See description below                                                         |
-    +---------------+---------------+-------------------------------------------------------------------------------+
++---------------+---------------+-------------------------------------------------------------------------------+
+| Key           | Type          | Description                                                                   |
++===============+===============+===============================================================================+
+| session       | dict          | Session object returned from brcdapi.fos_auth.login()                         |
++---------------+---------------+-------------------------------------------------------------------------------+
+| t_proj_obj    | ProjectObj    | Project object for the target chassis                                         |
++---------------+---------------+-------------------------------------------------------------------------------+
+| r_proj_obj    | ProjectObj    | Project object for the restore project                                        |
++---------------+---------------+-------------------------------------------------------------------------------+
+| r_chassis_obj | ChassisObj    | Chassis object for the restore chassis                                        |
++---------------+---------------+-------------------------------------------------------------------------------+
+| r_default_fid | int           | Fabric ID of the default fabric of the restore chassis                        |
++---------------+---------------+-------------------------------------------------------------------------------+
+| act_d         | dict          | See description where _action_l is defined                                    |
++---------------+---------------+-------------------------------------------------------------------------------+
+| fid_map_d     | dict          | See function description for _build_fid_map()                                 |
++---------------+---------------+-------------------------------------------------------------------------------+
+| args_cli      | str           | Not yet implemented. Intended as a file name for CLI commands to restore a    |
+|               |               | chassis                                                                       |
++---------------+---------------+-------------------------------------------------------------------------------+
+| summary_d     | dict          | See description below                                                         |
++---------------+---------------+-------------------------------------------------------------------------------+
 
-    A summary of changes is maintained in local_control_d as summary_d. The keys are 'chassis' and the switch names for
-    each logical switch acted on.
+A summary of changes is maintained in local_control_d as summary_d. The keys are 'chassis' and the switch names for
+each logical switch acted on.
 
     chassis
 
@@ -79,29 +83,32 @@ TODO enable effective zone configuration
     | MAPS Changes      | bool          | True if MAPS changes were made.                                           |
     +-------------------+---------------+---------------------------------------------------------------------------+
 
-Version Control::
+**Version Control**
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 06 Mar 2024   | Initial Launch                                                                    |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | 09 Mar 2024   | Added tip for -scan option. Fixed errors when target switch does not exist.       |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 06 Mar 2024   | Initial Launch                                                                        |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 09 Mar 2024   | Added tip for -scan option. Fixed errors when target switch does not exist.           |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '09 Mar 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.1'
+__version__ = '4.0.2'
 
 import collections
 import pprint
+import signal
 import sys
+import os
 import datetime
 import copy
 import base64
@@ -125,6 +132,28 @@ import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
 import brcddb.util.maps as util_maps
 import brcddb.util.compare as brcddb_compare
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    fos_auth=fos_auth.__version__,
+    brcdapi_util=brcdapi_util.__version__,
+    brcdapi_rest=brcdapi_rest.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcdapi_zone=brcdapi_zone.__version__,
+    brcdapi_switch=brcdapi_switch.__version__,
+    brcdapi_port=brcdapi_port.__version__,
+    fos_cli=fos_cli.__version__,
+    brcddb_project=brcddb_project.__version__,
+    api_int=api_int.__version__,
+    api_zone=api_zone.__version__,
+    brcddb_common=brcddb_common.__version__,
+    brcddb_chassis=brcddb_chassis.__version__,
+    brcddb_fabric=brcddb_fabric.__version__,
+    brcddb_switch=brcddb_switch.__version__,
+    class_util=class_util.__version__,
+    util_maps=util_maps.__version__,
+    brcddb_compare=brcddb_compare.__version__,
+)
 
 # debug input (for copy and paste into Run->Edit Configurations->script parameters):
 # -ip 10.144.72.15 -id admin -pw AdminPassw0rd! -s self -i _capture_2024_01_12_06_30_39/combined -p * -log _logs
@@ -165,6 +194,7 @@ _input_d.update(
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
 
+_zonecfg_enable = False
 _switch_sum_template_d = collections.OrderedDict()
 _switch_sum_template_d['Added'] = False
 _switch_sum_template_d['Removed'] = False
@@ -207,28 +237,30 @@ _all_fos_cli_l = [
 _restore_parameters = dict(
     m='Mandatory. This action is always taken whether specified with -p or not.',
     vfc='Virtual Fabrics Clear. Virtual fabrics will be enabled if necessary; however, virtual fabrics will not be '
-        'disabled. Delete all non-default logical switches. Set all ports in all FIDs, including the default logical '
+        'disabled. Deletes all non-default logical switches. Set all ports in all FIDs, including the default logical '
         'switch, to the default configuration.',
     vfs='Virtual Fabrics Switches. Create any logical switch that doesn\'t already exist. Unless specified otherwise '
         'with the -fm option, the FID, DID, fabric name, and switch name will match that of the restore chassis.',
     vfp='Virtual Fabrics Ports. Remove any ports that do not belong in the target logical switch. Add any ports not '
-        'present that do belong to the logical switch.',
+        'present that do belong to the logical switch. Typically not used when restoring to a different chassis type.',
     c='Chassis. All chassis settings except virtual fabrics, users, and security features. It does include enabling '
       'FCR but no other FCR configuration settings are available at this time.',
     s='Switch. All logical switch configuration settings except MAPS, user friendly switch name, or the domain ID. '
       'The user friendly name and DID are set with the vfs parameter.',
-    p='Port. All port configuration settings except FCR and FCIP.',
+    p='Port. All port configuration settings except FCR and FCIP. Typically not used when restoring to a different '
+      'chassis type.',
     maps='MAPS. All MAPS custom (non-default) rules and policies. Groups are not modified.',
     u='User accounts. Creates non-default users only. Existing user accounts in the target chassis are not deleted and '
-      'passwords are not modified.',
+      'passwords for existing accounts are not modified.',
     # sec='Security features.',
     # l='Logging. WIP',
     # fcr='Fibre Channel Routing. WIP',
     # ficon='FICON. WIP',
     # fcip='Fibre Channel Over IP. WIP',
-    z='Zoning. Restores the zoning configurations for each logical fabric',
-    ze='Zone configuration. Activates the zone configuration that was active in the restore fabric. If "e" is '
-       'specified, the switch enable action occurs first.',
+    z='Zoning. Restores the zoning configurations for each logical fabric. If "ze" is not specified and a zone '
+      'configuration is enabled in the target switch, the active zones and associated aliases will remain unchanged.',
+    ze='Zone Enable. Enables the zone configuration that was active in the restore fabric. If "z" is not specified, '
+       'this option does nothing. If "e" is specified, the switch enable action occurs first.',
     e='Enable. Enable all the switches and ports in the target switch that were enabled in the restore switch.',
 )
 _eh = [
@@ -265,11 +297,9 @@ _eh = [
     dict(b=('', 'All non-default users are re-created with default password:')),
     dict(b=(_temp_password, '', 'FID MAP, -fm', '____________', '')),
     dict(b=('This option defines the source data and destination FID for actions specified with -p. Except for the vf '
-            'option, only FIDs specified in the FID map are acted on.',
-            '',
-            'When the vf is included with the -p options, all non-default FIDs in the target chassis are deleted '
-            'whether in the FID map or not. All other behavior is the same as with all other -p options. '
-            'Specifically, only FIDs defined in fid map are created.',
+            'option, only FIDs specified in the FID map are acted on. When vf is included with the -p options, all '
+            'non-default FIDs in the target chassis are deleted whether in the FID map or not. Only FIDs defined in '
+            'the fid map are acted on. When not specified, the default is to act on all FIDs.',
             '',
             'The operand is a CSV list embedded in a semicolon separated list. When no value is specified, the '
             'value from the restore chassis is used. The values are (by index into the CSV list):',
@@ -312,11 +342,14 @@ _eh = [
     dict(b=('All switch and port configurations are completed before enabling them. Ports are only disabled with "-p '
             'vfc". Port settings that require the port to be offline therefore will only get updated if the port is '
             'disabled.',
-            'All errors are reported but are otherwise ignored. The intent is to restore as much as possible.',
+            'All errors are reported but otherwise ignored. The intent is to restore as much as possible.',
             'Ports from the previous data capture that do not exist in the target chassis are ignored,',
             'Ports that do not exist in the previous data are left in the default switch.',
             'Some actions require the affected switch or port to be disabled. If vf was not specified, you may need '
-            'to disable ports in the target switch.'),
+            'to disable ports in the target switch.',
+            'When the zone database is replaced, z, zones and associated aliases in the effective zone are preserved. '
+            'If the zone configuration is enabled, ze, any zone ans aliases not in the zone database being restored '
+            'are then deleted.'),
          p='  * '),
     dict(b=('', 'Parameter, -p, options:', '__________________________', '', '*       All (full restore)')),
     ]
@@ -813,6 +846,7 @@ def _user_act(cd, d):
 
 def _zone_restore(cd, d):
     """Restore zoning if there are zoning differences. See _data_capture() for parameter definitions"""
+    global _zonecfg_enable
 
     el, t_chassis_obj, control_d = list(), cd['t_chassis_obj'], dict(_effective_zone_cfg=dict(skip=True))
     for t_fid, fm_d in cd['fid_map_d'].items():
@@ -845,7 +879,10 @@ def _zone_restore(cd, d):
                 if change_count > 0:
                     raise Found
         except Found:
-            obj = api_zone.replace_zoning(cd['session'], r_fab_obj, t_fid)
+            eff_zone_config = None
+            if _zonecfg_enable:
+                eff_zone_config = r_fab_obj.r_defined_eff_zonecfg_key()
+            obj = api_zone.replace_zoning(cd['session'], r_fab_obj, t_fid, eff=eff_zone_config)
             if fos_auth.is_error(obj):
                 buf = 'Failed to replace zoning in FID ' + str(t_fid)
                 brcdapi_log.log([buf] + _fmt_errors(fos_auth.formatted_error_msg(obj)), echo=True)
@@ -858,40 +895,9 @@ def _zone_restore(cd, d):
 
 def _zone_enable(cd, d):
     """Restore zoning if there are zoning differences. See _data_capture() for parameter definitions"""
-    global _DEFAULT_WAIT
-
-    el, t_chassis_obj, control_d = list(), cd['t_chassis_obj'], dict(_effective_zone_cfg=dict(skip=True))
-    for t_fid, fm_d in cd['fid_map_d'].items():
-        r_switch_obj, t_switch_obj = fm_d['r_switch_obj'], t_chassis_obj.r_switch_obj_for_fid(t_fid)
-        if t_switch_obj is None:
-            el.append('Could not enable zone configuration. FID ' + str(t_fid) + ' does not exist')
-            continue
-
-        # Make sure the switch exists in both chassis
-        if r_switch_obj is None or t_switch_obj is None:
-            continue
-        r_fab_obj = r_switch_obj.r_fabric_obj()
-        if r_fab_obj is None:
-            continue
-
-        # Enable the zone configuration
-        effective_zonecfg = r_fab_obj.r_defined_eff_zonecfg_key()
-        if isinstance(effective_zonecfg, str):
-            checksum, obj = brcdapi_zone.checksum(cd['session'], t_fid)
-            if fos_auth.is_error(obj):
-                buf = ('Failed to obtain checksum while attempting to enable ' + effective_zonecfg + ' in FID ' +
-                       str(t_fid))
-                el.extend([buf, fos_auth.formatted_error_msg(obj)])
-            else:
-                fos_cli.cli_wait(_DEFAULT_WAIT)  # The switch likely just woke and won't be ready for fabric changes
-                obj = brcdapi_zone.enable_zonecfg(cd['session'], checksum, t_fid, effective_zonecfg)
-                if fos_auth.is_error(obj):
-                    el.extend(['Failed to enable zone configuration in FID ' + str(t_fid) + '. Error is:',
-                               fos_auth.formatted_error_msg(obj)])
-                else:
-                    _switch_summary(cd, fm_d['t_switch_name'] + ' FID: ' + str(t_fid))['Zone Changes'] = True
-
-    return el
+    global _zonecfg_enable
+    _zonecfg_enable = True
+    return list()
 
 
 def _chassis_update_act(cd, d):
@@ -1675,14 +1681,15 @@ _action_l = [  # See block comments above for definitions
         'gigabit-ethernet-member-ports': _conv_lookup_act,
     }),
 
+    # Zone configuration enable
+    dict(a=_zone_enable, e='_zone_enable', p='ze'),
+
     # Zoning
     dict(a=_zone_restore, e='_zone_restore', p='z'),
 
     # Enable
     dict(a=_enable, e='_enable', p='e'),
 
-    # Zone configuration enable
-    dict(a=_zone_restore, e='_zone_enable', p='ze'),
 ]
 for _d in _action_l:
     if 'e' not in _d:
@@ -1984,16 +1991,16 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
             brcdapi_log.log('step: ' + str(step) + ', restore action: ' + d['e'], echo=True)
 
             # Debug
-            # if step == 2:
+            # if step == 1:
             #     print('TP_100')
 
-            el.extend(d['a'](local_control_d, d))
+            temp_el = d['a'](local_control_d, d)
+            el.extend(temp_el)
             step += 1
 
             # Debug
-            if _DEBUG and len(el) > 0:
-                brcdapi_log.log(['DEBUG len(el): ' + str(len(el))] + el, echo=True)
-                el = list()
+            if _DEBUG and len(temp_el) > 0:
+                brcdapi_log.log(['DEBUG len(el): ' + str(len(temp_el))] + temp_el, echo=True)
 
     except FIDMapError:
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
@@ -2051,23 +2058,24 @@ def _get_input():
     :return ec: Error code from brcddb.brcddb_common
     :rtype ec: int
     """
-    global __version__, _input_d, _eh
+    global __version__, _input_d, _eh, _version_d
 
     # Initialize the variables for the call to pseudo_main()
     proj_obj, chassis_obj, args_p_d, ec = None, None, dict(), brcddb_common.EXIT_STATUS_OK
 
     # Get command line input
-    args_d = gen_util.get_input('Restores a chassis configuration to a previous configuration.', _input_d)
+    buf = 'Restores a chassis configuration to a previous configuration. Intended to be used as a template'
+    args_d = gen_util.get_input(buf, _input_d)
     args_d['i'] = brcdapi_file.full_file_name(args_d['i'], '.json')
     args_d['cli'] = None if args_d['cli'] is None else brcdapi_file.full_file_name(args_d['cli'], '.txt')
 
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # User feedback
-    ml = ['restore.py version:      ' + __version__,
+    ml = [os.path.basename(__file__) + ', ' + __version__,
           'IP address, -ip:         ' + brcdapi_util.mask_ip_addr(args_d['ip']),
           'ID, -id:                 ' + str(args_d['id']),
           'HTTPS, -s:               ' + str(args_d['s']),
@@ -2146,6 +2154,7 @@ def _get_input():
     if ec != brcddb_common.EXIT_STATUS_OK:
         return ec
 
+    signal.signal(signal.SIGINT, brcdapi_rest.control_c)
     return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'], proj_obj, chassis_obj, args_p_d,
                        args_d['fm'], args_d['cli'], args_d['scan'])
 

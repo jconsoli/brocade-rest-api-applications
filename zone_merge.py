@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,28 +16,31 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`zone_merge` - Merges the zones from multiple fabrics
+**Description**
 
-Version Control::
+Merges the zones from multiple fabrics
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | xx xxx 2024   | Use brcddb_project.scan() with -scan option. Removed deprecated parameter in      |
-    |           |               | enable_zonecfg()                                                                  |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
+**Version Control**
+
++-----------+---------------+-----------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                       |
++===========+===============+===================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
++-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Use brcddb_project.scan() with -scan option. Removed deprecated parameter in      |
+|           |               | enable_zonecfg()                                                                  |
++-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
++-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = 'xx xxx 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Development'
-__version__ = '4.0.1'
+__status__ = 'Released'
+__version__ = '4.0.2'
 
 import sys
 import datetime
@@ -59,6 +64,24 @@ import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
 import brcddb.util.copy as brcddb_copy
 import brcddb.util.util as brcddb_util
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    brcdapi_rest=brcdapi_rest.__version__,
+    brcdapi_zone=brcdapi_zone.__version__,
+    fos_auth=fos_auth.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcdapi_util=brcdapi_util.__version__,
+    excel_util=excel_util.__version__,
+    brcddb_project=brcddb_project.__version__,
+    brcddb_common=brcddb_common.__version__,
+    brcddb_fabric=brcddb_fabric.__version__,
+    api_int=api_int.__version__,
+    api_zone=api_zone.__version__,
+    brcddb_compare=brcddb_compare.__version__,
+    brcddb_copy=brcddb_copy.__version__,
+    brcddb_util=brcddb_util.__version__,
+)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -598,7 +621,7 @@ def _get_input():
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d
+    global __version__, _input_d, _version_d
 
     # Initialize the return variables
     ec = brcddb_common.EXIT_STATUS_OK
@@ -617,12 +640,12 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Command line feedback
     c_file = brcdapi_file.full_file_name(args_d['i'], '.xlsx')
     ml = [
-        'zone_merge.py version: ' + __version__,
+        os.path.basename(__file__) + ', ' + __version__,
         'Input file, -i:        ' + str(c_file),
         'Common zonecfg, -cfg:  ' + str(args_d['cfg']),
         'Activate zone cfg:     ' + str(args_d['a']),

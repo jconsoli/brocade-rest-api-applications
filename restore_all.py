@@ -3,6 +3,8 @@
 """
 Copyright 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,32 +16,45 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`report` - Creates a report in Excel Workbook format from a brcddb project
+**Description**
 
-Version Control::
+Creates a report in Excel Workbook format from a brcddb project
+
+**Version Control**
 
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
     +===========+===============+===================================================================================+
     | 4.0.0     | 09 Mar 2024   | Initial launch                                                                    |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '09 Mar 2024'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.0'
+__version__ = '4.0.2'
 
+import os
 import brcdapi.log as brcdapi_log
 import brcdapi.file as brcdapi_file
 import brcdapi.gen_util as gen_util
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_chassis as brcddb_chassis
 import brcddb.brcddb_common as brcddb_common
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcddb_common=brcddb_common.__version__,
+    brcddb_project=brcddb_project.__version__,
+    brcddb_chassis=brcddb_chassis.__version__,
+)
+
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -134,7 +149,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d
+    global __version__, _input_d, _version_d
 
     # Get command line input
     args_d = gen_util.get_input(
@@ -143,10 +158,10 @@ def _get_input():
     )
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Command line feedback
-    ml = ['restore_all.py:        ' + __version__,
+    ml = [os.path.basename(__file__) + ', ' + __version__,
           'ID, -id:               ' + str(args_d['id']),
           'In file, -i:           ' + args_d['i'],
           'Output file, -o:       ' + args_d['o'],

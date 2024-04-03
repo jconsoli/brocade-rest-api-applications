@@ -3,6 +3,8 @@
 """
 Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 
+**License**
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
@@ -14,7 +16,9 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
-:mod:`switch_config.py` - Configure logical switch(es) from a workbook
+**Description**
+
+Configure logical switch(es) from a workbook
 
 $ToDo running/brocade-fibrechannel-switch/fibrechannel-switch/principal (0 for no, 1 for yes)
 
@@ -27,18 +31,16 @@ principal-priority - hex value. See options for fabricprincipal -priority
 
 Look for insistent-domain-id-enabled
 
-**Description**
+Although FOS doesn't care what order the port bind commands are in, humans like to see them in port order. I'm not using
+the brcddb.class objects for anything but since there is a utility to sort the port objects by port number, I'm
+leveraging that to sort the ports. Note that you can't just do a .sort() on the list because it does an ASCII sort which
+isn't how you expect the numerical values in s/p to be sorted.
 
-    Although FOS doesn't care what order the port bind commands are in, humans like to see them in port order. I'm not
-    using the brcddb.class objects for anything but since there is a utility to sort the port objects by port number,
-    I'm leveraging that to sort the ports. Note that you can't just do a .sort() on the list because it does an ASCII
-    sort which isn't how you expect the numerical values in s/p to be sorted.
+Adding the ports to the logical switch in sorted order will also result in the default addresses being in order. This is
+useful if you are not going to force the address by binding specified addresses to the ports. The fabric only cares that
+the port addresses are unique but again, humans like to see everything in order.
 
-    Adding the ports to the logical switch in sorted order will also result in the default addresses being in order.
-    This is useful if you are not going to force the address by binding specified addresses to the ports. The fabric
-    only cares that the port addresses are unique but again, humans like to see everything in order.
-
-Version Control::
+**Version Control**
 
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
@@ -47,15 +49,17 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 4.0.1     | 06 Mar 2024   | Improved handling of ports that could not be moved due to errors.                 |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Mar 2024'
+__date__ = '03 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.1'
+__version__ = '4.0.2'
 
 import sys
 import datetime
@@ -76,6 +80,22 @@ import brcddb.api.interface as api_int
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_switch as brcddb_switch
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    brcdapi_rest=brcdapi_rest.__version__,
+    brcdapi_switch=brcdapi_switch.__version__,
+    fos_auth=fos_auth.__version__,
+    brcdapi_port=brcdapi_port.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcdapi_util=brcdapi_util.__version__,
+    brcddb_project=brcddb_project.__version__,
+    brcddb_common=brcddb_common.__version__,
+    api_int=api_int.__version__,
+    report_utils=report_utils.__version__,
+    brcddb_port=brcddb_port.__version__,
+    brcddb_switch=brcddb_switch.__version__,
+)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -796,7 +816,7 @@ def _get_input():
     :return: Exit code
     :rtype: int
     """
-    global __version__, _input_d
+    global __version__, _input_d, _version_d
 
     # Get command line input
     buf = 'Reads a switch configuration workbook and configures each logical switch accordingly.'
@@ -805,11 +825,11 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'])
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Command line feedback
     ml = [
-        'switch_config.py: ' + __version__,
+        os.path.basename(__file__) + ', ' + __version__,
         'IP address, -ip:  ' + brcdapi_util.mask_ip_addr(args_d['ip']),
         'ID, -id:          ' + str(args_d['id']),
         's, -s:            ' + str(args_d['s']),
