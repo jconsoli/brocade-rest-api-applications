@@ -94,15 +94,17 @@ each logical switch acted on.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 16 Apr 2024   | Fix: restore was operating on fabrics, not switches.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '16 Apr 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import collections
 import pprint
@@ -974,8 +976,6 @@ def _switch_update_act(cd, d):
                                    'FOS error:',
                                    fos_auth.formatted_error_msg(obj)])
                 else:
-                    # temp_l = key.split('/')
-                    # temp_d = {temp_l.pop(): content_d}
                     el.extend(_send_request(cd['session'], d['m'], key, content_d, fid=t_fid))
 
         except BaseException as e:
@@ -1185,13 +1185,12 @@ def _maps_act(cd, d):
 
 def _scan_act(cd, d):
     """Returns basic logical switch information. See _data_capture() for parameter definitions"""
-    el = ['', 'Restore Chassis:']
+    el = ['', 'Restore', '']
     if cd['r_proj_obj'] is None:
-        el.append('Restore chassis, -i, not specified.')
+        el.append('-i, not specified.')
     else:
-        el.append('')
         el.extend(brcddb_project.scan(cd['r_proj_obj'], fab_only=False, logical_switch=True))
-    el.extend(['', 'Target Chassis:', ''])
+    el.extend(['', 'Target', ''])
     if cd['session'] is None:
         el.append('  Login credentials not specified.')
     else:
@@ -2027,8 +2026,8 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
 
     # Wrap up messages
     if len(el) > 0:
-        el.insert(0, '_____________')
-        el.insert(0, 'Error Detail:')
+        for buf in ('_____________', 'San Output:' if args_scan else 'Error Detail:', ''):
+            el.insert(0, buf)
     el.extend(['', 'Chassis Summary', '_______________'])
     for k, v in local_control_d['summary']['chassis'].items():
         buf = ''
@@ -2100,37 +2099,37 @@ def _get_input():
         for d in _eh:
             ml.extend(gen_util.wrap_text(d['b'], _MAX_LINE_LEN, d.get('p')))
     elif not args_d['scan'] and args_d['cli'] is None:
-        if args_d['wwn'] is None:
-            for k, v in dict(ip=args_d['ip'], id=args_d['id'], pw=args_d['pw'], i=args_d['i'], p=args_d['p']).items():
-                if v is None:
-                    ml.append('Missing -' + k + '. Re-run with -h or -eh for additional help.')
+        for k, v in dict(ip=args_d['ip'], id=args_d['id'], pw=args_d['pw'], i=args_d['i'], p=args_d['p']).items():
+            if v is None:
+                ml.append('Missing -' + k + '. Re-run with -h or -eh for additional help.')
 
+    proj_obj, chassis_obj, chassis_obj_l = None, None, list()
     if len(ml) == 0:
         # Read the project file
-        chassis_obj, chassis_obj_l = None, list()
-        try:
-            proj_obj = None if args_d['i'] is None else brcddb_project.read_from(args_d['i'])
-            if proj_obj is None:
-                ml.append('File, -i, appears to be corrupted: ' + args_d['i'])
-            else:
-                chassis_obj_l = proj_obj.r_chassis_objects()
+        if isinstance(args_d['i'], str):
+            try:
+                proj_obj = brcddb_project.read_from(args_d['i'])
+                if proj_obj is None:
+                    ml.append('File, -i, appears to be corrupted: ' + args_d['i'])
+                else:
+                    chassis_obj_l = proj_obj.r_chassis_objects()
+            except (FileExistsError, FileNotFoundError):
+                ml.append('Input file, -i, not found: ' + args_d['i'])
             if not args_d['scan']:
                 if args_d['wwn'] is not None:
                     chassis_obj = proj_obj.r_chassis_obj(args_d['wwn'])
                     if chassis_obj is None:
-                        ml.append('Could not find a chassis matching ' + args_d['wwn'] + ' in ' + args_d['i'])
+                        ml.append('Could not find a chassis matching ' + args_d['wwn'] + ' in ' + str(args_d['i']))
                 else:
                     num_chassis = len(chassis_obj_l)
                     if num_chassis == 0:
-                        ml.append('There are no chassis in the input file, -i: ' + args_d['i'])
+                        ml.append('There are no chassis in the input file, -i: ' + str(args_d['i']))
                     elif num_chassis == 1:
                         chassis_obj = chassis_obj_l[0]
                     else:
                         ml.extend(['Multiple chassis found in ' + args_d['i'],
                                    'Specify with the chassis to restore from using the -wwn option.',
                                    'Re-run with -scan for a list of available chassis.'])
-        except (FileExistsError, FileNotFoundError):
-            ml.append('Input file, -i, not found: ' + args_d['i'])
 
         # Get and validate the list of actions, -p
         if not args_d['scan'] and args_d['cli'] is None:
