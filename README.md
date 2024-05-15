@@ -3,6 +3,12 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
+**Updates 15 May 2024**
+
+* Added ability to purge zones and aliases to zone_config.py
+* Added search by zone to nodefind.py
+* Miscellanious bug fixes
+
 **Updates 6 March 2024**
 
 * Added restore.py
