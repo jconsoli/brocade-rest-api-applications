@@ -20,24 +20,24 @@ details.
 
 Performs a node find in a project
 
-ToDo Add zones. Maybe add zone. Add comment action to workbook. If -i doesn't exist, error message is incorrect
-
 **Version Control**
 
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| Version   | Last Edit     | Description                                                                       |
-+===========+===============+===================================================================================+
-| 1.0.0     | 03 Apr 2024   | Initial launch                                                                    |
-+-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 1.0.0     | 03 Apr 2024   | Initial launch                                                                        |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.1     | 15 May 2024   | Added -zone and -zone_f options for searching by zone.                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '15 May 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -80,19 +80,25 @@ _input_d = dict(
              'automatically appended if not present.'),
     alias=dict(r=False, d=None,
                h='Optional. CSV list of nodes by alias to search for. Supports regex and wild card searching. If the '
-                 'regex contains a comma, don\'t forget to encapsulate it with quotes. Duplicates are removed.'),
+                 'regex contains a comma, don\'t forget to encapsulate it with quotes.'),
     alias_f=dict(r=False, d=None,
                  h='Optional. A CSV list of plain text files containing the aliases to search for. The default file '
-                   'extension is ".txt". The content is the same as -alias. Comments and blank lines are ignored. '
-                   'Each alias must be on a separate line. You may specify both -alias and -alias_f. Duplicates are '
-                   'removed.'),
+                   'extension is ".txt". The content is the same as -alias except that quotations should not be used. '
+                   'Quotes are only required as a means of telling the command line interpreter to not treat a comma '
+                   'as a parameter separator. Comments and blank lines are ignored. Each alias must be on a separate '
+                   'line. Parameters specified with -alias and -alias_f are combined to create a single list of '
+                   'aliases.'),
     wwn=dict(r=False, d=None,
              h='Optional. CSV list of nodes by WWN to search for. Supports regex and wild card searching. If the '
-               'regex contains a comma, don\'t forget to encapsulate it with quotes. Duplicates are removed.'),
+               'regex contains a comma, don\'t forget to encapsulate it with quotes.'),
     wwn_f=dict(r=False, d=None,
-               h='Optional. A CSV list of plain text files containing the WWNs to search for. The default file '
-                 'extension is ".txt". The content is the same as -wwn. Comments and blank lines are ignored. Each '
-                 'WWN must be on a separate line. You may specify both -wwn and -wwn_f. Duplicates are removed.'),
+               h='Optional. Same as -alias_f except it is applied to WWNs.'),
+    zone=dict(r=False, d=None,
+              h='Optional. CSV list of nodes contained in a zone to search for. Regex and wild card '
+                'searching is performed on the zone name, not the zone members. If the regex contains a comma, don\'t '
+                'forget to encapsulate it with quotes. Domain-index (d,i) members, used for FICON, are ignored.'),
+    zone_f=dict(r=False, d=None,
+                h='Optional. Same as -alias_f except it is applied to zones.'),
     s=dict(r=False, d='exact', v=_search_type_l,
            h='Optional. Search type. Options are: ' + ', '.join(_search_type_l) + ' The default is "exact".'),
     r=dict(r=False, h='Optional. Name of Excel report file. ".xlsx" is automatically appended.'),
@@ -113,7 +119,6 @@ def _local_report(search_d):
 
     :param search_d: Key is the search term and value is the list of login objects associated with that search term
     :type search_d: dict
-    :return: None
     :rtype: None
     """
     ml = ['', 'Node Find Results', '_________________']
@@ -136,7 +141,8 @@ def _local_report(search_d):
                 '  Description: ' + brcddb_port.port_best_desc(port_obj),
                 '',
                 ])
-    brcdapi_log.log(ml, echo=True)
+    brcdapi_log.log(
+        ml, echo=True)
 
 
 def _excel_report(report, search_d):
@@ -146,7 +152,6 @@ def _excel_report(report, search_d):
     :type report: str, None
     :param search_d: Key is the search term and value is the list of login objects associated with that search term
     :type search_d: dict
-    :return: None
     :rtype: None
     """
     if report is None:
@@ -168,7 +173,7 @@ def _excel_report(report, search_d):
         brcdapi_log.log(buf, echo=True)
 
 
-def psuedo_main(proj_obj, alias_l, wwn_l, search_type, report):
+def psuedo_main(proj_obj, alias_l, wwn_l, zone_l, search_type, report):
     """Basically the main().
 
     :param proj_obj: Project object
@@ -177,6 +182,8 @@ def psuedo_main(proj_obj, alias_l, wwn_l, search_type, report):
     :type alias_l: list
     :param wwn_l: Nodes by WWN to search for
     :type wwn_l: list
+    :param zone_l: Nodes by zone to search for
+    :type zone_l: list
     :param search_type: Type of search. Can be exact, regex_m, regex_s, or wild
     :type search_type: str
     :param report: Name of Excel report.
@@ -187,7 +194,7 @@ def psuedo_main(proj_obj, alias_l, wwn_l, search_type, report):
 
     # Initialize tracking data structures
     search_d = dict()
-    for buf in alias_l + wwn_l:
+    for buf in alias_l + wwn_l + zone_l:
         search_d.update({buf: list()})
 
     # Find each item - nodefind
@@ -207,6 +214,23 @@ def psuedo_main(proj_obj, alias_l, wwn_l, search_type, report):
         for wwn in wwn_l:
             search_d[wwn].extend(brcddb_search.match(fab_obj.r_login_objects(), '_obj_key', wwn, True, search_type))
 
+        # Find by zone - Similar to find by alias but keep in mind that the member may be a WWN.
+        # d,i zone members are not processed
+        for zone in zone_l:
+            for zone_obj in [fab_obj.r_zone_obj(z) for z in
+                             brcddb_fabric.zone_by_name(fab_obj, zone, s_type=search_type)]:
+                zone_wwn_l = list()
+                for mem in zone_obj.r_members():
+                    alias_obj = fab_obj.r_alias_obj(mem)
+                    if alias_obj is None:
+                        zone_wwn_l.append(mem)  # assume it's a WWN. If not, fab_obj.r_login_obj() returns None
+                    else:
+                        zone_wwn_l.extend([wwn for wwn in alias_obj.r_members()])
+                    for wwn in zone_wwn_l:
+                        login_obj = fab_obj.r_login_obj(wwn)
+                        if login_obj is not None:
+                            search_d[zone].append(login_obj)
+
     # Create the reports
     _local_report(search_d)
     _excel_report(report, search_d)
@@ -225,8 +249,13 @@ def _get_input():
     ec = brcddb_common.EXIT_STATUS_OK
 
     # Get command line input
+    buf = 'Searches a project file for a node by WWN. Aliases and zone members are converted to WWNs. Wild card and '\
+          'regex matching/searching is supported. The type of searching, -s, is applied to all input. Typically, only '\
+          'one type of input (-alias, -alias_f, -wwn, -wwn_f, -zone, and -zone_f) is used, but any combination of '\
+          'inputs is supported. To simplify copy and paste, duplicates in the resulting lists of aliases (-alias + '\
+          '-alias_f), WWNs (-wwn + -wwn_f), and zones (-zone and -zone_f) are removed.'
     try:
-        args_d = gen_util.get_input('Searches a project file for a node.', _input_d)
+        args_d = gen_util.get_input(buf, _input_d)
     except TypeError:
         return brcddb_common.EXIT_STATUS_INPUT_ERROR  # gen_util.get_input() already posted the error message.
 
@@ -248,12 +277,15 @@ def _get_input():
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Command line feedback
-    ml = [os.path.basename(__file__) + ', ' + __version__,
+    ml = ['',
+          os.path.basename(__file__) + ', ' + __version__,
           'Project, -i:          ' + args_d['i'] + args_i_help,
-          'WWN, -wwn:            ' + str(args_d['wwn']),
-          'WWN file, -wwn_f:     ' + str(args_d['wwn_f']),
           'Alias, -alias:        ' + str(args_d['alias']),
           'Alias file, -alias_f: ' + str(args_d['alias_f']),
+          'WWN, -wwn:            ' + str(args_d['wwn']),
+          'WWN file, -wwn_f:     ' + str(args_d['wwn_f']),
+          'Zone, -zone:          ' + str(args_d['zone']),
+          'Zone file, -zone_f:   ' + str(args_d['zone_f']),
           'Search type, -s:      ' + str(args_d['s']),
           'Report, -r:           ' + str(args_d['r']),
           'Log, -log:            ' + str(args_d['log']),
@@ -265,7 +297,10 @@ def _get_input():
     # Get the lists of aliases and WWNs to work on.
     alias_l = list() if args_d['alias'] is None else gen_util.convert_to_list(args_d['alias'].split(','))
     wwn_l = list() if args_d['wwn'] is None else gen_util.convert_to_list(args_d['wwn'].split(','))
-    for d in (dict(f=args_d['alias_f'], l=alias_l), dict(f=args_d['wwn_f'], l=wwn_l)):
+    zone_l = list() if args_d['zone'] is None else gen_util.convert_to_list(args_d['zone'].split(','))
+    for d in (dict(f=args_d['alias_f'], l=alias_l),
+              dict(f=args_d['wwn_f'], l=wwn_l),
+              dict(f=args_d['zone_f'], l=zone_l)):
         if isinstance(d['f'], str):
             for file in d['f'].split(','):
                 try:
@@ -278,7 +313,7 @@ def _get_input():
                     ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Validate the WWNs and aliases
-    if len(alias_l) + len(wwn_l) == 0:
+    if len(alias_l) + len(wwn_l) + len(zone_l) == 0:
         ml.append('No nodes to search for.')
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     elif args_d['s'] == 'exact':
@@ -290,20 +325,19 @@ def _get_input():
             if not gen_util.is_valid_zone_name(alias):
                 ml.append(alias + ', is not a valid alias for exact match. Re-run with -h and review the -s options.')
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        for zone in zone_l:
+            if not gen_util.is_valid_zone_name(zone):
+                ml.append(zone + ', is not a valid zone for exact match. Re-run with -h and review the -s options.')
+                ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    # Prepare the list and send feedback to the log, echo to STD_OUT
-    # I can't think of any reason why I would have to remove None, but it's only a few extra CPU cycles
-    alias_l = gen_util.remove_duplicates(gen_util.remove_none(alias_l))
-    wwn_l = gen_util.remove_duplicates(gen_util.remove_none(wwn_l))
-    brcdapi_log.log(ml, echo=True)
-
-    if ec != brcddb_common.EXIT_STATUS_OK:
-        return ec
-    return psuedo_main(proj_obj,
-                       alias_l,
-                       wwn_l,
-                       _search_type_d[args_d['s']],
-                       brcdapi_file.full_file_name(args_d['r'], '.xlsx'))
+    # Command line feedback and process
+    return ec if ec != brcddb_common.EXIT_STATUS_OK else \
+        psuedo_main(proj_obj,
+                    gen_util.remove_duplicates(gen_util.remove_none(alias_l)),
+                    gen_util.remove_duplicates(gen_util.remove_none(wwn_l)),
+                    gen_util.remove_duplicates(gen_util.remove_none(zone_l)),
+                    _search_type_d[args_d['s']],
+                    brcdapi_file.full_file_name(args_d['r'], '.xlsx'))
 
 
 ##################################################################

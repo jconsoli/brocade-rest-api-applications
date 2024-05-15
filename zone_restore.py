@@ -22,24 +22,26 @@ Sets the zone configuration DB to that of a previously captured zone DB
 
 **Version Control**
 
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| Version   | Last Edit     | Description                                                                       |
-+===========+===============+===================================================================================+
-| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.1     | 06 Mar 2024   | Removed deprecated parameter in enable_zonecfg()                                  |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries. Fixed user ID.                       |
-+-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Removed deprecated parameter in enable_zonecfg()                                      |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries. Fixed user ID.                           |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 15 May 2024   | Improved -scan output.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '15 May 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import signal
 import os
@@ -77,12 +79,12 @@ _STAND_ALONE = True  # See note above
 _input_d = gen_util.parseargs_login_false_d.copy()
 _input_d.update(
     fid=dict(t='int', v=gen_util.range_to_list('1-128'),
-             h='Required. Ignored with scan but must be a valid FID, 1-128. Fabric ID of logical switch whose DB is '
-               'be restored from the fabric specified with the -wwn parameter.'),
+             h='Required. Ignored with scan but must be a valid FID, 1-128. Fabric ID of logical switch whose zone '
+               'database is be restored from the fabric specified with the -wwn parameter.'),
     i=dict(h='Required. Captured data file from the output of capture.py, combine.py, or multi_capture.py.'),
     wwn=dict(r=False,
-             h='Optional with -scan. Otherwise, required. Fabric WWN whose zone DB is to be read and set in the fabric '
-               'specified with the -fid parameter. Keep in mind that if the fabric was rebuilt, it may have a '
+             h='Optional with -scan. Otherwise, required. Fabric WWN whose zone database is to be read and set in the '
+               'fabric specified with the -fid parameter. Keep in mind that if the fabric was rebuilt, it may have a '
                'different WWN.'),
     a=dict(r=False,
            h='Optional. Specifies the zone zone configuration to activate. If not specified, no change is made to the '
@@ -131,38 +133,6 @@ _cli_hdr_0 = ['########################################################',
 _cli_hdr_1 = ['#                                                      #',
               '########################################################',
               '']
-
-
-def _scan_fabrics(proj_obj):
-    """Scan the project for each fabric and list the fabric WWN, FID , and zone configurations
-
-    :param proj_obj: Project object
-    :type proj_obj: brcddb.classes.project.ProjectObj
-    :return: Status code
-    :rtype: int
-    """
-    ec = brcddb_common.EXIT_STATUS_OK
-
-    # Prepare the fabric display
-    ml = ['', 'Fabric Scan (* indicates the effective zone config)', '']
-    for fab_obj in proj_obj.r_fabric_objects():
-        eff_zonecfg = fab_obj.r_defined_eff_zonecfg_key()
-        ml.append(brcddb_fabric.best_fab_name(fab_obj, wwn=True))
-        ml.append('  FID:         ' + ', '.join([str(fid) for fid in brcddb_fabric.fab_fids(fab_obj)]))
-        for buf in fab_obj.r_zonecfg_keys():
-            if isinstance(eff_zonecfg, str) and eff_zonecfg == buf:
-                ml.append('  Zone Config: ' + '*' + buf)
-            elif buf != '_effective_zone_cfg':
-                ml.append('  Zone Config: ' + buf)
-        ml.append('')
-
-    # Wrap up and print fabric information
-    if len(ml) == 0:
-        ml.append('No fabrics specified.')
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    brcdapi_log.log(ml, echo=True)
-
-    return ec
 
 
 def _cli_commands(fab_obj):
@@ -295,7 +265,8 @@ def pseudo_main(ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, cli_
 
     fab_obj = proj_obj.r_fabric_obj(wwn)
     if scan_flag:
-        return _scan_fabrics(proj_obj)
+        brcdapi_log.log(brcddb_project.scan(proj_obj), echo=True)
+        return brcddb_common.EXIT_STATUS_OK
     elif fab_obj is None:
         brcdapi_log.log(wwn + ' does not exist in ' + cfile + '. Try using the -scan option', echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR

@@ -27,28 +27,28 @@ TODO enable effective zone configuration
 A dictionary, local_control_d, is created in pseudo_main() and passed to functions as parameter cd. It is defined as
 follows:
 
-+---------------+---------------+-------------------------------------------------------------------------------+
-| Key           | Type          | Description                                                                   |
-+===============+===============+===============================================================================+
-| session       | dict          | Session object returned from brcdapi.fos_auth.login()                         |
-+---------------+---------------+-------------------------------------------------------------------------------+
-| t_proj_obj    | ProjectObj    | Project object for the target chassis                                         |
-+---------------+---------------+-------------------------------------------------------------------------------+
-| r_proj_obj    | ProjectObj    | Project object for the restore project                                        |
-+---------------+---------------+-------------------------------------------------------------------------------+
-| r_chassis_obj | ChassisObj    | Chassis object for the restore chassis                                        |
-+---------------+---------------+-------------------------------------------------------------------------------+
-| r_default_fid | int           | Fabric ID of the default fabric of the restore chassis                        |
-+---------------+---------------+-------------------------------------------------------------------------------+
-| act_d         | dict          | See description where _action_l is defined                                    |
-+---------------+---------------+-------------------------------------------------------------------------------+
-| fid_map_d     | dict          | See function description for _build_fid_map()                                 |
-+---------------+---------------+-------------------------------------------------------------------------------+
-| args_cli      | str           | Not yet implemented. Intended as a file name for CLI commands to restore a    |
-|               |               | chassis                                                                       |
-+---------------+---------------+-------------------------------------------------------------------------------+
-| summary_d     | dict          | See description below                                                         |
-+---------------+---------------+-------------------------------------------------------------------------------+
++---------------+---------------+-----------------------------------------------------------------------------------+
+| Key           | Type          | Description                                                                       |
++===============+===============+===================================================================================+
+| session       | dict          | Session object returned from brcdapi.fos_auth.login()                             |
++---------------+---------------+-----------------------------------------------------------------------------------+
+| t_proj_obj    | ProjectObj    | Project object for the target chassis                                             |
++---------------+---------------+-----------------------------------------------------------------------------------+
+| r_proj_obj    | ProjectObj    | Project object for the restore project                                            |
++---------------+---------------+-----------------------------------------------------------------------------------+
+| r_chassis_obj | ChassisObj    | Chassis object for the restore chassis                                            |
++---------------+---------------+-----------------------------------------------------------------------------------+
+| r_default_fid | int           | Fabric ID of the default fabric of the restore chassis                            |
++---------------+---------------+-----------------------------------------------------------------------------------+
+| act_d         | dict          | See description where _action_l is defined                                        |
++---------------+---------------+-----------------------------------------------------------------------------------+
+| fid_map_d     | dict          | See function description for _build_fid_map()                                     |
++---------------+---------------+-----------------------------------------------------------------------------------+
+| args_cli      | str           | Not yet implemented. Intended as a file name for CLI commands to restore a        |
+|               |               | chassis                                                                           |
++---------------+---------------+-----------------------------------------------------------------------------------+
+| summary_d     | dict          | See description below                                                             |
++---------------+---------------+-----------------------------------------------------------------------------------+
 
 A summary of changes is maintained in local_control_d as summary_d. The keys are 'chassis' and the switch names for
 each logical switch acted on.
@@ -96,15 +96,17 @@ each logical switch acted on.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 16 Apr 2024   | Fix: restore was operating on fabrics, not switches.                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 15 May 2024   | Declared _scan_action_l global in pseudo_main().                                      |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '16 Apr 2024'
+__date__ = '15 May 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import collections
 import pprint
@@ -1928,7 +1930,7 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _basic_capture_kpi_l, _full_capture_l, _action_l, _temp_password, _all_fos_cli_l
+    global _basic_capture_kpi_l, _full_capture_l, _action_l, _temp_password, _all_fos_cli_l, _scan_action_l
 
     ec, el, fid_map_d = brcddb_common.EXIT_STATUS_OK, list(), dict()
     action_l = _scan_action_l if args_scan else\
