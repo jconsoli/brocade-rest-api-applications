@@ -33,15 +33,17 @@ Sets the zone configuration DB to that of a previously captured zone DB
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 15 May 2024   | Improved -scan output.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 16 Jun 2024   | Made -fid not required when using -scan option.                                       |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '15 May 2024'
+__date__ = '16 Jun 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import signal
 import os
@@ -78,25 +80,22 @@ _STAND_ALONE = True  # See note above
 
 _input_d = gen_util.parseargs_login_false_d.copy()
 _input_d.update(
-    fid=dict(t='int', v=gen_util.range_to_list('1-128'),
+    fid=dict(r=False, t='int', v=gen_util.range_to_list('1-128'),
              h='Required. Ignored with scan but must be a valid FID, 1-128. Fabric ID of logical switch whose zone '
-               'database is be restored from the fabric specified with the -wwn parameter.'),
+               'database is be restored (target switch).'),
     i=dict(h='Required. Captured data file from the output of capture.py, combine.py, or multi_capture.py.'),
     wwn=dict(r=False,
-             h='Optional with -scan. Otherwise, required. Fabric WWN whose zone database is to be read and set in the '
-               'fabric specified with the -fid parameter. Keep in mind that if the fabric was rebuilt, it may have a '
-               'different WWN.'),
+             h='Optional with -scan. Otherwise, required. Fabric WWN for the source zone database in the file '
+               'specified with -i.'),
     a=dict(r=False,
            h='Optional. Specifies the zone zone configuration to activate. If not specified, no change is made to the '
              'effective configuration. If a zone configuration is in effect and this option is not specified, the '
              'effective zone may result in the defined zone configuration being inconsistent with the effective zone '
              'configuration.'),
-    scan=dict(r=False, d=False, t='bool',
-              h='Optional. No parameters. Scan switch if login credentials supplied and captured data file for fabric '
-                'information.'),
     cli=dict(r=False,
-             h='Optional. Name of file for CLI commands. When specified, -ip, -id, -pw, and -s are ignored.')
+             h='Optional. Name of file for CLI commands.')
 )
+_input_d.update(gen_util.parseargs_scan_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
 _required_input = ('ip', 'id', 'pw', 'fid', 'wwn')

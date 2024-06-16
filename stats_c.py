@@ -56,15 +56,17 @@ being collected.
 +-----------+---------------+-----------------------------------------------------------------------------------+
 | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
 +-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.3     | 16 Jun 2024   | Improved help messages.                                                           |
++-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '16 Jun 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import http.client
 import sys
@@ -121,7 +123,8 @@ _input_d.update(
     o=dict(h='Required. Name of output file where raw data is to be stored. ".json" extension is automatically '
              'appended.'),
     fid=dict(r=False, t='int', v=gen_util.range_to_list('1-128'),
-             h='(Optional) Virtual Fabric ID (1 - 128) of switch to read statistics from.'),
+             h='(Optional) Virtual Fabric ID (1 - 128) of switch to read statistics from. Omit this option if the '
+               'chassis is not VF enabled. If omitted in a VF enabled chassis, the default is 128'),
     p=dict(r=False, t='float',
            h='(Optional) Polling interval in seconds. Since fractions of a second are supported, this is a floating'
              'point number. "-p 0.0" picks the default which is equivalent to -p ' + str(_DEFAULT_POLL_INTERVAL) +

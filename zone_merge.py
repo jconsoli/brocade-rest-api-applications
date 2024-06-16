@@ -32,15 +32,17 @@ Merges the zones from multiple fabrics
 +-----------+---------------+-----------------------------------------------------------------------------------+
 | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
 +-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.3     | 16 Jun 2024   | Improved help messages.                                                           |
++-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '16 Jun 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import sys
 import datetime
@@ -89,8 +91,8 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 _STAND_ALONE = True  # See note above
 
 _input_d = dict(
-    i=dict(h='Required. Zone merge data file. See zone_merge_sample.xlsx for details. ".xlsx" is automatically '
-             'appended.'),
+    i=dict(h='Required. Workbook with zone merge instructions. See zone_merge_sample.xlsx for details. ".xlsx" is '
+             'automatically appended.'),
     cfg=dict(r=False,
              h='Optional. Typically used. The specified zone configuration is a merge of all zone configuration '
                'defined in the workbook specified with the -i parameter. If the zone configuration does not exist, it '
@@ -100,12 +102,11 @@ _input_d = dict(
            h='Optional. No parameters. Activates the zone configuration specified with the -cfg option.'),
     t=dict(r=False, d=False, t='bool',
            h='Optional. No parameters. Perform the merge test only. No fabric changes are made.'),
-    scan=dict(r=False, d=False, t='bool',
-              h='Optional. No parameters. Scan switches and files for fabric information. No other actions are taken.'),
     cli=dict(r=False, d=False, t='bool',
              h='Optional. No parameters. Prints the zone merge CLI commands to the log and console whether -t is '
                'specified or not.'),
 )
+_input_d.update(gen_util.parseargs_scan_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
 
@@ -155,7 +156,6 @@ def _zone_cli(proj_obj):
     :rtype: list
     """
     rl = ['', '# To avoid input buffer overflow, copy and paste 20 commands at a time']
-    zd = proj_obj.r_get('zone_merge')
     base_fab_obj = proj_obj.r_get('zone_merge_fabric')
     for fab_obj in proj_obj.r_fabric_objects():
         zd = fab_obj.r_get('zone_merge')
@@ -293,7 +293,10 @@ def _get_project(sl, pl, addl_parms):
         brcdapi_log.log('Completed capture for ' + pid_d['file_name'] + '. Ending status: ' + str(pid_d['s']),
                         echo=True)
     for pid_d in pid_l:
-        obj = brcdapi_file.read_dump(pid_d['file_name'])
+        try:
+            obj = brcdapi_file.read_dump(pid_d['file_name'])
+        except FileNotFoundError:
+            obj = None
         if obj is None:
             rl.append('Capture for ' + file_name + '. failed.')
         else:
@@ -661,8 +664,13 @@ def _get_input():
     brcdapi_log.log(ml, echo=True)
 
     # Parse the input file
-    ml = list()
-    switch_l = excel_util.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=c_file)['content']
+    ml, switch_l = list(), list()
+    try:
+        switch_l = excel_util.parse_parameters(sheet_name='parameters', hdr_row=0, wb_name=c_file)['content']
+    except FileExistsError:
+        ml.append('A folder in the path "' + c_file + '" does not exist.')
+    except FileNotFoundError:
+        ml.append(c_file + ' does not exist.')
     if args_d['a'] and not isinstance(args_d['cfg'], str):
         ml.append('Configuration activate flag, -a, specified without a valid zone configuration name, -cfg')
     if len(ml) == 0:

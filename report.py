@@ -33,15 +33,17 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+-----------------------------------------------------------------------------------+
 | 4.0.3     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
 +-----------+---------------+-----------------------------------------------------------------------------------+
+| 4.0.4     | 16 Jun 2024   | Improved help messages. Added -sheet input parameter.                             |
++-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '16 Jun 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -92,13 +94,12 @@ _input_d = dict(
     o=dict(h='Required. Name of report file. ".xlsx" is automatically appended.'),
     bp=dict(r=False,
             h='Optional. Name of the Excel Workbook with best practice checks. This parameter is passed to report.py '
-              'if -r is specified. Otherwise it is not used. ".xlsx" is automatically appended.'),
+              'if -r is specified. Otherwise, it is not used. ".xlsx" is automatically appended.'),
+    sheet=dict(r=False, d='active', h='Optional. Specifies the sheet name in -bp to read. The default is "active".'),
     sfp=dict(r=False,
              h='Optional. Name of the Excel Workbook with SFP thresholds. This parameter is passed to report.py if -r '
-               'is specified. Otherwise it is not used. ".xlsx" is automatically appended.'),
-    group=dict(r=False,
-               h='Optional. Name of Excel file containing group definitions. This parameter is passed to report.py if '
-                 '-r is specified. Otherwise it is not used. ".xlsx" is automatically appended.'),
+               'is specified. Otherwise, it is not used. ".xlsx" is automatically appended.'),
+    group=dict(r=False, h='Optional. Name of Excel file containing group definitions. See group.xlsx for an example.'),
     iocp=dict(r=False,
               h='Optional. Name of folder with IOCP files. All files in this folder must be IOCP files (build I/O '
                 'configuration statements from HCD) and must begin with the CEC serial number followed by \'_\'. '
@@ -263,7 +264,7 @@ def _groups(proj_obj, group_l, file):
     return group_d
 
 
-def pseudo_main(proj_obj, outf, bp_rules, sfp_rules, group_file, iocp, custom_parms):
+def pseudo_main(proj_obj, outf, bp_rules, bp_sheet, sfp_rules, group_file, iocp, custom_parms):
     """Basically the main(). Did it this way so that it can easily be used as a standalone module or called externally.
 
     :param proj_obj: Project object
@@ -272,6 +273,8 @@ def pseudo_main(proj_obj, outf, bp_rules, sfp_rules, group_file, iocp, custom_pa
     :type outf: str
     :param bp_rules: Best practice rules file, -bp
     :type bp_rules: str, None
+    :param bp_sheet: sheet in best practice, -bp, workbook to read.
+    :type bp_sheet: str, None
     :param sfp_rules: Name of SFP rules file, -sfp
     :type sfp_rules: str, None
     :param group_file: Name of group file
@@ -283,8 +286,6 @@ def pseudo_main(proj_obj, outf, bp_rules, sfp_rules, group_file, iocp, custom_pa
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    ml = list()
-
     # Perform all pre-processing (parse IOCPs, build references, ...)
     brcdapi_log.log('Building cross-references', echo=True)
     brcddb_project.build_xref(proj_obj)
@@ -334,16 +335,17 @@ def _get_input():
 
     # Command line feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,
-          'In file, -i:          ' + args_d['i'],
-          'Out file, -o:         ' + args_d['o'],
-          'SFP rules file, -sfp: ' + str(args_d['sfp']),
-          'Best practice, -bp:   ' + str(args_d['bp']),
-          'Zone groups, -group:  ' + str(args_d['group']),
-          'IOCP, -iocp:          ' + str(args_d['iocp']),
-          'Custom, -c:           ' + str(args_d['c']),
-          'Log, -log:            ' + str(args_d['log']),
-          'No log, -nl:          ' + str(args_d['nl']),
-          'Supress, -sup:        ' + str(args_d['sup']),
+          'In file, -i:                 ' + args_d['i'],
+          'Out file, -o:                ' + args_d['o'],
+          'SFP rules file, -sfp:        ' + str(args_d['sfp']),
+          'Best practice, -bp:          ' + str(args_d['bp']),
+          'Best practice sheet, -sheet: ' + str(args_d['sheet']),
+          'Zone groups, -group:         ' + str(args_d['group']),
+          'IOCP, -iocp:                 ' + str(args_d['iocp']),
+          'Custom, -c:                  ' + str(args_d['c']),
+          'Log, -log:                   ' + str(args_d['log']),
+          'No log, -nl:                 ' + str(args_d['nl']),
+          'Supress, -sup:               ' + str(args_d['sup']),
           '',]
     brcdapi_log.log(ml, echo=True)
 
@@ -367,7 +369,7 @@ def _get_input():
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     proj_obj.s_description('\n'.join(ml))
 
-    return pseudo_main(proj_obj, out_file, bp_file, sfp_file, group_file, args_d['iocp'], args_d['c'])
+    return pseudo_main(proj_obj, out_file, bp_file, args_d['sheet'], sfp_file, group_file, args_d['iocp'], args_d['c'])
 
 
 ##################################################################

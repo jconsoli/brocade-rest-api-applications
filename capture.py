@@ -43,16 +43,18 @@ Version Control::
     | 4.0.2     | 03 Apr 2024   | Explicitly defined parameters in call to api_int.get_batch()                      |
     |           |               | Added version numbers of imported libraries.                                      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.3     | 16 Jun 2024   | Improved help messages.                                                           |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '16 Jun 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import signal
 import sys
@@ -166,16 +168,16 @@ _input_c_help = ('Optional. Name of file with list of KPIs to capture and/or FOS
 _input_c_help += ' all FOS. The default is to capture all KPIs and FOS commands required for the report.'
 _input_d = gen_util.parseargs_login_d.copy()
 _input_d.update(
-    f=dict(h='Required. Output file for captured data'),
+    f=dict(h='Required. Output file for captured data. ".json" is automatically appended.'),
     c=dict(r=False, h=_input_c_help),
     fid=dict(r=False,
              h='Optional. CSV list or range of FIDs to capture logical switch specific data. The default is to '
-               'automatically, determine all logical switch FIDs defined in the chassis.'),
+               'automatically determine all logical switch FIDs defined in the chassis.'),
     clr=dict(r=False, t='bool', d=False,
              h='Optional. No parameters. Clear port statistics after successful capture'),
     nm=dict(r=False, t='bool', d=False,
             h='Optional. No parameters. By default, all but the last octet of IP addresses are masked before being '
-              'stored in the output file. This option preserves the full IP address which is useful for having full '
+              'stored in the output file. This option preserves the full IP address. This is useful for having full '
               'IP addresses in reports and when using restore_all.py.'),
 )
 _input_d.update(gen_util.parseargs_log_d.copy())

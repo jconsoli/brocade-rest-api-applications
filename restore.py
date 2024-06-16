@@ -98,15 +98,17 @@ each logical switch acted on.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 15 May 2024   | Declared _scan_action_l global in pseudo_main().                                      |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 16 Jun 2024   | Fixed grammar mistakes in help messages.                                              |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '15 May 2024'
+__date__ = '16 Jun 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.5'
 
 import collections
 import pprint
@@ -169,32 +171,28 @@ _DEBUG = False   # When True, prints status to the log and console
 _STAND_ALONE = True  # See note above
 
 _input_d = gen_util.parseargs_login_false_d.copy()
-_input_d.update(
-    p=dict(r=False, d=None,
-           h='Required unless using -scan, -cli, or -eh options. CSV list of option parameters. Use * for all '
-             'parameters. Invoke with the -eh parameter for details.'),
-    i=dict(r=False, d=None,
-           h='Required unless using -scan, -cli, or -eh options. Captured data file from the output of capture.py, '
-             'combine.py, or multi_capture.py. ".json" is automatically appended.'),
-    wwn=dict(r=False, d=None,
-             h='Optional (required if multiple chassis are in the captured data, -i). WWN of chassis in the input file,'
-               ' -i, to be restored to the chassis specified with -ip. NOTE: When capturing data from a single chassis,'
-               ' additional chassis may have been discovered if any of the logical switches were in a fabric. Use the '
-               '-scan option to determine all discovered chassis.'),
-    fm=dict(r=False, d=None, h='Optional. FID Map. Re-run with -eh for details.'),
-    cli=dict(r=False, d=None,
-             h='Optional. Name of CLI file. ".txt" is automatically appended. When specified,  FOS CLI commands to '
-               'restore the chassis are created in this file. No attempts are made to make changes via the API. Future '
-               'consideration. This feature is not yet supported.'),
-    scan=dict(r=False, d=False, t='bool',
-              h='Optional. No parameters. Displays a list of all chassis by name and WWN. Also includes a list of each'
-                'logical switch in each chassis by name, WWN, FID, and DID. No other processing is performed. TIP: '
-                'Instead of using -scan, run restore_all.py to generate a batch file to restore all chassis. Copy, '
-                'paste, an edit as needed.'),
-    eh=dict(r=False, d=False, t='bool',
-            h='Optional. No parameters. When specified, additional help is displayed. No other processing is '
-              'performed'),
-)
+_input_d['i'] = dict(
+    r=False, d=None,
+    h='Required unless using -scan, -cli, or -eh options. Captured data file from the output of capture.py, '
+      'combine.py, or multi_capture.py. ".json" is automatically appended.')
+_input_d['wwn'] = dict(
+    r=False, d=None,
+    h='Optional (required if multiple chassis are in the captured data, -i). WWN of chassis in the input file, -i, to '
+      'be restored to the chassis specified with -ip. NOTE: When capturing data from a single chassis, additional '
+      'chassis may have been discovered if any of the logical switches were in a fabric. Use the -scan option to '
+      'determine all discovered chassis.')
+_input_d['p'] = dict(
+    r=False, d=None,
+    h='Required unless using -scan, -cli, or -eh options. CSV list of option parameters. This determines what is to '
+      'be restored. Use * for all parameters. Invoke with -eh for details.')
+_input_d['fm'] = dict(r=False, d=None, h='Optional. FID Map. Re-run with -eh for details.')
+_input_d['cli'] = dict(
+    r=False, d=None,
+    h='Optional. Name of CLI file. ".txt" is automatically appended. When specified,  FOS CLI commands to restore the '
+      'chassis are created in this file. No attempts are made to make changes via the API. Future consideration. This '
+      'feature is not yet supported.')
+_input_d.update(gen_util.parseargs_scan_d.copy())
+_input_d.update(gen_util.parseargs_eh_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
 
@@ -243,9 +241,9 @@ _restore_parameters = dict(
     vfc='Virtual Fabrics Clear. Virtual fabrics will be enabled if necessary; however, virtual fabrics will not be '
         'disabled. Deletes all non-default logical switches. Set all ports in all FIDs, including the default logical '
         'switch, to the default configuration.',
-    vfs='Virtual Fabrics Switches. Create any logical switch that doesn\'t already exist. Unless specified otherwise '
+    vfs='Virtual Fabric Switches. Create any logical switch that doesn\'t already exist. Unless specified otherwise '
         'with the -fm option, the FID, DID, fabric name, and switch name will match that of the restore chassis.',
-    vfp='Virtual Fabrics Ports. Remove any ports that do not belong in the target logical switch. Add any ports not '
+    vfp='Virtual Fabric Ports. Remove any ports that do not belong in the target logical switch. Add any ports not '
         'present that do belong to the logical switch. Typically not used when restoring to a different chassis type.',
     c='Chassis. All chassis settings except virtual fabrics, users, and security features. It does include enabling '
       'FCR but no other FCR configuration settings are available at this time.',
@@ -352,8 +350,10 @@ _eh = [
             'Some actions require the affected switch or port to be disabled. If vf was not specified, you may need '
             'to disable ports in the target switch.',
             'When the zone database is replaced, z, zones and associated aliases in the effective zone are preserved. '
-            'If the zone configuration is enabled, ze, any zone ans aliases not in the zone database being restored '
-            'are then deleted.'),
+            'If the zone configuration is enabled, ze, any zone and aliases not in the zone database being restored '
+            'are then deleted.',
+            'The FID map is built once after the initial data capture. Logical switches added to the target chassis '
+            'afterwards are not included in the FID map',),
          p='  * '),
     dict(b=('', 'Parameter, -p, options:', '__________________________', '', '*       All (full restore)')),
     ]
@@ -588,6 +588,117 @@ def _true_act(obj, key, sub_key=None):
 
 ###################################################################
 #
+#             Support Actions for _build_fid_map
+#
+###################################################################
+def _fm_switch_obj(ml, chassis_obj, fid_map_d, v, fm_index):
+    """Fills in r_switch_obj and r_fid in the fid_map_d
+
+    :param ml: running list of error messages
+    :type ml: list
+    :param chassis_obj: Chassis object of restore chassis
+    :type chassis_obj: brcddb.classes.chassis.ChassisObj
+    :param fid_map_d: FID map as described in _build_fid_map()
+    :type fid_map_d: dict
+    :param v: Command line input value
+    :type v: int,str,None
+    :param fm_index: Index into the command line split on ';'. Used for error messages only
+    :type fm_index: int
+    :rtype: None
+    """
+    if v is None:
+        ml.append('No parameters specified with -fm option at index ' + str(fm_index))
+    else:
+        try:
+            fid_map_d.update(r_switch_obj=chassis_obj.r_switch_obj_for_fid(int(v)))
+            if fid_map_d['r_switch_obj'] is None:
+                ml.append('Resource FID, ' + v + ', is not present in the restore chassis.')
+            else:
+                fid_map_d.update(r_fid=int(v))
+                return
+        except ValueError:
+            ml.append('Resource FID, ' + v + ', must be an integer in the range: 1-128 at index ' + str(fm_index))
+    fid_map_d.update(r_switch_obj=None)  # If we got this far, we didn't find the switch object
+
+
+def _fm_fid(ml, chassis_obj, fid_map_d, v, fm_index):
+    """Fills in t_fid in the fid_map_d. See _fm_switch_obj() for parameter definitions"""
+    for fid in gen_util.range_to_list(v):
+        if fid < 1 or fid > 128:
+            ml.append('Target FID, ' + v + ', in -fm parameter must be an integer in the range: 1-128 at index ' +
+                      str(fm_index))
+            continue
+        else:
+            fid_map_d['t_fid'] = fid
+    if v is None or fid_map_d['r_switch_obj'] is None:
+        fid_map_d.update(t_fid=fid_map_d.get('r_fid'))
+        return
+    try:
+        fid = int(v)
+        if fid < 1 or fid > 128:
+            raise ValueError
+        fid_map_d.update(t_fid=fid)
+        return
+    except ValueError:
+        ml.append('Target FID, ' + v + ', in -fm parameter must be an integer in the range: 1-128 at index ' +
+                  str(fm_index))
+
+
+def _fm_fabric_name(ml, chassis_obj, fid_map_d, v, fm_index):
+    """Fills in fab_name in the fid_map_d. See _fm_switch_obj() for parameter definitions"""
+    if fid_map_d['r_switch_obj'] is None:
+        return
+    if v is None or len(v) == 0:
+        fabric_name = brcddb_fabric.best_fab_name(fid_map_d['r_switch_obj'].r_fabric_obj())
+        if ':' in fabric_name:
+            fabric_name = None  # The WWN is returned if the fabric isn't named
+        fid_map_d.update(fab_name=fabric_name)
+    else:
+        fid_map_d.update(fab_name=v)
+
+
+def _fm_did(ml, chassis_obj, fid_map_d, v, fm_index):
+    """Fills in did in the fid_map_d. See _fm_switch_obj() for parameter definitions"""
+    if fid_map_d['r_switch_obj'] is None:
+        return
+    if v is None:
+        fid_map_d.update(did=fid_map_d['r_switch_obj'].r_did())
+        return
+    try:
+        did = int(v)
+        if did < 1 or did > 239:
+            raise ValueError
+        fid_map_d.update(did=did)
+    except ValueError:
+        ml.append('Target DID, ' + v + ', must be an integer in the range: 1-239 at index ' + str(fm_index))
+
+
+def _fm_switch_name(ml, chassis_obj, fid_map_d, v, fm_index):
+    """Fills in switch_name in the fid_map_d. See _fm_switch_obj() for parameter definitions"""
+    if fid_map_d['r_switch_obj'] is None:
+        return
+    if v is None or len(v) == 0:
+        switch_name = brcddb_switch.best_switch_name(fid_map_d['r_switch_obj'])
+        if ':' in switch_name:
+            switch_name = None  # The WWN is returned if the switch isn't named
+        fid_map_d.update(switch_name=switch_name)
+    else:
+        fid_map_d.update(switch_name=v)
+
+
+# _fm_conversion_d is used to build the FID map. The key is the index into the CSV split of the command line input.
+# The value is the method to call to determine the value. Used in _build_fid_map()
+_fm_conversion_d = {
+    0: _fm_switch_obj,  # Converts the resource FID to a switch object
+    1: _fm_fid,  # FID to be created in the target chassis.
+    2: _fm_fabric_name,  # Fabric name to be defined in the target chassis.
+    3: _fm_did,  # switch DID in decimal to be defined in the target chassis.
+    4: _fm_switch_name,  # Switch name to be defined in the target chassis.
+}
+
+
+###################################################################
+#
 #                        Branch Actions
 #
 ###################################################################
@@ -619,6 +730,119 @@ def _data_capture(cd, d):
     if len(_data_collect_error_l) > 0:
         raise FIDMapError
 
+    return list()
+
+
+def _build_fid_map(cd, d):
+    """Builds the FID map as a dictionary. See _data_capture() for parameter definitions.
+    
+    Key is the target switch FID. Value is a dictionary as follows:
+
+    +---------------+-----------+-------------------------------------------------------------------------------+
+    | Key           | Type      | Description                                                                   |
+    +===============+===========+===============================================================================+
+    | r_switch_obj  | SwitchObj | Switch object of corresponding restore switch. If None, something went wrong  |
+    |               | None      | and the remaining keys are not present.                                       |
+    +---------------+-----------+-------------------------------------------------------------------------------+
+    | r_fid         | int, None | FID of corresponding restore switch.                                          |
+    +---------------+-----------+-------------------------------------------------------------------------------+
+    | t_fab_name    | str, None | Fabric name. None if the fabric isn't named.                                  |
+    +---------------+-----------+-------------------------------------------------------------------------------+
+    | t_did         | int       | Domain ID of the target switch. None if something went wrong                  |
+    +---------------+-----------+-------------------------------------------------------------------------------+
+    | t_switch_name | str, None | Switch name. None if the fabric isn't named.                                  |
+    +---------------+-----------+-------------------------------------------------------------------------------+
+    """
+    global _fm_conversion_d
+    
+    fm_index, ml, wl, fid_map_d, r_fid_l = 0, list(), list(), dict(), list()
+    fid_range_buf = ', must be a decimal integer or range of integers from 1-128.'
+    did_range_buf = ', is not a valid DID. DIDs must be a decimal integer from 1-239'
+    r_chassis_obj, t_chassis_obj, fid_map_d = cd['r_chassis_obj'], cd['t_chassis_obj'], cd['fid_map_d']
+    if r_chassis_obj is None:
+        ml.append('A chassis object was not found in the project.')
+    else:
+        r_fid_l = r_chassis_obj.r_fid_list()
+        if len(r_fid_l) == 0:
+            ml.append('No logical switches found in the chassis. This typically occurs with non-VF enabled chassis')
+    if len(ml) > 0:
+        return ml, fid_map_d
+
+    args_fm = cd['args_fm'] if isinstance(cd['args_fm'], str) else ';'.join([str(b) for b in r_fid_l])
+    for fid_l in [v.split(',') for v in args_fm.replace(' ', '').split(';')]:
+
+        # Get the restore switch FID and switch object
+        try:
+            r_fid = int(fid_l[0])
+        except IndexError:
+            ml.append('There are no parameters at index ' + str(fm_index) + ' after splitting -fm input by ";"')
+            fm_index += 1
+            continue
+        except ValueError:
+            ml.append('The restore FID at index ' + str(fm_index) + ', ' + fid_l[0] + fid_range_buf)
+            fm_index += 1
+            continue
+        r_switch_obj = r_chassis_obj.r_switch_obj_for_fid(r_fid)
+        if r_switch_obj is None:
+            ml.append('FID ' + fid_l[0] + ' does not exist in the restore chassis.')
+            fm_index += 1
+            continue
+
+        # Fill in and get the default parameters
+        if len(fid_l) < 2:
+            fid_l.append(fid_l[0])
+        while len(fid_l) < 5:
+            fid_l.append('')
+        r_fab_name = r_switch_obj.r_get(brcdapi_util.bfs_fab_user_name)
+        if isinstance(r_fab_name, str) and len(r_fab_name) == 0:
+            r_fab_name = None
+        r_switch_name = r_switch_obj.r_get(brcdapi_util.bfs_sw_user_name)
+        if r_switch_name is None:
+            r_switch_name = r_switch_obj.r_get(brcdapi_util.bf_sw_user_name)
+        if isinstance(r_switch_name, str) and len(r_switch_name) == 0:
+            r_switch_name = None
+
+        # Get the target chassis parameters
+        t_fid_l = list()  # Just to keep the IDE warnings down
+        try:
+            t_fid_l = gen_util.range_to_list(fid_l[1])
+        except ValueError:
+            ml.append('The target FID, ' + fid_l[1] + ', at index ' + str(fm_index) + fid_range_buf)
+        for t_fid in t_fid_l:
+            if t_fid < 1 or t_fid > 128:
+                ml.append('The target FID, ' + str(t_fid) + ', at index ' + str(fm_index) + fid_range_buf)
+            t_switch_obj = t_chassis_obj.r_switch_obj_for_fid(t_fid)
+            if t_switch_obj is None:
+                wl.append(t_fid)
+                fm_index += 1
+                continue
+            try:
+                t_did = r_switch_obj.r_did() if len(fid_l[3]) == 0 else int(fid_l[3])
+            except ValueError:
+                ml.append('The target DID, ' + str(fid_l[3]) + did_range_buf)
+                fm_index += 1
+                continue
+            if t_did < 1 or t_did > 239:
+                ml.append('The target DID, ' + str(t_did) + did_range_buf)
+                fm_index += 1
+                continue
+            fid_map_d.update({t_fid: dict(
+                r_switch_obj=r_switch_obj,
+                r_fid=r_fid,
+                t_fab_name=r_fab_name if len(fid_l[2]) == 0 else None if fid_l[2].lower() == 'none' else fid_l[2],
+                t_did=t_did,
+                t_switch_name=r_switch_name if len(fid_l[4]) == 0 else None if fid_l[4].lower() == 'none' else fid_l[4]
+            )})
+
+        fm_index += 1
+
+    if len(ml) > 0:
+        brcdapi_log.log(ml, echo=True)
+        raise FIDMapError
+
+    # Display warning messages for FIDs not found in target.
+    if len(wl) > 0:
+        return ['WARNING: The following FIDs were not found in the target chassis: ' + ', '.join([str(i) for i in wl])]
     return list()
 
 
@@ -1322,14 +1546,17 @@ WARNING: This is a template with some suggestions. Anything with _conv_none_act 
 """
 
 _scan_action_l = [
-    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Basic Capture 0', p='vf'),
-    dict(a=_scan_act, e='Scan'),
+    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Basic Capture 0', p='m'),
+    dict(a=_scan_act, e='Scan', p='m'),
     ]
 
 _action_l = [  # See block comments above for definitions
+    
+    # Start with a full data capture and build the FID map
+    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Initial Capture', p='m'),
+    dict(a=_build_fid_map, e='Build FID map', p='m'),
 
     # Virtual Fabrics
-    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Basic Capture vfc', p='vfc'),
     dict(k=brcdapi_util.bcc_uri, a=_vf_enable, e='_vf_enable', p='vfc', rw={'vf-enabled': _conv_lookup_act}),
     dict(a=_del_switches, e='_del_switches', p='vfc'),
     dict(a=_data_clear, e='_data_clear 1', p='vfs'),
@@ -1697,213 +1924,6 @@ for _d in _action_l:
         _d.update(e=str(_d.get('k')))
 
 
-def _fm_switch_obj(ml, chassis_obj, fid_map_d, v, fm_index):
-    """Fills in r_switch_obj and r_fid in the fid_map_d
-
-    :param ml: running list of error messages
-    :type ml: list
-    :param chassis_obj: Chassis object of restore chassis
-    :type chassis_obj: brcddb.classes.chassis.ChassisObj
-    :param fid_map_d: FID map as described in _build_fid_map()
-    :type fid_map_d: dict
-    :param v: Command line input value
-    :type v: int,str,None
-    :param fm_index: Index into the command line split on ';'. Used for error messages only
-    :type fm_index: int
-    :rtype: None
-    """
-    if v is None:
-        ml.append('No parameters specified with -fm option at index ' + str(fm_index))
-    else:
-        try:
-            fid_map_d.update(r_switch_obj=chassis_obj.r_switch_obj_for_fid(int(v)))
-            if fid_map_d['r_switch_obj'] is None:
-                ml.append('Resource FID, ' + v + ', is not present in the restore chassis.')
-            else:
-                fid_map_d.update(r_fid=int(v))
-                return
-        except ValueError:
-            ml.append('Resource FID, ' + v + ', must be an integer in the range: 1-128 at index ' + str(fm_index))
-    fid_map_d.update(r_switch_obj=None)  # If we got this far, we didn't find the switch object
-
-
-def _fm_fid(ml, chassis_obj, fid_map_d, v, fm_index):
-    """Fills in t_fid in the fid_map_d. See _fm_switch_obj() for parameter definitions"""
-    for fid in gen_util.range_to_list(v):
-        if fid < 1 or fid > 128:
-            ml.append('Target FID, ' + v + ', in -fm parameter must be an integer in the range: 1-128 at index ' +
-                      str(fm_index))
-            continue
-        else:
-            fid_map_d['t_fid'] = fid
-    if v is None or fid_map_d['r_switch_obj'] is None:
-        fid_map_d.update(t_fid=fid_map_d.get('r_fid'))
-        return
-    try:
-        fid = int(v)
-        if fid < 1 or fid > 128:
-            raise ValueError
-        fid_map_d.update(t_fid=fid)
-        return
-    except ValueError:
-        ml.append('Target FID, ' + v + ', in -fm parameter must be an integer in the range: 1-128 at index ' +
-                  str(fm_index))
-
-
-def _fm_fabric_name(ml, chassis_obj, fid_map_d, v, fm_index):
-    """Fills in fab_name in the fid_map_d. See _fm_switch_obj() for parameter definitions"""
-    if fid_map_d['r_switch_obj'] is None:
-        return
-    if v is None or len(v) == 0:
-        fabric_name = brcddb_fabric.best_fab_name(fid_map_d['r_switch_obj'].r_fabric_obj())
-        if ':' in fabric_name:
-            fabric_name = None  # The WWN is returned if the fabric isn't named
-        fid_map_d.update(fab_name=fabric_name)
-    else:
-        fid_map_d.update(fab_name=v)
-
-
-def _fm_did(ml, chassis_obj, fid_map_d, v, fm_index):
-    """Fills in did in the fid_map_d. See _fm_switch_obj() for parameter definitions"""
-    if fid_map_d['r_switch_obj'] is None:
-        return
-    if v is None:
-        fid_map_d.update(did=fid_map_d['r_switch_obj'].r_did())
-        return
-    try:
-        did = int(v)
-        if did < 1 or did > 239:
-            raise ValueError
-        fid_map_d.update(did=did)
-    except ValueError:
-        ml.append('Target DID, ' + v + ', must be an integer in the range: 1-239 at index ' + str(fm_index))
-
-
-def _fm_switch_name(ml, chassis_obj, fid_map_d, v, fm_index):
-    """Fills in switch_name in the fid_map_d. See _fm_switch_obj() for parameter definitions"""
-    if fid_map_d['r_switch_obj'] is None:
-        return
-    if v is None or len(v) == 0:
-        switch_name = brcddb_switch.best_switch_name(fid_map_d['r_switch_obj'])
-        if ':' in switch_name:
-            switch_name = None  # The WWN is returned if the switch isn't named
-        fid_map_d.update(switch_name=switch_name)
-    else:
-        fid_map_d.update(switch_name=v)
-
-
-# _fm_conversion_d is used to build the FID map. The key is the index into the CSV split of the command line input.
-# The value is the method to call to determine the value. Used in _build_fid_map()
-_fm_conversion_d = {
-    0: _fm_switch_obj,  # Converts the resource FID to a switch object
-    1: _fm_fid,  # FID to be created in the target chassis.
-    2: _fm_fabric_name,  # Fabric name to be defined in the target chassis.
-    3: _fm_did,  # switch DID in decimal to be defined in the target chassis.
-    4: _fm_switch_name,  # Switch name to be defined in the target chassis.
-}
-
-
-def _build_fid_map(r_chassis_obj, args_fm_in):
-    """Builds the FID map as a dictionary. Key is the target switch FID. Value is a dictionary as follows:
-
-    +---------------+-----------+-------------------------------------------------------------------------------+
-    | Key           | Type      | Description                                                                   |
-    +===============+===========+===============================================================================+
-    | r_switch_obj  | SwitchObj | Switch object of corresponding restore switch. If None, something went wrong  |
-    |               | None      | and the remaining keys are not present.                                       |
-    +---------------+-----------+-------------------------------------------------------------------------------+
-    | r_fid         | int, None | FID of corresponding restore switch.                                          |
-    +---------------+-----------+-------------------------------------------------------------------------------+
-    | t_fab_name    | str, None | Fabric name. None if the fabric isn't named.                                  |
-    +---------------+-----------+-------------------------------------------------------------------------------+
-    | t_did         | int       | Domain ID of the target switch. None if something went wrong                  |
-    +---------------+-----------+-------------------------------------------------------------------------------+
-    | t_switch_name | str, None | Switch name. None if the fabric isn't named.                                  |
-    +---------------+-----------+-------------------------------------------------------------------------------+
-
-    :param r_chassis_obj: Chassis object of restore chassis
-    :type r_chassis_obj: brcddb.classes.chassis.ChassisObj
-    :param args_fm_in: -fm parameter as entered from the command line
-    :type args_fm_in: str, None
-    :return ml: Error messages
-    :rtype ml: list
-    :return r_fid_map_d: FID map as described in the description
-    :rtype r_fid_map_d: dict
-    """
-    global _fm_conversion_d
-
-    fm_index, ml, r_fid_map_d, r_fid_l = 0, list(), dict(), list()
-    if r_chassis_obj is None:
-        ml.append('A chassis object was not found in the project.')
-    else:
-        r_fid_l = r_chassis_obj.r_fid_list()
-        if len(r_fid_l) == 0:
-            ml.append('No logical switches found in the chassis. This typically occurs with non-VF enabled chassis')
-    if len(ml) > 0:
-        return ml, r_fid_map_d
-
-    args_fm = args_fm_in if isinstance(args_fm_in, str) else ';'.join([str(b) for b in r_fid_l])
-    range_buf = ', must be a decimal integer or range of integers from 1-128.'
-    for fid_l in [v.split(',') for v in args_fm.replace(' ', '').split(';')]:
-
-        # Get the restore switch FID and switch object
-        try:
-            r_fid = int(fid_l[0])
-        except IndexError:
-            ml.append('There are no parameters at index ' + str(fm_index) + ' after splitting -fm input by ";"')
-            fm_index += 1
-            continue
-        except ValueError:
-            ml.append('The restore FID at index ' + str(fm_index) + ', ' + fid_l[0] + range_buf)
-            fm_index += 1
-            continue
-        r_switch_obj = r_chassis_obj.r_switch_obj_for_fid(r_fid)
-        if r_switch_obj is None:
-            ml.append('FID ' + fid_l[0] + ' does not exist in the target chassis.')
-            fm_index += 1
-            continue
-
-        # Fill in and get the default parameters
-        if len(fid_l) < 2:
-            fid_l.append(fid_l[0])
-        while len(fid_l) < 5:
-            fid_l.append('')
-        r_fab_name = r_switch_obj.r_get(brcdapi_util.bfs_fab_user_name)
-        if isinstance(r_fab_name, str) and len(r_fab_name) == 0:
-            r_fab_name = None
-        r_switch_name = r_switch_obj.r_get(brcdapi_util.bfs_sw_user_name)
-        if r_switch_name is None:
-            r_switch_name = r_switch_obj.r_get(brcdapi_util.bf_sw_user_name)
-        if isinstance(r_switch_name, str) and len(r_switch_name) == 0:
-            r_switch_name = None
-
-        # Get the target chassis parameters
-        t_fid_l = list()
-        try:
-            t_fid_l = gen_util.range_to_list(fid_l[1])
-        except ValueError:
-            ml.append('The target FID, ' + fid_l[1] + ', at index ' + str(fm_index) + range_buf)
-        for t_fid in t_fid_l:
-            if t_fid < 1 or t_fid > 128:
-                ml.append('The target FID, ' + str(t_fid) + ', at index ' + str(fm_index) + range_buf)
-            try:
-                r_fid_map_d.update({t_fid: dict(
-                    r_switch_obj=r_switch_obj,
-                    r_fid=r_fid,
-                    t_fab_name=r_fab_name if len(fid_l[2]) == 0 else None if fid_l[2] == 'None' else fid_l[2],
-                    t_did=r_switch_obj.r_did() if len(fid_l[3]) == 0 else int(fid_l[3]),
-                    t_switch_name=r_switch_name if len(fid_l[4]) == 0 else None if fid_l[4] == 'None' else fid_l[4]
-                )})
-            except ValueError:
-                ml.append('The target FID at index ' + str(fm_index) + ', ' + fid_l[0] + range_buf)
-                fm_index += 1
-                continue
-
-        fm_index += 1
-
-    return ml, r_fid_map_d
-
-
 def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm, args_cli, args_scan):
     """Basically the main(). Did it this way, so it can easily be used as a standalone module or called from another.
 
@@ -1934,7 +1954,7 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
 
     ec, el, fid_map_d = brcddb_common.EXIT_STATUS_OK, list(), dict()
     action_l = _scan_action_l if args_scan else\
-        [d for d in _action_l if not bool(d.get('skip')) and bool(act_d.get(d['p']))]
+        [d for d in _action_l if not d.get('skip', False) and bool(act_d.get(d['p']))]
 
     # Get a project object and some basic info for the chassis to be modified
     t_proj_obj = brcddb_project.new('Chassis to be modified', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -1944,7 +1964,7 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
     # Figure out what data to capture
     skip_p = False
     for d in action_l:
-        if not bool(d.get('skip')):
+        if not d.get('skip', False):
             if not skip_p and str(d.get('p')) == 'p':
                 _full_capture_l.extend(_all_fos_cli_l)
                 skip_p = True
@@ -1954,19 +1974,13 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
                     buf = sub_key if 'fos_cli' in sub_key else 'running/' + sub_key
                     _full_capture_l.append(buf)
 
-    # Build the FID map
-    if not args_scan:
-        el, fid_map_d = _build_fid_map(r_chassis_obj, args_fm)
-        if len(el) > 0:
-            brcdapi_log.log(el, echo=True)
-            return brcddb_common.EXIT_STATUS_INPUT_ERROR
-
     # Initialize the control data structure
     summary_d = dict()
     summary_d['chassis'] = collections.OrderedDict()
     summary_d['chassis']['Users'] = list()
     summary_d['chassis']['VF Enable'] = False
     local_control_d = dict(type='local_control_d',  # Search for local_control_d in header for description
+                           args_fm=args_fm,
                            t_proj_obj=t_proj_obj,
                            r_proj_obj=r_proj_obj,
                            r_chassis_obj=r_chassis_obj,

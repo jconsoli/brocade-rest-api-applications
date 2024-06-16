@@ -49,15 +49,17 @@ then applied to the switch all at once. Specifically:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 15 May 2024   | Added migration and purge capabilities.                                               |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 16 Jun 2024   | Fixed name of sample workbook in help messages.                                       |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '15 May 2024'
+__date__ = '16 Jun 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import collections
 import sys
@@ -114,7 +116,7 @@ _input_d['wwn'] = dict(r=False, d=None, h='Optional. Fabric WWN. Required when -
 _input_d['z'] = dict(
     r=False, d=None,
     h='Required unless using -scan. Workbook with zone definitions. ".xlsx" is automatically appended. See '
-      'zone_sample.xlsx.')
+      'zone_config_sample.xlsx.')
 _input_d['sheet'] = dict(
     r=False, d=None,
     h='Required unless using -scan. Sheet name in workbook, -z, to use for zoning definitions.')
@@ -129,9 +131,7 @@ _input_d['cli'] = dict(
 _input_d['strict'] = dict(r=False, d=False, t='bool',
                           h='Optional. When set, warnings are treated as errors. Warnings are for inconsequential '
                             'errors, such as deleting a zone that doesn\'t exist.')
-_input_d['scan'] = dict(
-    r=False, d=False, t='bool',
-    h='Optional. No parameters. Scan fabric information. No other actions are taken.')
+_input_d.update(gen_util.parseargs_scan_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
 

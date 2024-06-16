@@ -38,15 +38,17 @@ This is effectively an intelligent batch file that does the following:
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.3     | 16 Jun 2024   | Changed default HTTP to "self". Added -sheet input parameter.                     |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '16 Jun 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import signal
 import datetime
@@ -82,15 +84,17 @@ _DEBUG = True   # When True, echos additional status and debug information to ST
 # Input parameter definitions
 _input_d = dict(
     i=dict(h='Required. Excel file of switch login credentials. See multi_capture_example.xlsx. ".xlsx" is '
-             'automatically appended.'),
+             'automatically appended. The cells in the "security" column default to "self" if empty. The "name" '
+             'column is only used for error reporting if there is a problem logging in.'),
     f=dict(r=False,
            h='Optional. Folder name where captured data is to be placed. If not specified, a folder with the default '
-             'name _capture_yyyy_mmm_dd_hh_mm_ss is created. The individual switch data is put in this folder with the '
-             'switch name. A file named combined.json, output of combine.py, and report.xlsx, output of report.py, is '
-             'added to this folder.'),
+             'name _capture_yyyy_mmm_dd_hh_mm_ss is created. The individual switch data is put in this folder with '
+             'the switch name. A file named combined.json, output of combine.py, and reports are added to this '
+             'folder. Typically not used.'),
     bp=dict(r=False,
             h='Optional. Name of the Excel Workbook with best practice checks. This parameter is passed to report.py '
-              'if -r is specified. Otherwise it is not used. ".xlsx" is automatically appended.'),
+              'if -r is specified. Otherwise it is not used. ".xlsx" is automatically appended. Typically used.'),
+    sheet=dict(r=False, h='Optional. Specifies the sheet name in -bp to read. The default is "active".'),
     sfp=dict(r=False,
              h='Optional. Name of the Excel Workbook with SFP thresholds. This parameter is passed to report.py if -r '
                'is specified. Otherwise it is not used. ".xlsx" is automatically appended.'),
@@ -157,7 +161,7 @@ def psuedo_main(addl_parms_all, addl_parms_capture, addl_parms_report, file, fol
             switch_params.append(['-id', d['user_id'],
                                   '-pw', d['pw'],
                                   '-ip', d['ip_addr'],
-                                  '-s', 'none' if d['security'] is None else d['security'],
+                                  '-s', 'self' if d['security'] is None else d['security'],
                                   '-f', folder + '/' + buf])
     except FileNotFoundError:
         ml.extend(['', file + ' not found.'])
@@ -281,7 +285,11 @@ def _get_input():
             addl_parms_capture.append(k)
 
     # Additional input report.py
-    r_d = {'-iocp': args_d['iocp'], '-sfp': args_d['sfp'], '-group': args_d['group'], '-bp': args_d['bp']}
+    r_d = {'-iocp': args_d['iocp'],
+           '-sfp': args_d['sfp'],
+           '-group': args_d['group'],
+           '-bp': args_d['bp'],
+           '-sheet': args_d['sheet']}
     for k, v in r_d.items():
         if v is not None:
             addl_parms_report.extend([k, v])
