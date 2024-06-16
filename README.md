@@ -3,6 +3,10 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
+**Updates 16 Jun 2024**
+
+* Fixed numerous spelling and grammar mistakes
+
 **Updates 15 May 2024**
 
 * Added ability to purge zones and aliases to zone_config.py
