@@ -16,6 +16,8 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
 
+ToDo Reference to report_utils.cell_match_val in stats_g.py
+
 **Description**
 
 Add statistics to Excel Workbook
@@ -24,24 +26,26 @@ Reads in the output of stats_c (which collects port statistics) and creates an E
 
 **Version Control**
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | 06 Mar 2024   | Documentation updates only.                                                       |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Documentation updates only.                                                           |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | xx xxx 2024   | Added more error checking.                                                            |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = 'xx xxx 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Released'
-__version__ = '4.0.2'
+__status__ = 'Development'
+__version__ = '4.0.3'
 
 import sys
 import os
@@ -177,7 +181,7 @@ def _ports(proj_obj, port):
             for login_obj in [fab_obj.r_login_obj(mem) for mem in ml if fab_obj.r_login_obj(mem) is not None]:
                 port_obj = login_obj.r_port_obj()
                 if port_obj is not None and port_obj.r_switch_key() == switch_wwn:
-                    # When written, login objects were only returned on the switch where the login occured so
+                    # When written, login objects were only returned on the switch where the login occurred so
                     # switch_wwn has to match port_obj.r_switch_key() so this test is future proofing
                     r.append(port_obj.r_obj_key())
         else:
@@ -317,7 +321,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
 
     ml = list()
     proj_obj = base_switch_obj.r_project_obj()
-    switch_obj_l = [proj_obj.r_switch_obj(wwn) for wwn in proj_obj.r_get('switch_list')]
+    switch_obj_l = [proj_obj.r_switch_obj(wwn) for wwn in proj_obj.r_get('switch_list', list())]
     if len(switch_obj_l) < 2:
         brcdapi_log.log('Nothing to graph. No data collected.', echo=True)
         return ml
@@ -359,7 +363,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
                 try:
                     stat_ref = stat if rt.Port.port_display_tbl['fibrechannel-statistics/' + stat]['d'] is None else \
                         rt.Port.port_display_tbl['fibrechannel-statistics/' + stat]['d']
-                except (ValueError, TypeError) as e:
+                except (ValueError, TypeError):
                     stat_ref = stat
                 cell = report_utils.cell_match_val(sheet, stat_ref, None, 2, 1)
                 if cell is None:
@@ -373,7 +377,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
 
             # Add the time stamp
             x = port_obj.r_get('fibrechannel-statistics/time-generated')
-            if x == None:
+            if x is None:
                 ml.append('Invalid sample for port ' + port + '. Skipping.')
                 break
             title = 'Statistics for port ' + port + 'beginning: ' + datetime.datetime.fromtimestamp(x).strftime(
@@ -421,9 +425,9 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
                 if len(tl) == 0:
                     try:
                         x = switch_obj_l[0].r_port_obj(port).r_get('fibrechannel-statistics/time-generated')
-                    except (ValueError, TypeError) as e:
+                    except (ValueError, TypeError):
                         x = None
-                    if x == None:
+                    if x is None:
                         ml.append('Invalid sample for port ' + port + '. Skipping')
                         break
                     title = 'Statistics beginning: ' + datetime.datetime.fromtimestamp(x).strftime('%d %b %Y, %H:%M:%S')
@@ -473,25 +477,21 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
 
 
 def _graphs(switch_obj, single_port_graph_in, stats_graph_in, graph_type):
-    """Parses the graphing information from the command line into a list of machine readable dictionaries as follows:
+    """Parses the graphing information from the command line into a list of machine-readable dictionaries as follows:
 
-    +-----------+---------------------------------------------------+
-    | key       | Description                                       |
-    +===========+===================================================+
-    | stat      | Only present if -gs was entered on the command    |
-    |           | line. This is the fibrechannel-statistics to plot |
-    +-----------+---------------------------------------------------+
-    | type      | Graph type. See brcddb.report.graph.chart_types.  |
-    +-----------+---------------------------------------------------+
-    | port      | Only present if -gp was entered on the command    |
-    |           | line. This is the port number in s/p notation to  |
-    |           | plot.                                             |
-    +-----------+---------------------------------------------------+
-    | params    | If stat is not None, this is the list of ports    |
-    |           | whose statistic is to be plotted. If port is not  |
-    |           | None, this is the list of statistics for the port |
-    |           | to be plotted.                                    |
-    +-----------+---------------------------------------------------+
+    +-----------+---------------------------------------------------------------------------------------------------+
+    | key       | Description                                                                                       |
+    +===========+===================================================================================================+
+    | stat      | Only present if -gs was entered on the command line. This is the fibrechannel-statistics to plot. |
+    +-----------+---------------------------------------------------------------------------------------------------+
+    | type      | Graph type. See brcddb.report.graph.chart_types.                                                  |
+    +-----------+---------------------------------------------------------------------------------------------------+
+    | port      | Only present if -gp was entered on the command line. This is the port number in s/p notation to   |
+    |           | plot.                                                                                             |
+    +-----------+---------------------------------------------------------------------------------------------------+
+    | params    | If stat is not None, this is the list of ports whose statistic is to be plotted. If port is not   |
+    |           | None, this is the list of statistics for the port to be plotted.                                  |
+    +-----------+---------------------------------------------------------------------------------------------------+
 
     :param switch_obj: First switch object with list of ports
     :type switch_obj: brcddb.classes.switch.SwitchObj

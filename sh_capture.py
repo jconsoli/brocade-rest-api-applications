@@ -1,20 +1,20 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
-# Copyright 2021, 2022, 2023 Jack Consoli. All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
+Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+
+**License**
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+details.
+
 :mod:`sh_capture.py` - Reads a SAN Health report and creates the equivalent output of multi_capture.py
 
 **Description**
@@ -44,9 +44,9 @@ The primary purpose, and therefore best tested, of this script is for:
 **Why Not Just Read CSV File?**
 
 At the time this was written, there was a bug in the output of that file. I don't recall what it was but since I had a
-utility to read workbooks, it was relatively easy to just read the report workbook. That bug was fixed but I already had
-this written and I figured it would be good to be able to read older SAN Health reports so I never went back and changed
-anything.
+utility to read workbooks, it was relatively easy to just read the report workbook. That bug was fixed, but I already
+had this written and I figured it would be good to be able to read older SAN Health reports, so I never went back and
+changed anything.
 
 **Important Notes**
 
@@ -73,7 +73,7 @@ speed (newer) SFP.
 
 The easiest way to determine which HBAs could have logged in at a higher data rate is to run report.py against the
 output of this script. The best practice workbook, -bp option in report.py, should have LOGIN_SPEED_NOT_MAX_W and
-SWITCH_LIMITED_SPEED set True. For a summary of just remote HBAs that did not login at the fastest speed, set all other
+SWITCH_LIMITED_SPEED set True. For a summary of just remote HBAs that did not log in at the fastest speed, set all other
 parameters to FALSE.
 
 Although the current version of SAN Health reads peer zones, it was not included in SAN Health reports at the time this
@@ -95,7 +95,7 @@ routing (IVR) or smart zones so no time was spent developing code to handle IVR 
     * sup-fcx ports were converted to 98/x
     * Trunks were converted to 99/x
 
-Version Control::
+**Version Control**
 
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | Version   | Last Edit     | Description                                                                       |
@@ -108,17 +108,21 @@ Version Control::
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 1.0.2     | 03 Jun 2023   | Added 'san_health' to the port object                                             |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 1.0.3     | xx xxx 2024   | Added version numbers of imported libraries.                                      |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
+
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2021, 2022, 2023 Jack Consoli'
-__date__ = '03 Jun 2023'
+__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
+__date__ = 'xx xxx 2024'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack.consoli@broadcom.com'
+__email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Released'
-__version__ = '1.0.2'
+__status__ = 'Development'
+__version__ = '1.0.3'
 
 import sys
+import os
 import datetime
 import argparse
 import collections
@@ -140,6 +144,24 @@ import brcddb.classes.util as class_util
 import brcddb.util.obj_convert as brcddb_convert
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.util.parse_cli as parse_cli
+_version_d = dict(
+    brcdapi_log=brcdapi_log.__version__,
+    gen_util=gen_util.__version__,
+    excel_util=excel_util.__version__,
+    brcdapi_file=brcdapi_file.__version__,
+    brcdapi_util=brcdapi_util.__version__,
+    brcddb_common=brcddb_common.__version__,
+    brcddb_project=brcddb_project.__version__,
+    brcddb_port=brcddb_port.__version__,
+    brcddb_copy=brcddb_copy.__version__,
+    report_utils=report_utils.__version__,
+    brcddb_util=brcddb_util.__version__,
+    brcddb_search=brcddb_search.__version__,
+    class_util=class_util.__version__,
+    brcddb_convert=brcddb_convert.__version__,
+    brcddb_fabric=brcddb_fabric.__version__,
+    parse_cli=parse_cli.__version__,
+)
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_* below instead of passed arguments.
@@ -160,7 +182,7 @@ _act_objects = dict()
 for _key in class_util.simple_class_type:
     _act_objects.update({_key: None})
 # _port_seen: Key is switch WWN. Value is a dict whose key is the port number and the value is True if the port has been
-# processed once already. Otherwise false. This is to prevent port information from being updated after the base login
+# processed once already. Otherwise, false. This is to prevent port information from being updated after the base login
 # has been processed.
 _port_seen = dict()
 _zs_match = dict()  # Match a zone sheet to fabric object Key: Zone sheet name, value: Fabric object
@@ -266,7 +288,7 @@ def _remote_port_speed():
             for login_obj in port_obj.r_login_objects():
                 fc4 = login_obj.r_get(brcdapi_util.bns_fc4_features)
                 if isinstance(fc4, str) and 'initiator' in fc4.lower():
-                    buf = login_obj.r_get(brcdapi_util.bns_node_symbol).upper()
+                    buf = login_obj.r_get(brcdapi_util.bns_node_symbol, '').upper()
                     for k in _remote_speed_key_l:
                         for hba in _remote_speed_d[k]:
                             if hba in buf:
@@ -449,8 +471,6 @@ def _process_san_ports(sheet):
 
     :param sheet: Worksheet contents as extracted from excel_util.read_workbook()
     :type sheet: dict
-    :param full_flag: If True, adds any WWN from the SAN Ports sheet that are not on the port detail sheets
-    :type full_flag: bool
     :return: Status. See EXIT status codes in brcddb.common
     :rtype: int
     """
@@ -1017,8 +1037,7 @@ def _process_switch(sheet_d):
     :return: Status. See EXIT status codes in brcddb.common
     :rtype: int
     """
-    global _act_objects, _proj_obj, _switch_sheet, _working_fab_obj, _working_chassis_obj,\
-        _working_switch_obj
+    global _act_objects, _proj_obj, _switch_sheet, _working_fab_obj, _working_chassis_obj, _working_switch_obj
 
     # If the sheet name is "S_n_xxxx" where n is an integer, it's a continuation of the previous sheet
     sheet_name = sheet_d.get('sheet')
@@ -1105,7 +1124,7 @@ def _zonecfg_act(name_col, sheet_data):
                 vsan = '(' + name.split('(')[1] if '(vsan' in name else ''
                 # vsan is for Cisco fabrics. I've never seen the zone name followed by (vsanxxx) in the zone
                 # configuration section of the SAN Health report so checking to make sure (vsanxxx) doesn't get added
-                # twice is just in case that ever changes. The best way to handle VSANs would be to make them FIDs but
+                # twice is just in case that ever changes. The best way to handle VSANs would be to make them FIDs, but
                 # I'll probably never get around to doing that. Note that elsewhere in the SAN Health report the zone
                 # is defined with (vsanxxx) in the name. Adding (vsanxxx) to the zone name when adding it to the zone
                 # configuration was a quick and dirty expedient.
@@ -1149,7 +1168,7 @@ def _process_zone(sheet_d):
     """
     global _zone_sheet, _working_fab_obj, _zs_match
 
-    # Get the active zone configuration name and setup the API zone dictionaries in the fabric object
+    # Get the active zone configuration name and set up the API zone dictionaries in the fabric object
     _working_fab_obj = _zs_match.get(sheet_d['sheet'])
     if _working_fab_obj is None:
         brcdapi_log.log('Could not find fabrics for ' + str(_zs_match.get(sheet_d['sheet'])))
@@ -1210,21 +1229,24 @@ def _sh_to_project(debug_mode, debug_file, sh_file):
     """
     global _sheets_to_read_l, _sheet_action_d
 
-    sheet_l = excel_util.read_workbook(sh_file, dm=debug_mode, sheets=_sheets_to_read_l, echo=True)
-    ec = brcddb_common.EXIT_STATUS_ERROR if len(sheet_l) == 0 else brcddb_common.EXIT_STATUS_OK
-    sheet_keys_l = [str(k) for k in _sheet_action_d.keys()]
+    el, sheet_l = excel_util.read_workbook(sh_file, dm=debug_mode, sheets=_sheets_to_read_l, echo=True)
+    ec = brcddb_common.EXIT_STATUS_ERROR if len(sheet_l) == 0 or len(el) > 0 else brcddb_common.EXIT_STATUS_OK
+    if len(el) > 0:
+        brcdapi_log.log(el, echo=True)
 
-    for sheet_d in sheet_l:
-        sheet_name = sheet_d['sheet']
-        brcdapi_log.log('Processing sheet: ' + sheet_name, echo=True)
-        try:
-            for k in sheet_keys_l:
-                if sheet_name[0:len(k)] == k:
-                    _sheet_action_d[k](sheet_d)
-                    raise Found
-        except Found:
-            continue
-        brcdapi_log.log('No action for sheet ' + sheet_name + '. Skipping sheet.')
+    if ec == brcddb_common.EXIT_STATUS_OK:
+        sheet_keys_l = [str(k) for k in _sheet_action_d.keys()]
+        for sheet_d in sheet_l:
+            sheet_name = sheet_d['sheet']
+            brcdapi_log.log('Processing sheet: ' + sheet_name, echo=True)
+            try:
+                for k in sheet_keys_l:
+                    if sheet_name[0:len(k)] == k:
+                        _sheet_action_d[k](sheet_d)
+                        raise Found
+            except Found:
+                continue
+            brcdapi_log.log('No action for sheet ' + sheet_name + '. Skipping sheet.')
 
     return ec
 
@@ -1273,7 +1295,14 @@ def _get_input():
 
     # Set up the log file
     if not args_nl:
-        brcdapi_log.open_log(args_log)
+        try:
+            brcdapi_log.open_log(args_log, version_d=_version_d)
+        except FileNotFoundError:
+            print('The folder path specified with the -log, ' + args_log + ', option is not valid.')
+            exit(brcddb_common.EXIT_STATUS_INPUT_ERROR)
+        except PermissionError:
+            print('You do not have access to the log folder, ' + args_log + '.')
+            exit(brcddb_common.EXIT_STATUS_INPUT_ERROR)
     if args_sup:
         brcdapi_log.set_suppress_all()
 
@@ -1290,12 +1319,13 @@ def pseudo_main():
     :return: Exit code
     :rtype: int
     """
-    global _DEBUG, _proj_obj, _port_num, _cisco_isl_count, __version__
+    global _DEBUG, _proj_obj, _port_num, _cisco_isl_count, __version__, _version_d
 
     # Get user input
     in_file, out_file, debug_mode = _get_input()
     debug_file = in_file.replace('.xlsx', '.json')
     ml = ['WARNING!!! Debug is enabled'] if _DEBUG else list()
+    ml.append(os.path.basename(__file__) + ', ' + __version__)
     ml.append('Debug mode:   ' + str(debug_mode))
     if debug_mode > 3:
         brcdapi_log.log('Debug mode ' + str(debug_mode) + ' is not valid. Must be 0, 1, or 2.', echo=True)
@@ -1320,17 +1350,6 @@ def pseudo_main():
     brcddb_copy.brcddb_to_plain_copy(_proj_obj, plain_copy)
     brcdapi_file.write_dump(plain_copy, out_file)
     brcdapi_log.log('Save complete', echo=True)
-
-    # Debug, tpapelfvUTL01_G400_CL7F
-    # debug_fab_obj = _proj_obj.r_fabric_obj('10:00:88:94:71:11:47:69')
-    # debug_zone_obj = debug_fab_obj.r_zone_obj('tpapelfvUTL01_G400_CL7F')
-    # if debug_zone_obj.r_is_effective():
-    #     print('TP_101')
-    # debug_proj_obj = brcddb_project.read_from(out_file)
-    # debug_fab_obj = debug_proj_obj.r_fabric_obj('10:00:88:94:71:11:47:69')
-    # debug_zone_obj = debug_fab_obj.r_zone_obj('tpapelfvUTL01_G400_CL7F')
-    # if debug_zone_obj.r_is_effective():
-    #     print('TP_101')
 
     return ec
 

@@ -31,15 +31,17 @@ Performs a node find in a project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.2     | 16 Jun 2024   | Improved help messages.                                                               |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.3     | 20 Oct 2024   | PEP8 cleanup                                                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '16 Jun 2024'
+__date__ = '20 Oct 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -108,8 +110,6 @@ _input_d = dict(
     r=dict(r=False, h='Optional. Name of Excel report file. ".xlsx" is automatically appended.'),
 )
 _input_d.update(gen_util.parseargs_log_d.copy())
-
-
 
 _wb = None  # Object for the Excel workbook used for output
 _proj_obj = None  # Project object

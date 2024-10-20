@@ -29,15 +29,17 @@ Creates MAPS SFP rules from a workbook
     +-----------+---------------+-----------------------------------------------------------------------------------+
     | 4.0.1     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
     +-----------+---------------+-----------------------------------------------------------------------------------+
+    | 4.0.2     | 20 Oct 2024   | PEP8 cleanup.                                                                     |
+    +-----------+---------------+-----------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '20 Oct 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.1'
+__version__ = '4.0.2'
 
 import sys
 import os
@@ -219,7 +221,7 @@ def _get_input():
                     fid_map_l[fid] = int(temp_l[0])
             if fid_map_l[0] != 0:
                 raise IndexError
-        except(TypeError, IndexError):
+        except (TypeError, IndexError):
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
             args_fid_help = 'FIDs must be integers in the range of 1-128'
 
