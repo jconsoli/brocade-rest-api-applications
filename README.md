@@ -3,6 +3,11 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
+**Update 29 Oct 2024**
+
+* Fixed graphing capabilities in stats_g.py
+* Improved error messages in several modules.
+
 **Update 20 Oct 2024**
 
 Primary changes were to support the new chassis and report pages.
