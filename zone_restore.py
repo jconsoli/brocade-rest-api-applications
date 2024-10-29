@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -35,15 +35,17 @@ Sets the zone configuration DB to that of a previously captured zone DB
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 16 Jun 2024   | Made -fid not required when using -scan option.                                       |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 29 Oct 2024   | Fixed -fid help message.                                                              |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '16 Jun 2024'
+__date__ = '29 Oct 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.5'
 
 import signal
 import os
@@ -81,8 +83,8 @@ _STAND_ALONE = True  # See note above
 _input_d = gen_util.parseargs_login_false_d.copy()
 _input_d.update(
     fid=dict(r=False, t='int', v=gen_util.range_to_list('1-128'),
-             h='Required. Ignored with scan but must be a valid FID, 1-128. Fabric ID of logical switch whose zone '
-               'database is be restored (target switch).'),
+             h='Required unless using -scan. Fabric ID of logical switch whose zone database is be restored (target '
+               'switch).'),
     i=dict(h='Required. Captured data file from the output of capture.py, combine.py, or multi_capture.py.'),
     wwn=dict(r=False,
              h='Optional with -scan. Otherwise, required. Fabric WWN for the source zone database in the file '

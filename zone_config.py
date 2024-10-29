@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -51,15 +51,17 @@ then applied to the switch all at once. Specifically:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 16 Jun 2024   | Fixed name of sample workbook in help messages.                                       |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 29 Oct 2024   | Improved error messages.                                                              |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '16 Jun 2024'
+__date__ = '29 Oct 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.5'
 
 import collections
 import sys
@@ -352,7 +354,7 @@ def _invalid_action(fab_obj, zone_d, search_d):
     """
     stype = 'exact' if zone_d['Match'] is None else zone_d['Match']
     el = ['"' + zone_d['Action'] + '" is not a valid Action for Zone_Object "' + zone_d['Zone_Object'] +
-          '" for match type "' + stype + ' at row ' + str(zone_d['row'])]
+          '" for match type "' + stype + '" at row ' + str(zone_d['row'])]
     return el, list()
 
 

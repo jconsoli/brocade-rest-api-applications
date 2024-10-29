@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -36,7 +36,9 @@ depend on several factors, most notably networking delays and CPU activity. The 
 time stamp returned with the switch response.Keep in mind that most data centers use a time clock server which is often
 UTC. As of this writing, time-generated returned with the port statistics was the time on the switch when the request
 was made, not when the statistics were captured by FOS. For Gen6 & Gen7, FOS polls the port statistics every 2 seconds
-so the accuracy of the timestamp is within 2 seconds.
+so the accuracy of the timestamp is within 2 seconds. A new parameter, time-refreshed, was added in one of the 9.x
+released, but to maintain support with older versions of FOS, time-generated is still used. Given that the minimum
+interval is 2.1 sec, this is moot.
 
 Only fibre channel port statistics are collected at this time. A JSON dump of the counters (only differences of
 cumulative counters are stored, which are most of the counters) in a plain text file. Use stats_g.py to convert to an
@@ -47,26 +49,28 @@ being collected.
 
 **Version Control**
 
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| Version   | Last Edit     | Description                                                                       |
-+===========+===============+===================================================================================+
-| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.1     | 06 Mar 2024   | Set verbose debug via brcdapi.brcdapi_rest.verbose_debug()                        |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.3     | 16 Jun 2024   | Improved help messages.                                                           |
-+-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Set verbose debug via brcdapi.brcdapi_rest.verbose_debug()                            |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 16 Jun 2024   | Improved help messages.                                                               |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 29 Oct 2024   | Added debug capabilities.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '16 Jun 2024'
+__date__ = '29 Oct 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import http.client
 import sys
@@ -80,8 +84,9 @@ import brcdapi.log as brcdapi_log
 import brcdapi.fos_auth as fos_auth
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.file as brcdapi_file
-import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
+import brcddb.brcddb_project as brcddb_project
+import brcddb.brcddb_chassis as brcddb_chassis
 import brcddb.util.copy as brcddb_copy
 import brcddb.api.interface as brcddb_int
 import brcddb.classes.util as class_util
@@ -102,6 +107,7 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
+_DEBUG = False  # True: skip the sleep between sample collection. Useful when simulating in brcdapi.brcdapi_restapi.py
 
 """_MIN_POLL is the minimum time in seconds the command line will accept. It is actually the time to sleep between each
 request for statistical data. Additional comments regarding the poll cycles are in the Overview section in the module
@@ -125,36 +131,17 @@ _input_d.update(
     fid=dict(r=False, t='int', v=gen_util.range_to_list('1-128'),
              h='(Optional) Virtual Fabric ID (1 - 128) of switch to read statistics from. Omit this option if the '
                'chassis is not VF enabled. If omitted in a VF enabled chassis, the default is 128'),
-    p=dict(r=False, t='float',
-           h='(Optional) Polling interval in seconds. Since fractions of a second are supported, this is a floating'
+    p=dict(r=False, t='float', d=_DEFAULT_POLL_INTERVAL,
+           h='(Optional) Polling interval in seconds. Since fractions of a second are supported, this is a floating '
              'point number. "-p 0.0" picks the default which is equivalent to -p ' + str(_DEFAULT_POLL_INTERVAL) +
-             '. The minimum is ' + str(_MIN_POLL) + ' seconds.'),
+             '. The minimum is ' + str(_MIN_POLL) + ' seconds. WARNING: If the poll time is >= 15 sec, disable the '
+             'HTTP timeout. You can use the -https_dis parameter with app_config.py to do this.'
+           ),
     m=dict(r=False, t='int', h=_buf),
 )
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
-
 _required_input = ('ip', 'id', 'pw', 'fid', 'wwn')
-
-_DEBUG = False
-_DEBUG_ip = 'xx.xxx.x.xxx'
-_DEBUG_id = 'admin'
-_DEBUG_pw = 'password'
-_DEBUG_s = None  # 'self'
-_DEBUG_fid = '128'
-_DEBUG_sup = False
-_DEBUG_d = False
-_DEBUG_p = 5
-_DEBUG_m = 4
-_DEBUG_o = 'test/stats_r0.json'
-_DEBUG_log = '_logs'
-_DEBUG_nl = False
-
-_proj_obj = None  # Project object (brcddb.classes.project.ProjectObj)
-_session = None  # Session object returned from brcdapi.fos_auth.login()
-_out_f = 'None'  # Name of output file for plain text copy of _proj_obj
-_base_switch_obj = None  # First switch object, brcddb.classes.switch.SwitchObj
-_switch_obj = list()  # List of switch objects containing the statistic samples.
 
 # URIs
 _uris = (
@@ -174,10 +161,106 @@ _uris_2 = (  # Execute if there is a fabric principal
     'running/brocade-fdmi/port',  # FDMI port data
 )
 
+""" _synthetic_values_d allows you to synthesize input data. _synthetic_values_d is a dictionaries of dictionaries. The
+primary key is the port number. The value is a dictionary as described below. If the port number returned from the API
+is not in _synthetic_values_d, all values for that port are as returned from FOS. I originally did this when developing
+stats_g.py and left it in for potential future use.
 
-def _wrap_up(exit_code, out_f):
++-----------+-------+-----------------------------------------------------------------------------------------------+
+| Key       | Type  | Description                                                                                   |
++===========+=======+===============================================================================================+
+| i         | int   | The running index into value_l. It is reset to 0 when it exceeds the length of value_l.       |
++-----------+-------+-----------------------------------------------------------------------------------------------+
+| value_l   | list  | A list of dictionaries that define what values are to be used in place of the values read.    |
+|           |       | The keys are the FOS API keys in fibrechannel-statistics. The value is the value to be used   |
+|           |       | when polling for statistics instead of the actual value returned. The actual data returned    |
+|           |       | from the switch is used when the corresponding leaf is not in the dictionary.                 |
+|           |       |                                                                                               |
+|           |       | For full simulation, add 'time-generated' to each entry. You will also need to modify the     |
+|           |       | _DEBUG, _DEBUG_MODE, AND _DEBUG_PREFIX in brcddb.brcddb_rest.py when doing this.              |
++-----------+-------+-----------------------------------------------------------------------------------------------+
+"""
+_synthetic_values_d = dict()  # See note above
+# _temp_d = {  # Used to build _synthetic_values_d. Stats here are incremental but running when returned from FOS
+#     '0/0': dict(
+#         i=0,
+#         value_l=[
+#             {'in-crc-errors': 0, 'in-frames': 1000, 'out-frames': 10, 'time-generated': 1729695579},
+#             {'in-crc-errors': 0, 'in-frames': 5000, 'out-frames': 50, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 10000, 'out-frames': 100, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 10000, 'out-frames': 100, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 11000, 'out-frames': 110, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 12000, 'out-frames': 120, 'time-generated': 10},
+#             {'in-crc-errors': 1, 'in-frames': 13000, 'out-frames': 130, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 13100, 'out-frames': 131, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 13200, 'out-frames': 132, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 13100, 'out-frames': 131, 'time-generated': 10},
+#             {'in-crc-errors': 1, 'in-frames': 13200, 'out-frames': 132, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 13100, 'out-frames': 131, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 14000, 'out-frames': 140, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 15000, 'out-frames': 150, 'time-generated': 10},
+#             {'in-crc-errors': 2, 'in-frames': 16000, 'out-frames': 160, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 15000, 'out-frames': 150, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 14000, 'out-frames': 140, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 13000, 'out-frames': 130, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 12000, 'out-frames': 120, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 11000, 'out-frames': 110, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 10000, 'out-frames': 100, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 9000, 'out-frames': 90, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 8000, 'out-frames': 80, 'time-generated': 10},
+#         ]
+#     ),
+#     '0/1': dict(
+#         i=0,
+#         value_l=[
+#             {'in-crc-errors': 0, 'in-frames': 1200, 'out-frames': 10, 'time-generated': 1729695579},
+#             {'in-crc-errors': 0, 'in-frames': 5040, 'out-frames': 50, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 30000, 'out-frames': 100, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 35000, 'out-frames': 100, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 23000, 'out-frames': 110, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 78000, 'out-frames': 120, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 45000, 'out-frames': 130, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 26100, 'out-frames': 131, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 13890, 'out-frames': 132, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 13100, 'out-frames': 131, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 13400, 'out-frames': 132, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 16700, 'out-frames': 131, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 49000, 'out-frames': 140, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 26000, 'out-frames': 150, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 16000, 'out-frames': 160, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 17000, 'out-frames': 150, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 14800, 'out-frames': 140, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 52123, 'out-frames': 130, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 19283, 'out-frames': 120, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 12000, 'out-frames': 110, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 13000, 'out-frames': 100, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 5000, 'out-frames': 90, 'time-generated': 10},
+#             {'in-crc-errors': 0, 'in-frames': 900, 'out-frames': 80, 'time-generated': 10},
+#         ]
+#     ),
+# }
+# for _port, _d0 in _temp_d.items():
+#     _synthetic_values_d.update({_port: dict(i=0, value_l=[_d0['value_l'][0].copy()])})
+#     _last_i = 0
+#     for _d1 in _d0['value_l'][1:]:
+#         _stats_d = dict()
+#         for _key, _value in _d1.items():
+#             _stats_d.update({_key: _value + _synthetic_values_d[_port]['value_l'][_last_i][_key]})
+#         _synthetic_values_d[_port]['value_l'].append(_stats_d)
+#         _last_i += 1
+
+
+def _wrap_up(session, proj_obj, base_switch_wwn, switch_obj_l, exit_code, out_f):
     """Write out the collected data in JSON to a plain text file.
 
+    :param session: FOS session object
+    :type session: dict
+    :param proj_obj: Project object
+    :type proj_obj: brcddb.classes.project.ProjectObj
+    :param base_switch_wwn: WWN of base switch object
+    :type base_switch_wwn: str
+    :param switch_obj_l: List of switch objects for each poll
+    :type switch_obj_l: list
     :param exit_code: Initial exit code
     :type exit_code: int
     :param out_f:  Name of output file where raw data is to be stored
@@ -185,12 +268,10 @@ def _wrap_up(exit_code, out_f):
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _proj_obj, _session, _switch_obj, _base_switch_obj
-
     ec = exit_code
-    if _session is not None:
+    if session is not None:
         try:
-            obj = brcdapi_rest.logout(_session)
+            obj = brcdapi_rest.logout(session)
             if fos_auth.is_error(obj):
                 brcdapi_log.log(['Logout failed. Error is:', fos_auth.formatted_error_msg(obj)], echo=True)
             else:
@@ -199,13 +280,12 @@ def _wrap_up(exit_code, out_f):
             brcdapi_log.log(['Could not logout. You may need to terminate this session via the CLI',
                              'mgmtapp --showsessions, mgmtapp --terminate'], echo=True)
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        _session = None
 
     try:
-        _proj_obj.s_new_key('base_switch_wwn', _base_switch_obj.r_obj_key())
-        _proj_obj.s_new_key('switch_list', [obj.r_obj_key() for obj in _switch_obj])
+        proj_obj.s_new_key('base_switch_wwn', base_switch_wwn)
+        proj_obj.s_new_key('switch_list', [obj.r_obj_key() for obj in switch_obj_l])
         plain_copy = dict()
-        brcddb_copy.brcddb_to_plain_copy(_proj_obj, plain_copy)
+        brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
         brcdapi_file.write_dump(plain_copy, out_f)
     except BaseException as e:
         brcdapi_log.exception(str(type(e)) + ': ' + str(e), echo=True)
@@ -223,25 +303,25 @@ def _stats_diff(old_obj, new_obj):
     :rtype: dict
     """
     new_list = list()
-    ret_obj = {'fibrechannel-statistics': new_list}
+    ret_obj = {brcdapi_util.stats_uri: new_list}
 
     # I'm not sure if it's a guarantee to get the ports in the same order, but I need to account for a port going
     # offline anyway so the code below creates a map (dict) of old ports to their respective stats
-    old_ports = dict()
-    for port in old_obj.get('fibrechannel-statistics'):
-        old_ports.update({port.get('name'): port})
+    old_ports_d = dict()
+    for port_d in old_obj.get(brcdapi_util.stats_uri):
+        old_ports_d.update({port_d.get('name'): port_d})
 
     # Get the differences
-    for port in new_obj.get('fibrechannel-statistics'):
-        if port is None:
+    for port_d in new_obj.get(brcdapi_util.stats_uri):
+        if port_d is None:
             break  # This can happen when the user Control-C out. I have no idea why, but I've seen it happen
         new_stats = dict()
-        port_num = port.get('name')
-        old_stats = old_ports.get(port_num)
+        port_num = port_d.get('name')
+        old_stats = old_ports_d.get(port_num)
         if old_stats is None:
-            new_stats = port
+            new_stats = port_d
         else:
-            for k, v in port.items():
+            for k, v in port_d.items():
                 if k not in ('sampling-interval', 'time-generated') and 'rate' not in k and isinstance(v, (int, float)):
                     new_stats.update({k: v - old_stats.get(k)})
                 elif isinstance(v, dict):
@@ -277,88 +357,107 @@ def pseudo_main(ip, user_id, pw, sec, fid, pct, max_p, out_f):
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _DEBUG, _DEFAULT_POLL_INTERVAL, _DEFAULT_MAX_SAMPLE, _proj_obj, _session, _switch_obj
-    global _base_switch_obj, __version__, _uris, _uris_2
+    global _DEBUG, _DEFAULT_POLL_INTERVAL, _DEFAULT_MAX_SAMPLE, __version__, _uris, _uris_2, _synthetic_values_d
 
     signal.signal(signal.SIGINT, brcdapi_rest.control_c)
 
     # Create project
-    _proj_obj = brcddb_project.new('Port_Stats', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
-    _proj_obj.s_python_version(sys.version)
-    _proj_obj.s_description('Port statistics')
+    proj_obj = brcddb_project.new('Port_Stats', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
+    proj_obj.s_python_version(sys.version)
+    proj_obj.s_description('Port statistics')
+
+    base_switch_wwn, switch_obj_l = 'Unknown', list()
 
     # Login
-    _session = brcddb_int.login(user_id, pw, ip, sec, _proj_obj)
-    if fos_auth.is_error(_session):
-        brcdapi_log.log(fos_auth.formatted_error_msg(_session), echo=True)
+    session = brcddb_int.login(user_id, pw, ip, sec, proj_obj)
+    if fos_auth.is_error(session):
+        brcdapi_log.log(fos_auth.formatted_error_msg(session), echo=True)
         return brcddb_common.EXIT_STATUS_ERROR
 
     try:  # I always put all code after login in a try/except in case of a code bug or network error, I still logout
+
         # Capture the initial switch and port information along with the first set of statistics.
         brcdapi_log.log('Capturing initial data', echo=True)
-        brcddb_int.get_batch(_session, _proj_obj, _uris, fid)  # Captured data is put in _proj_obj
-        chassis_obj = _proj_obj.r_chassis_obj(_session.get('chassis_wwn'))
+        brcddb_int.get_batch(session, proj_obj, _uris, fid)  # Captured data is put in proj_obj
+        chassis_obj = proj_obj.r_chassis_obj(session.get('chassis_wwn'))
         if chassis_obj.r_is_vf_enabled():
             if fid is None:
                 fid = 128
-            _base_switch_obj = chassis_obj.r_switch_obj_for_fid(fid)
+            base_switch_obj = chassis_obj.r_switch_obj_for_fid(fid)
         else:
-            _base_switch_obj = chassis_obj.r_switch_objects()[0]
-        if _base_switch_obj is None:
-            brcdapi_log.log('Switch for FID ' + str(fid) + ' not found. ', echo=True)
-            return _wrap_up(brcddb_common.EXIT_STATUS_ERROR, out_f)
-        base_switch_wwn = _base_switch_obj.r_obj_key()
-        if _base_switch_obj.r_fabric_key() is None:
-            _base_switch_obj.s_fabric_key(base_switch_wwn)  # Fake out a fabric principal if we don't have one
-            _proj_obj.s_add_fabric(base_switch_wwn)
-        brcddb_int.get_batch(_session, _proj_obj, _uris_2, fid)  # Captured data is put in _proj_obj
-        time.sleep(5)  # Somewhat arbitrary time. Don't want a throttling delay if the poll interval is very short
+            try:
+                base_switch_obj = chassis_obj.r_switch_objects()[0]
+            except IndexError:
+                brcdapi_log.log('No switches found in ' + brcddb_chassis.best_chassis_name(chassis_obj, wwn=True),
+                                echo=True)
+                base_switch_obj = None
+        if base_switch_obj is None:
+            brcdapi_log.log('Switch for FID ' + str(fid) + ' not found.', echo=True)
+            return _wrap_up(session, proj_obj, base_switch_wwn, switch_obj_l, brcddb_common.EXIT_STATUS_ERROR, out_f)
+        base_switch_wwn = base_switch_obj.r_obj_key()
+        if base_switch_obj.r_fabric_key() is None:
+            base_switch_obj.s_fabric_key(base_switch_wwn)  # Fake out a fabric principal if we don't have one
+            proj_obj.s_add_fabric(base_switch_wwn)
+        brcddb_int.get_batch(session, proj_obj, _uris_2, fid)  # Captured data is put in proj_obj
 
         # Get the first sample
-        stats_buf = 'running/brocade-interface/fibrechannel-statistics'
+        stats_buf = 'running/brocade-interface/' + brcdapi_util.stats_uri
         last_time = time.time()
-        last_stats = brcddb_int.get_rest(_session, stats_buf, _base_switch_obj, fid)
-        for p in last_stats.get('fibrechannel-statistics'):
-            _base_switch_obj.r_port_obj(p.get('name')).s_new_key('fibrechannel-statistics', p)
+        last_stats = brcddb_int.get_rest(session, stats_buf, base_switch_obj, fid)
+        for p in last_stats.get(brcdapi_util.stats_uri):
+            base_switch_obj.r_port_obj(p.get('name')).s_new_key(brcdapi_util.stats_uri, p)
 
         # Now start collecting the port and interface statistics
         for i in range(0, max_p):
             x = pct - (time.time() - last_time)
-            time.sleep(_MIN_POLL if x < _MIN_POLL else x)
-            switch_obj = _proj_obj.s_add_switch(base_switch_wwn + '-' + str(i))
+            if not _DEBUG:
+                time.sleep(_MIN_POLL if x < _MIN_POLL else x)
+            switch_obj = proj_obj.s_add_switch(base_switch_wwn + '-' + str(i))
             last_time = time.time()
 
-            # Get the config stuff. As of this writing, the only thing I used was frame size and buffer counts
-            obj = brcddb_int.get_rest(_session, 'running/brocade-interface/fibrechannel', switch_obj, fid)
+            # Get the port configuration stuff. This is only used for reporting.
+            obj = brcddb_int.get_rest(session, 'running/brocade-interface/fibrechannel', switch_obj, fid)
             if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
                                 echo=True)
-                _wrap_up(brcddb_common.EXIT_STATUS_ERROR, out_f)
+                _wrap_up(session, proj_obj, base_switch_wwn, switch_obj_l, brcddb_common.EXIT_STATUS_ERROR, out_f)
                 return brcddb_common.EXIT_STATUS_ERROR
-            for p in obj.get('fibrechannel'):
-                switch_obj.s_add_port(p.get('name')).s_new_key('fibrechannel', p)
+            for port_d in obj.get('fibrechannel'):
+                switch_obj.s_add_port(port_d.get('name')).s_new_key('fibrechannel', port_d)
 
             # Get the port statistics
-            obj = brcddb_int.get_rest(_session, stats_buf, switch_obj, fid)
+            obj = brcddb_int.get_rest(session, stats_buf, switch_obj, fid)
             if fos_auth.is_error(obj):  # We typically get here when the login times out or network fails.
                 brcdapi_log.log('Error encountered. Data collection limited to ' + str(i) + ' samples.',
                                 echo=True)
-                _wrap_up(brcddb_common.EXIT_STATUS_ERROR, out_f)
+                _wrap_up(session, proj_obj, base_switch_wwn, switch_obj_l, brcddb_common.EXIT_STATUS_ERROR, out_f)
                 return brcddb_common.EXIT_STATUS_ERROR
 
-            for p in _stats_diff(last_stats, obj).get('fibrechannel-statistics'):
-                switch_obj.s_add_port(p.get('name')).s_new_key('fibrechannel-statistics', p)
-            _switch_obj.append(switch_obj)
+            # Replace values with simulated values
+            for port_d in obj.get('fibrechannel-statistics'):
+                try:
+                    temp_d = _synthetic_values_d[port_d.get('name')]
+                    for key, value in temp_d['value_l'][temp_d['i']].items():
+                        port_d[key] = value
+                    temp_d['i'] = temp_d['i'] + 1 if temp_d['i'] < len(temp_d['value_l']) else 0
+                # IndexError occurs if the port is in _synthetic_values_d with an empty list
+                except (KeyError, IndexError):
+                    pass
+
+            # Add the differences to a new sample
+            for port_d in _stats_diff(last_stats, obj).get(brcdapi_util.stats_uri):
+                switch_obj.s_add_port(port_d.get('name')).s_new_key(brcdapi_util.stats_uri, port_d)
+            switch_obj_l.append(switch_obj)
             last_stats = obj
 
-        return _wrap_up(brcddb_common.EXIT_STATUS_OK, out_f)
+        return _wrap_up(session, proj_obj, base_switch_wwn, switch_obj_l, brcddb_common.EXIT_STATUS_OK, out_f)
 
     except (KeyboardInterrupt, http.client.CannotSendRequest, http.client.ResponseNotReady):
-        return _wrap_up(brcddb_common.EXIT_STATUS_OK, out_f)
+        return _wrap_up(session, proj_obj, base_switch_wwn, switch_obj_l, brcddb_common.EXIT_STATUS_OK, out_f)
     except BaseException as e:
         brcdapi_log.log(['Error capturing statistics. ' + _EXCEPTION_MSG, 'Exception: '] + class_util.format_obj(e),
                         echo=True)
-        return _wrap_up(brcddb_common.EXIT_STATUS_ERROR, out_f)
+        return _wrap_up(session, proj_obj, base_switch_wwn, switch_obj_l, brcddb_common.EXIT_STATUS_ERROR, out_f)
 
 
 def _get_input():
@@ -385,14 +484,9 @@ def _get_input():
 
     # Is the poll interval valid?
     args_p_help = ''
-    if args_d['p'] == 0:
-        args_p = _DEFAULT_POLL_INTERVAL
-        args_p_help = ' Using default of ' + str(_DEFAULT_POLL_INTERVAL)
-    else:
-        args_p = args_d['p']
-        if args_p < _MIN_POLL:
-            args_p_help = ' *ERROR: Must be >= ' + str(_MIN_POLL) + ' seconds'
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    if args_d['p'] < _MIN_POLL:
+        args_p_help = ' *ERROR: Must be >= ' + str(_MIN_POLL) + ' seconds'
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Are the number of samples valid?
     args_m_help = ''
@@ -423,7 +517,7 @@ def _get_input():
     brcdapi_log.log(ml, echo=True)
 
     return ec if ec != brcddb_common.EXIT_STATUS_OK else\
-        pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'], args_d['fid'], args_p, args_m,
+        pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'], args_d['fid'], args_d['p'], args_m,
                     brcdapi_file.full_file_name(args_d['o'], '.json'))
 
 

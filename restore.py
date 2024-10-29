@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -100,15 +100,17 @@ each logical switch acted on.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.5     | 16 Jun 2024   | Fixed grammar mistakes in help messages.                                              |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | 29 Oct 2024   | Added more error checking.                                                            |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '16 Jun 2024'
+__date__ = '29 Oct 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.5'
+__version__ = '4.0.6'
 
 import collections
 import pprint
@@ -564,7 +566,7 @@ def _conv_lookup_act(obj, key, sub_key=None):
 def _conv_ficon_lookup_act(obj, key, sub_key=None):
     """Returns None of any parameter with a FICON switch that must not be set. See _conv_none_act() for parameters"""
     try:
-        if bool(obj.r_get('r_is_ficon')):
+        if obj.r_get('r_is_ficon', False):
             return None
         full_key = key if sub_key is None else key + '/' + sub_key
         return copy.deepcopy(gen_util.get_key_val(obj, full_key))
@@ -796,9 +798,8 @@ def _build_fid_map(cd, d):
         r_fab_name = r_switch_obj.r_get(brcdapi_util.bfs_fab_user_name)
         if isinstance(r_fab_name, str) and len(r_fab_name) == 0:
             r_fab_name = None
-        r_switch_name = r_switch_obj.r_get(brcdapi_util.bfs_sw_user_name)
-        if r_switch_name is None:
-            r_switch_name = r_switch_obj.r_get(brcdapi_util.bf_sw_user_name)
+        r_switch_name = r_switch_obj.r_get(brcdapi_util.bfs_sw_user_name,
+                                           r_switch_obj.r_get(brcdapi_util.bf_sw_user_name))
         if isinstance(r_switch_name, str) and len(r_switch_name) == 0:
             r_switch_name = None
 
@@ -999,7 +1000,7 @@ def _restore_ports(cd, d):
                 for port in success_l:
                     r_port_obj = r_switch_obj.r_port_obj(port)
                     if r_port_obj is not None:
-                        bind_l = r_port_obj.r_get('fibrechannel/bound-address-list/bound-address')
+                        bind_l = r_port_obj.r_get('fibrechannel/bound-address-list/bound-address', list())
                         if len(bind_l) > 0:
                             port_d.update({port: bind_l[0]})
                 if len(port_d) > 0:
@@ -1049,13 +1050,13 @@ def _user_act(cd, d):
     el, content_l = list(), list()
     try:
         key, rw_d, t_chassis_obj = d['k'], d['rw'], cd['t_chassis_obj']
-        t_user_l = gen_util.convert_to_list(cd['t_chassis_obj'].r_get(key))
+        t_user_l = cd['t_chassis_obj'].r_get(key, list())
         if len(t_user_l) > 0:
             existing_user_d = dict(root=True)  # Newer versions of FOS don't support root. Make sure root gets skipped
-            for td in gen_util.convert_to_list(t_chassis_obj.r_get(key)):
+            for td in t_chassis_obj.r_get(key, list()):
                 existing_user_d.update({td['name']: True})
-            for rd in gen_util.convert_to_list(cd['r_chassis_obj'].r_get(key)):
-                if not bool(existing_user_d.get(rd['name'])):
+            for rd in cd['r_chassis_obj'].r_get(key, list()):
+                if not existing_user_d.get(rd['name'], False):
                     content_d = collections.OrderedDict() if isinstance(rw_d, collections.OrderedDict) else dict()
                     for k in rw_d.keys():
                         content_d.update({k: rw_d[k](rd, k)})
@@ -1244,9 +1245,7 @@ def _port_config_cli(el, r_port_obj, t_port_obj):
         return cli_l
 
     r_portcfgshow_d = r_port_obj.r_get('fos_cli/portcfgshow')
-    t_portcfgshow_d = t_port_obj.r_get('fos_cli/portcfgshow')
-    if t_portcfgshow_d is None:
-        t_portcfgshow_d = dict()
+    t_portcfgshow_d = t_port_obj.r_get('fos_cli/portcfgshow', dict())
     r_portbuffershow_d = r_port_obj.r_get('fos_cli/portbuffershow')
     if r_portcfgshow_d is None or r_portbuffershow_d is None:
         return cli_l

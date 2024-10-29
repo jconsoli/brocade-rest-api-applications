@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -15,8 +15,6 @@ language governing permissions and limitations under the License.
 The license is free for single customer use (internal applications). Use of this module in the production,
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
-
-ToDo Reference to report_utils.cell_match_val in stats_g.py
 
 **Description**
 
@@ -35,16 +33,16 @@ Reads in the output of stats_c (which collects port statistics) and creates an E
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
-| 4.0.3     | xx xxx 2024   | Added more error checking.                                                            |
+| 4.0.3     | 29 Oct 2024   | Fixed call to cell_match_val().                                                       |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = 'xx xxx 2024'
+__date__ = '29 Oct 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Development'
+__status__ = 'Released'
 __version__ = '4.0.3'
 
 import sys
@@ -97,46 +95,37 @@ _input_d = dict(
     i=dict(h='Required. Name of data input file. This must be the output file, -o, from stats_c.py. ".json" is '
              'automatically appended'),
     gp=dict(r=False,
-            h='Optional. Creates a worksheet with a graph of one or more statistical counters for a port. Useful for '
-              'analyzing performance for a specific port. Parameters that follow are the port number followed by any '
-              'of the statistical parameters in brocade-interface/fibrechannel-statistics. Only the final leaf should '
-              'be used. All parameters must be separated by a comma. Separate multiple graphs with a semi-colon. '
-              'Graphs are plotted against the sample time. For example, to graph the Tx and Rx frames for port 3/14: '
-              '"-gp 3/14,in-frames,out-frames"'),
-    gs=dict(r=False,
-            h='Optional. Name of the worksheet to create with a graph of one or more statistical counters for a port. '
-              'Useful for analyzing performance for a specific port. Parameters that follow are the port number '
-              'followed by any of the statistical parameters in brocade-interface/fibrechannel-statistics. Only the '
-              'final leaf should be used. All parameters must be separated by a comma. Separate multiple graphs with a '
-              'semi-colon. Graphs are plotted against the sample time. For example, to graph the Tx and Rx frames for '
+            h='Optional. Creates a worksheet with a graph of one or more statistical counters for specific ports. '
+              'Parameters that follow are the port number followed by any of the statistical parameters in '
+              'brocade-interface/fibrechannel-statistics. Only the final leaf should be used. All parameters must be '
+              'separated by a comma. Separate ports with a semi-colon. For example, to graph the Tx and Rx frames for '
               'port 3/14: "-gp 3/14,in-frames,out-frames"'),
+    gs=dict(r=False,
+            h='Optional. Name of the worksheet to create with a graph of one or more statistical counters. This is '
+              'essentially the reverse of the -gp option. By default, all ports are plotted for the specified '
+              'statistic. You can filter ports by specifying "top-x" or "avg-x", where "x" is the number of ports to '
+              'graph. "top-x" looks for the ports with the top highest peaks while "avg-x" looks for the highest total '
+              'count for the specified statistic. For example, to plot in-frame and out-frames for all ports: '
+              '"-gs in-frames;out-frames". For the same graph, but limited to 5 ports with the highest average '
+              '(which is the same as the highest total count for all samples): "-gs '
+              'in-frames,avg-5;out-frames,avg-5".'),
     gt=dict(r=False, h=_buf),
 )
 _input_d.update(gen_util.parseargs_log_d.copy())
 
-_DEBUG = False
-_DEBUG_sup = False
-_DEBUG_r = 'test/test_report'
-_DEBUG_i = 'test/test_out'
-_DEBUG_gp = '12/29,class3-out-discards,bb-credit-zero'
-_DEBUG_gs = 'class3-out-discards,top-5;bb-credit-zero,top-5'
-_DEBUG_gt = None
-_DEBUG_log = '_logs'
-_DEBUG_nl = False
-
 _invalid_parm_ref = 'Invalid display parameter: '
 _invalid_port_ref = 'Invalid port reference: '
 _sheet_map = dict()  # key: port number, value: openpyxl sheet
+
 _port_stats = (
-                  'fibrechannel/average-transmit-frame-size',
-                  'fibrechannel/average-receive-frame-size',
-                  'fibrechannel/average-transmit-buffer-usage',
-                  'fibrechannel/average-receive-buffer-usage'
-                  # 'fibrechannel/current-buffer-usage',
-                  # 'fibrechannel/recommended-buffers',
-                  # 'fibrechannel/chip-buffers-available',
-              ) \
-              + rt.Port.port_stats1_tbl
+    'fibrechannel/average-transmit-frame-size',
+    'fibrechannel/average-receive-frame-size',
+    'fibrechannel/average-transmit-buffer-usage',
+    'fibrechannel/average-receive-buffer-usage'
+    # 'fibrechannel/current-buffer-usage',
+    # 'fibrechannel/recommended-buffers',
+    # 'fibrechannel/chip-buffers-available',
+) + rt.Port.port_stats1_tbl
 
 
 # Case methods for _get_ports(). See _port_match
@@ -211,6 +200,8 @@ def _get_ports(switch_obj, ports):
     :return: List of port objects (brcddb.classes.PortObj)
     :rtype: list
     """
+    global _port_match
+
     r = list()
     for port in gen_util.convert_to_list(ports.split(',')):
         if port in _port_match:
@@ -365,7 +356,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
                         rt.Port.port_display_tbl['fibrechannel-statistics/' + stat]['d']
                 except (ValueError, TypeError):
                     stat_ref = stat
-                cell = report_utils.cell_match_val(sheet, stat_ref, None, 2, 1)
+                cell = excel_util.cell_match_val(sheet, stat_ref, None, 2, 1)
                 if cell is None:
                     ml.append('Could not find statistical count ' + stat + ' for port ' + port + '. Skipping')
                     continue
@@ -416,7 +407,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
                     ml.append('Could not find port ' + port)
                     continue
                 sheet = _sheet_map[port]
-                cell = report_utils.cell_match_val(sheet, col_ref, None, 2, 1)
+                cell = excel_util.cell_match_val(sheet, col_ref, None, 2, 1)
                 if cell is None:
                     ml.append('Could not find column for port ' + port + ', statistic ' + stat)
                     continue
@@ -495,15 +486,15 @@ def _graphs(switch_obj, single_port_graph_in, stats_graph_in, graph_type):
 
     :param switch_obj: First switch object with list of ports
     :type switch_obj: brcddb.classes.switch.SwitchObj
-    :param single_port_graph_in: Command line text for single port graphs
+    :param single_port_graph_in: Command line text for single port graphs. See help for -gp option
     :type single_port_graph_in: str
-    :param stats_graph_in: Command line text for statistics graphs
+    :param stats_graph_in: Command line text for statistics graphs. See help for -gs option
     :type stats_graph_in: str
     :param graph_type: Type of graph
     :type graph_type: str
     :return graphs: List of dictionaries that define the graphs. See description of graph in _write_report() for details
     :rtype graphs: list
-    :return messages: List of error and warning messages
+    :return messages: Error and warning messages
     :rtype messages: list
     """
     # Figure out the graph type and set up the return list of graphs
@@ -613,7 +604,7 @@ def _write_report(switch_obj, report, graph_list, ml):
     proj_obj = switch_obj.r_project_obj()
     wb = excel_util.new_report()
 
-    # Setup the Project summary sheet with table of content
+    # Set up the Project summary sheet with table of content
     title = 'Port Performance'
     tc_page = 'Project_Summary'
     t_content = [
@@ -703,9 +694,7 @@ def _get_input():
     global __version__, _input_d, _version_d
 
     # Get command line input
-    buf = 'Create Excel Workbook from statistics gathered with stats_c.py. WARNING: Graphing parameters are not yet '\
-          'implemented. This module will only create the Excel Workbook with tables. You will then need to create '\
-          'your own graphs manually.'
+    buf = 'Create Excel Workbook from statistics gathered with stats_c.py with optional graphing capabilities.'
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
