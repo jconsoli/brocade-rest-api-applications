@@ -3,6 +3,11 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
+**Update 6 Dec 2024**
+* Automatically grouped mainframe devices in group section of report.py
+* Added Tx and Rx to several report pages
+* Miscellaneous bug fixes
+
 **Update 29 Oct 2024**
 
 * Fixed graphing capabilities in stats_g.py
