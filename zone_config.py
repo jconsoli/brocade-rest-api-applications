@@ -1398,11 +1398,6 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
     try:
         # Process each action in zone_wb_l
         for zone_d in zone_wb_l:
-
-            # Debug
-            # if zone_d['row'] == 45:
-            #     print('TP_100')
-
             if _debug:
                 brcdapi_log.log(pprint.pformat(zone_d), echo=True)
             try:
@@ -1504,7 +1499,7 @@ def _get_input():
     if args_d['d']:
         _debug = True
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     login_credentials_d = dict(ip=dict(s=args_d['ip'], m=''),
                                id=dict(s=args_d['id'], m=''),
@@ -1596,7 +1591,7 @@ def _get_input():
         'Log, -log:                ' + str(args_d['log']),
         'No log, -nl:              ' + str(args_d['nl']),
         'Debug, -d:                ' + str(args_d['d']),
-        'Supress, -sup:            ' + str(args_d['sup']),
+        'Suppress, -sup:           ' + str(args_d['sup']),
         '',
         ]
     ml.extend(error_l)

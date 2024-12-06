@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -31,30 +31,31 @@ The process is as follows:
     * Add the data to the appropriated brcddb class using brcdapi.util.uri_map.area to determine which class
     * Once all data is captured, convert the brcddb.classes.project.ProjectObj to a plain dict and JSON dump to a file.
 
-Version Control::
+**Version Control**
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | 06 Mar 2024   | Added collection of maps URIs, -clr, -nm option, CLI command processing.          |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.2     | 03 Apr 2024   | Explicitly defined parameters in call to api_int.get_batch()                      |
-    |           |               | Added version numbers of imported libraries.                                      |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.3     | 16 Jun 2024   | Improved help messages.                                                           |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+===================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Added collection of maps URIs, -clr, -nm option, CLI command processing.              |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Explicitly defined parameters in call to api_int.get_batch(). Added version numbers   |
+|           |               | of imported libraries.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 16 Jun 2024   | Improved help messages.                                                               |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 06 Dec 2024   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '16 Jun 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import signal
 import sys
@@ -97,7 +98,7 @@ _WRITE = True  # Should always be True. Used for debug only. Prevents the output
 # -ip xx.xxx.xx.xx -id admin -pw password -s self -log _logs
 
 _report_kpi_l = [
-    # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface._get_chassis()
+    # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface.get_chassis()
     # 'running/brocade-logging/audit-log',  # $ToDo Fix - FOS encounters an error which I'm assuming is when it wraps
     'running/brocade-logging/error-log',
     'running/brocade-fibrechannel-switch/fibrechannel-switch',
@@ -318,7 +319,7 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Is the FID or FID range valid?
     args_fid_l = gen_util.range_to_list(args_d['fid']) if isinstance(args_d['fid'], str) else None
@@ -339,7 +340,7 @@ def _get_input():
         'Log, -log:           ' + str(args_d['log']),
         'No log, -nl:         ' + str(args_d['nl']),
         'Debug, -d:           ' + str(args_d['d']),
-        'Supress, -sup:       ' + str(args_d['sup']),
+        'Suppress, -sup:      ' + str(args_d['sup']),
         '',
     ]
     brcdapi_log.log(ml, echo=True)

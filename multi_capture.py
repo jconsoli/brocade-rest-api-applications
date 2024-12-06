@@ -43,15 +43,17 @@ This is effectively an intelligent batch file that does the following:
 | 4.0.4     | 29 Oct 2024   | Accidentally left _DEBUG enabled. Disabled it in this release. Other than printing    |
 |           |               | additional debug information to the console, this parameter does nothing.             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 06 Dec 2024   | Fixed spelling mistake in message.                                                    |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '29 Oct 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.5'
 
 import signal
 import datetime
@@ -273,7 +275,7 @@ def _get_input():
     args_d = gen_util.get_input('Capture (GET) requests from a chassis', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
     if args_d['log'] is not None:
         addl_parms_all.extend(['-log', args_d['log']])
     for k in ('sup', 'nl'):
@@ -331,7 +333,7 @@ def _get_input():
         'Log, -log:                ' + str(args_d['log']),
         'No log, -nl:              ' + str(args_d['nl']),
         'Debug, -d:                ' + str(args_d['d']),
-        'Supress, -sup:            ' + str(args_d['sup']),
+        'Suppress, -sup:           ' + str(args_d['sup']),
         '',
     ]
     brcdapi_log.log(ml, echo=True)

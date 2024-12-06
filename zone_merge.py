@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -22,27 +22,29 @@ Merges the zones from multiple fabrics
 
 **Version Control**
 
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| Version   | Last Edit     | Description                                                                       |
-+===========+===============+===================================================================================+
-| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.1     | 06 Mar 2024   | Use brcddb_project.scan() with -scan option. Removed deprecated parameter in      |
-|           |               | enable_zonecfg()                                                                  |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.3     | 16 Jun 2024   | Improved help messages.                                                           |
-+-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Use brcddb_project.scan() with -scan option. Removed deprecated parameter in          |
+|           |               | enable_zonecfg()                                                                      |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 16 Jun 2024   | Improved help messages.                                                               |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 06 Dec 2024   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '16 Jun 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import sys
 import datetime
@@ -643,7 +645,7 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Command line feedback
     c_file = brcdapi_file.full_file_name(args_d['i'], '.xlsx')
@@ -658,7 +660,7 @@ def _get_input():
         'Log, -log:             ' + str(args_d['log']),
         'No log, -nl:           ' + str(args_d['nl']),
         'Debug, -d:             ' + str(args_d['d']),
-        'Supress, -sup:         ' + str(args_d['sup']),
+        'Suppress, -sup:         ' + str(args_d['sup']),
         '',
     ]
     brcdapi_log.log(ml, echo=True)

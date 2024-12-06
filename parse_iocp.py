@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -22,24 +22,26 @@ Parses IOCP files and generates planning workbooks
 
 **Version Control**
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | 06 Mar 2024   | Fixed error message when there is an error adding a sheet.                        |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Fixed error message when there is an error adding a sheet.                            |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 06 Dec 2024   | Fixed options for port naming conventions.                                            |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import datetime
 import sys
@@ -74,13 +76,12 @@ _config_d = dict(x64='templates/X6-4_Switch_Configuration.xlsx',
                  x74='templates/X7-4_Switch_Configuration.xlsx',
                  x78='templates/X7-8_Switch_Configuration.xlsx',
                  fixed='templates/Fixed_Port_Switch_Configuration.xlsx')
-_switch_types_l = ('x78', 'x74', 'x68', 'x64', 'fixed')
-
 _valid_switch_type_l = [str(k) for k in _config_d.keys()]
+
 _buf = 'Optional. Switch type. Valid switch types are: ' + ', '.join(_valid_switch_type_l) + '. The default is x78'
 _input_d = dict(
     p=dict(h='Required. Prefix for the name of the switch configuration workbooks. The name of this workbook begins '
-             'with this prefix followed by an "_", the switch DID and ".xlsx". A file path may be embedded in the'
+             'with this prefix followed by an "_", the switch DID and ".xlsx". A file path may be embedded in the '
              'prefix.'),
     t=dict(r=False, d='x78', v=_valid_switch_type_l, h=_buf),
     iocp=dict(h='Required. Name of folder containing IOCP files to be parsed.'),
@@ -737,9 +738,9 @@ _dv_fab_principal.error = 'Invalid fabric priority. See FOS CLI fabricprincipal 
 _dv_routing_policy = DataValidation(type='list', formula1='"default,DBR,EBR"', allow_blank=False)
 _dv_routing_policy.errorTitle = 'Invalid Entry'
 _dv_routing_policy.error = 'Invalid Routing Policy. Must be default, DBR, or EBR.' + _dv_common_e
-_dv_port_name = DataValidation(type='list', formula1='"None,port_number,dynamic"', allow_blank=False)
+_dv_port_name = DataValidation(type='list', formula1='"off,default,fdmi,dynamic,open -n,ficon -n"', allow_blank=False)
 _dv_port_name.errorTitle = 'Invalid Entry'
-_dv_port_name.error = 'Invalid Port Name. Must be None, port_number, or dynamic.' + _dv_common_e
+_dv_port_name.error = 'Invalid Port Name. Must be off, default, fdmi, dynamic, open -n, or ficon -n.' + _dv_common_e
 _dv_dup_wwn = DataValidation(type='list', formula1='"0,1,2"', allow_blank=False)
 _dv_dup_wwn.errorTitle = 'Invalid Entry'
 _dv_dup_wwn.error = 'Invalid duplicate WWN value. Value must be 0, 1, or 2.' + _dv_common_e
@@ -1277,7 +1278,7 @@ def _get_input():
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # User feedback
     ml = [
@@ -1287,9 +1288,9 @@ def _get_input():
         'IOCP folder, -iocp:         ' + args_d['iocp'],
         'Switch ID to DID map, -map: ' + str(args_d['map']),
         'Template file, -t:          ' + str(_config_d.get(args_d['t'])),
-        'Log, -log:           ' + str(args_d['log']),
-        'No log, -nl:         ' + str(args_d['nl']),
-        'Supress, -sup:       ' + str(args_d['sup']),
+        'Log, -log:                  ' + str(args_d['log']),
+        'No log, -nl:                ' + str(args_d['nl']),
+        'Suppress, -sup:             ' + str(args_d['sup']),
         '',
     ]
     brcdapi_log.log(ml, echo=True)

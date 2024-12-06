@@ -102,15 +102,17 @@ each logical switch acted on.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.6     | 29 Oct 2024   | Added more error checking.                                                            |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 06 Dec 2024   | Fixed spelling mistake in message.                                                    |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '29 Oct 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.6'
+__version__ = '4.0.7'
 
 import collections
 import pprint
@@ -175,8 +177,8 @@ _STAND_ALONE = True  # See note above
 _input_d = gen_util.parseargs_login_false_d.copy()
 _input_d['i'] = dict(
     r=False, d=None,
-    h='Required unless using -scan, -cli, or -eh options. Captured data file from the output of capture.py, '
-      'combine.py, or multi_capture.py. ".json" is automatically appended.')
+    h='Required unless using -scan or -eh options. Captured data file from the output of capture.py, combine.py, or '
+      'multi_capture.py. ".json" is automatically appended.')
 _input_d['wwn'] = dict(
     r=False, d=None,
     h='Optional (required if multiple chassis are in the captured data, -i). WWN of chassis in the input file, -i, to '
@@ -185,14 +187,14 @@ _input_d['wwn'] = dict(
       'determine all discovered chassis.')
 _input_d['p'] = dict(
     r=False, d=None,
-    h='Required unless using -scan, -cli, or -eh options. CSV list of option parameters. This determines what is to '
-      'be restored. Use * for all parameters. Invoke with -eh for details.')
+    h='Required unless using -scan or -eh options. CSV list of option parameters. This determines what is to be '
+      'restored. Use * for all parameters. Invoke with -eh for details.')
 _input_d['fm'] = dict(r=False, d=None, h='Optional. FID Map. Re-run with -eh for details.')
-_input_d['cli'] = dict(
-    r=False, d=None,
-    h='Optional. Name of CLI file. ".txt" is automatically appended. When specified,  FOS CLI commands to restore the '
-      'chassis are created in this file. No attempts are made to make changes via the API. Future consideration. This '
-      'feature is not yet supported.')
+# _input_d['cli'] = dict(
+#     r=False, d=None,
+#     h='Optional. Name of CLI file. ".txt" is automatically appended. When specified,  FOS CLI commands to restore the '
+#       'chassis are created in this file. No attempts are made to make changes via the API. Future consideration. This '
+#       'feature is not yet supported.')
 _input_d.update(gen_util.parseargs_scan_d.copy())
 _input_d.update(gen_util.parseargs_eh_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
@@ -756,8 +758,8 @@ def _build_fid_map(cd, d):
     +---------------+-----------+-------------------------------------------------------------------------------+
     """
     global _fm_conversion_d
-    
-    fm_index, ml, wl, fid_map_d, r_fid_l = 0, list(), list(), dict(), list()
+
+    fm_index, ml, wl, r_fid_l = 0, list(), list(), list()
     fid_range_buf = ', must be a decimal integer or range of integers from 1-128.'
     did_range_buf = ', is not a valid DID. DIDs must be a decimal integer from 1-239'
     r_chassis_obj, t_chassis_obj, fid_map_d = cd['r_chassis_obj'], cd['t_chassis_obj'], cd['fid_map_d']
@@ -812,11 +814,11 @@ def _build_fid_map(cd, d):
         for t_fid in t_fid_l:
             if t_fid < 1 or t_fid > 128:
                 ml.append('The target FID, ' + str(t_fid) + ', at index ' + str(fm_index) + fid_range_buf)
-            t_switch_obj = t_chassis_obj.r_switch_obj_for_fid(t_fid)
-            if t_switch_obj is None:
-                wl.append(t_fid)
-                fm_index += 1
-                continue
+            # t_switch_obj = t_chassis_obj.r_switch_obj_for_fid(t_fid)
+            # if t_switch_obj is None:
+            #     wl.append(t_fid)
+            #     fm_index += 1
+            #     continue
             try:
                 t_did = r_switch_obj.r_did() if len(fid_l[3]) == 0 else int(fid_l[3])
             except ValueError:
@@ -841,9 +843,6 @@ def _build_fid_map(cd, d):
         brcdapi_log.log(ml, echo=True)
         raise FIDMapError
 
-    # Display warning messages for FIDs not found in target.
-    if len(wl) > 0:
-        return ['WARNING: The following FIDs were not found in the target chassis: ' + ', '.join([str(i) for i in wl])]
     return list()
 
 
@@ -2081,12 +2080,12 @@ def _get_input():
     buf = 'Restores a chassis configuration to a previous configuration. Intended to be used as a template'
     args_d = gen_util.get_input(buf, _input_d)
     args_d['i'] = brcdapi_file.full_file_name(args_d['i'], '.json')
-    args_d['cli'] = None if args_d['cli'] is None else brcdapi_file.full_file_name(args_d['cli'], '.txt')
+    args_d['cli'] = None if args_d.get('cli') is None else brcdapi_file.full_file_name(args_d['cli'], '.txt')
 
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # User feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,
@@ -2102,7 +2101,7 @@ def _get_input():
           'Log, -log:               ' + str(args_d['log']),
           'No log, -nl:             ' + str(args_d['nl']),
           'Debug, -d:               ' + str(args_d['d']),
-          'Supress, -sup:           ' + str(args_d['sup']),
+          'Suppress, -sup:          ' + str(args_d['sup']),
           '']
     brcdapi_log.log(ml, echo=True)
 

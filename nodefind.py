@@ -6,7 +6,7 @@ Copyright 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -33,15 +33,17 @@ Performs a node find in a project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.3     | 20 Oct 2024   | PEP8 cleanup                                                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.4     | 06 Dec 2024   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '20 Oct 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -266,7 +268,7 @@ def _get_input():
         return brcddb_common.EXIT_STATUS_INPUT_ERROR  # gen_util.get_input() already posted the error message.
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Read in the project file
     proj_obj, args_i_help = None, ''
@@ -296,7 +298,7 @@ def _get_input():
           'Report, -r:           ' + str(args_d['r']),
           'Log, -log:            ' + str(args_d['log']),
           'No log, -nl:          ' + str(args_d['nl']),
-          'Supress, -sup:        ' + str(args_d['sup']),]
+          'Suppress, -sup:       ' + str(args_d['sup']),]
     proj_obj.s_description('\n'.join(ml))
     ml.append('')
 

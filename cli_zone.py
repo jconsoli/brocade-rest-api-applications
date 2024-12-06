@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -27,29 +27,30 @@ use as an example with the following caveats and features:
     * d,i zones are not parsed properly
     * Includes common error checking
     * Takes advantage of all brcddb.apps.zone.py features (test mode, suppress output, zone from saved container)
-    * Processes made up command, zonecleanup, which was used to test the zone cleanup feature of brcddb.apps.zone.py
-    * Unsupported commands: zoneobjectexpunge, zoneobjectrename, zoneobjectreplace, defzone
+    * Unsupported commands: zoneobjectexpunge, zoneobjectreplace, cfgdisable
 
 **Version Control**
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | 06 Mar 2024   | Improved error messaging.                                                         |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.2     | xx xxx 2024   | Added version numbers of imported libraries.                                      |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Improved error messaging.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 06 Dec 2024   | Improved help messages.                                                               |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = 'xx xxx 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -77,12 +78,10 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
 
-# debug input (for copy and paste into Run->Edit Configurations->script parameters):
-# -ip xx.xxx.xx.xx -id admin -pw password -s self -cli test/cli.txt -b -log _logs
-
 _input_d = gen_util.parseargs_login_d.copy()
 _input_d.update(
-    cli=dict(h='Required. Name of plain text file with CLI commands. ".txt" is automatically appended.'),
+    cli=dict(h='Required. Name of plain text file with CLI commands. ".txt" is automatically appended. Comments and '
+               'empty lines are removed.'),
     fid=dict(t='int', v=gen_util.range_to_list('1-128'), h='Required. Virtual Fabric ID (1 - 128)'),
     t=dict(r=False, d=False, t='bool',
            h='Optional. Test mode. No arguments. Validates the -cli file only. Zoning is not sent to the switch'),
@@ -217,7 +216,7 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # If not in test mode, were the switch parameters entered?
     help_msg_d = dict(ip='', id='', pw='')
@@ -231,17 +230,17 @@ def _get_input():
     ip_help_msg = 'None' if args_d['ip'] is None else brcdapi_util.mask_ip_addr(args_d['ip'], keep_last=True)
     ml = [
         os.path.basename(__file__) + ', ' + __version__,
-        'IP, -ip:       ' + ip_help_msg + help_msg_d['ip'],
-        'ID, -id:       ' + str(args_d['id']) + help_msg_d['id'],
-        'PW, -pw:       xxxxx' + help_msg_d['pw'],
-        'CLI file:      ' + args_d['cli'],
-        'FID:           ' + str(args_d['fid']),
-        'Test flag:     ' + str(args_d['t']),
-        'Force flag:    ' + str(args_d['f']),
-        'Log, -log:     ' + str(args_d['log']),
-        'No log, -nl:   ' + str(args_d['nl']),
-        'Debug, -d:     ' + str(args_d['d']),
-        'Supress, -sup: ' + str(args_d['sup']),
+        'IP, -ip:        ' + ip_help_msg + help_msg_d['ip'],
+        'ID, -id:        ' + str(args_d['id']) + help_msg_d['id'],
+        'PW, -pw:        xxxxx' + help_msg_d['pw'],
+        'CLI file:       ' + args_d['cli'],
+        'FID:            ' + str(args_d['fid']),
+        'Test flag:      ' + str(args_d['t']),
+        'Force flag:     ' + str(args_d['f']),
+        'Log, -log:      ' + str(args_d['log']),
+        'No log, -nl:    ' + str(args_d['nl']),
+        'Debug, -d:      ' + str(args_d['d']),
+        'Suppress, -sup: ' + str(args_d['sup']),
         '',
         ]
     brcdapi_log.log(ml, echo=True)

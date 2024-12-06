@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -22,24 +22,26 @@ Creates MAPS SFP rules from a workbook
 
 **Version Control**
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 4.0.0     | 06 Mar 2024   | Initial Launch                                                                    |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.1     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 4.0.2     | 20 Oct 2024   | PEP8 cleanup.                                                                     |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 06 Mar 2024   | Initial Launch                                                                        |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 20 Oct 2024   | PEP8 cleanup.                                                                         |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 06 Dec 2024   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '20 Oct 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import sys
 import os
@@ -204,7 +206,7 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Is the FID map valid?
     args_fid_help = ''

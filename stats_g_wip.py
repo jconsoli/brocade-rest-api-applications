@@ -33,9 +33,7 @@ Reads in the output of stats_c (which collects port statistics) and creates an E
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
-| 4.0.3     | 29 Oct 2024   | Fixed call to cell_match_val().                                                       |
-+-----------+---------------+---------------------------------------------------------------------------------------+
-| 4.0.4     | 06 Dec 2024   | Fixed spelling mistake in message.                                                    |
+| 4.0.3     | 06 Dec 2024   | Added graphing capabilities back in.                                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
@@ -44,8 +42,8 @@ __date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Released'
-__version__ = '4.0.4'
+__status__ = 'Development'
+__version__ = '4.0.3'
 
 import sys
 import os
@@ -54,6 +52,7 @@ from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
 import openpyxl.utils.cell as xl
 import brcdapi.log as brcdapi_log
 import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
 import brcdapi.excel_util as excel_util
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_project as brcddb_project
@@ -70,6 +69,7 @@ import brcddb.report.graph as report_graph
 _version_d = dict(
     brcdapi_log=brcdapi_log.__version__,
     gen_util=gen_util.__version__,
+    brcdapi_util=brcdapi_util.__version__,
     excel_util=excel_util.__version__,
     brcdapi_file=brcdapi_file.__version__,
     brcddb_project=brcddb_project.__version__,
@@ -90,30 +90,110 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
 
-_buf = 'Optional. Specifies the graph type. Valid chart types are: ' + ', '.join(report_graph.chart_types) + '. '
-_buf += 'Default: line.'
+_graph_types = [str(k) for k in report_graph.chart_types.keys()]
+_buf = 'Optional. Specifies the graph type. Valid chart types are: ' + ', '.join(_graph_types) + '. Default: line. '
+_buf += 'Only used when -gp or -gs options are specified.'
 _input_d = dict(
-    r=dict(h='Required. Report name. ".xlsx" is automatically appended.'),
-    i=dict(h='Required. Name of data input file. This must be the output file, -o, from stats_c.py. ".json" is '
-             'automatically appended'),
+    r=dict(r=False, _r=True,
+           h='Required unless -eh is specified. Report name. ".xlsx" is automatically appended.'),
+    i=dict(r=False, _r=True,
+           h='Required unless -eh is specified. Name of data input file. This must be the output file, -o, from '
+             'stats_c.py. ".json" is automatically appended'),
     gp=dict(r=False,
-            h='Optional. Creates a worksheet with a graph of one or more statistical counters for specific ports. '
-              'Parameters that follow are the port number followed by any of the statistical parameters in '
-              'brocade-interface/fibrechannel-statistics. Only the final leaf should be used. All parameters must be '
-              'separated by a comma. Separate ports with a semi-colon. For example, to graph the Tx and Rx frames for '
-              'port 3/14: "-gp 3/14,in-frames,out-frames"'),
+            h='Optional. Creates worksheets with graphs of one or more statistical counters for specific ports. '
+              'Re-run with -eh for additional help.'),
     gs=dict(r=False,
-            h='Optional. Name of the worksheet to create with a graph of one or more statistical counters. This is '
-              'essentially the reverse of the -gp option. By default, all ports are plotted for the specified '
-              'statistic. You can filter ports by specifying "top-x" or "avg-x", where "x" is the number of ports to '
-              'graph. "top-x" looks for the ports with the top highest peaks while "avg-x" looks for the highest total '
-              'count for the specified statistic. For example, to plot in-frame and out-frames for all ports: '
-              '"-gs in-frames;out-frames". For the same graph, but limited to 5 ports with the highest average '
-              '(which is the same as the highest total count for all samples): "-gs '
-              'in-frames,avg-5;out-frames,avg-5".'),
-    gt=dict(r=False, h=_buf),
+            h='Optional. Creates worksheets with graphs for a specific statistical counter. This is '
+              'essentially the reverse of the -gp option. Re-run with -eh for additional help.'),
+    eh=dict(r=False, t='bool', d=False,
+            h='Optional. Displays extended help and exits. No other processing is performed.'),
 )
 _input_d.update(gen_util.parseargs_log_d.copy())
+
+_eh_l = [
+    '',
+    'The -gp and -gs options create worksheets with graphs. Both options are',
+    'followed with a CSV list of parameters that define the graphs. Multiple',
+    'graphs can be created by separating the CSV lists with a semi-colon.',
+    '',
+    '**Graph by Ports, -gp**',
+    '',
+    'Graphs multiple statistics for a single port. Parameters that follow are:',
+    '',
+    '+----------+---------------------------------------------------------------+',
+    '| Position | Description                                                   |',
+    '+==========+===============================================================+',
+    '|   0      | Port number.                                                  |',
+    '+----------+---------------------------------------------------------------+',
+    '|   1      | Graph type. See note 2.                                       |',
+    '+----------+---------------------------------------------------------------+',
+    '|   2      | A statistical parameters in                                   |',
+    '|          | brocade-interface/fibrechannel-statistics. Only               |',
+    '|          | the final leaf should be used.                                |',
+    '+----------+---------------------------------------------------------------+',
+    '|   n      | Add as many additional parameters as you wish.                |',
+    '+----------+---------------------------------------------------------------+',
+    '',
+    'Example: Plot Tx (out-frame) and Rx (in-frame) for port 3/14 on a single',
+    'line graph and CRC errors (in-crc-errors) for port 4/7 on another worksheet',
+    '',
+    '-gp "3/14,line,in-frames,out-frames;4/7,line,in-crc-errors"',
+    '',
+    '**Graph Statistics, -gs**',
+    '',
+    'Graphs multiple ports for a single statistic. Parameters that follow are:',
+    '',
+    '+----------+---------------------------------------------------------------+',
+    '| Position | Description                                                   |',
+    '+==========+===============================================================+',
+    '|   0      | A statistical parameters in                                   |',
+    '|          | brocade-interface/fibrechannel-statistics. Only the final     |',
+    '|          | leaf should be used.                                          |',
+    '+----------+---------------------------------------------------------------+',
+    '|   1      | Graph type. See note 2.                                       |',
+    '+----------+---------------------------------------------------------------+',
+    '|   2      | Defines the ports to display as follows:                      |',
+    '|          |                                                               |',
+    '|          | E-Port Filters the list of ports resulting from other port    |',
+    '|          |        parameters to just E-Ports. If no other port           |',
+    '|          |        are specified, then all E-Ports in the switch are used.',
+    '|          | F-Port Same as E-Port but for F-Ports.                        |',
+    '|          | s/p    Port number. If "s" is omitted, "0" is assumed for     |',
+    '|          |        fixed port switches. "s" and "p" may also be ranges.   |',
+    '|          |        If a port in a range does not exist, it is ignored.    |',
+    '|          | bot-x  Ports with the lowest total sum of the values for the  |',
+    '|          |        statistic in the sample period.                        |',
+    '|          | peak-x Ports with the highest peak value for the statistic.   |',
+    '|          | top-x  Ports with the highest total sum of the values for the |',
+    '|          |        statistic in the sample period.                        |',
+    '|          |                                                               |',
+    '|          | x is an integer. If x exceeds the number of ports in the      |',
+    '|          | switch, the maximum number of ports in the switch are graphed.|',
+    '+----------+---------------------------------------------------------------+',
+    '|   n      | Additional port definitions.                                  |',
+    '+----------+---------------------------------------------------------------+',
+    '',
+    'Example: Plot a line graph for in-frame for all ports in any switch type',
+    '',
+    '-gs "in-frame,line,0-12/0-63"',
+    '',
+    'Example: Same as above, but limited to just F-Ports.',
+    '',
+    '-gs "in-frame,line,F-Port,0-12/0-63"',
+    '',
+    'Example: Plot line graphs for in-frame and out-frame for the 5 ports with',
+    '         the highest average.'
+    '',
+    '-gs "in-frame,line,avg-5;out-frame,line,avg-5"',
+    '',
+    '**Notes**',
+    '',
+    '1  Quotation marks around -gs and -gp may not be required; however, it',
+    '   is recommended because some symbols may be interpreted as parameter',
+    '   separators.',
+    '2  Graph types are: ' + ', '.join(_graph_types),
+    '3  The port types and graph types are not case sensitive.'
+    ]
 
 _invalid_parm_ref = 'Invalid display parameter: '
 _invalid_port_ref = 'Invalid port reference: '
@@ -130,17 +210,8 @@ _port_stats = (
 ) + rt.Port.port_stats1_tbl
 
 
-# Case methods for _get_ports(). See _port_match
-def _e_ports(switch_obj):
-    return [p.r_obj_key() for p in brcddb_search.match_test(switch_obj.r_port_objects(), brcddb_search.e_ports)]
-
-
-def _f_ports(switch_obj):
-    return [p.r_obj_key() for p in brcddb_search.match_test(switch_obj.r_port_objects(), brcddb_search.f_ports)]
-
-
-def _all(switch_obj):
-    return switch_obj.r_port_keys()
+class InputError(Exception):
+    pass
 
 
 def _ports(proj_obj, port):
@@ -185,33 +256,48 @@ def _ports(proj_obj, port):
     return list()  # If we get here, something went wrong
 
 
-_port_match = {
-    'E-PORTS': _e_ports,
-    'F-PORTS': _f_ports,
-    'ALL': _all,
+# Case methods for _get_ports(). See _port_match
+def _e_ports(switch_obj):
+    return [p.r_obj_key() for p in brcddb_search.match_test(switch_obj.r_port_objects(), brcddb_search.e_ports)]
+
+
+def _f_ports(switch_obj):
+    return [p.r_obj_key() for p in brcddb_search.match_test(switch_obj.r_port_objects(), brcddb_search.f_ports)]
+
+
+def _all_ports(switch_obj):
+    return switch_obj.r_port_keys()
+
+
+_port_match = {  # Used in _get_ports()
+    'e': _e_ports,
+    'E': _e_ports,
+    'f': _f_ports,
+    'F': _f_ports,
+    '*': _all_ports,
 }
 
 
-def _get_ports(switch_obj, ports):
+def _get_ports(switch_obj, port_type):
     """Returns a list of port objects matching the user input.
 
-    :param switch_obj: Project object
-    :type switch_obj: brcddb.classes.ProjectObj
-    :param ports: Port or list of port types. See -p parameter in parse_args()
-    :type ports: str
-    :return: List of port objects (brcddb.classes.PortObj)
+    :param switch_obj: Switch object
+    :type switch_obj: brcddb.classes.switch.SwitchObj
+    :param port_type: E, F, or *
+    :type port_type: str
+    :return: Port objects matching the port type
     :rtype: list
     """
     global _port_match
 
     r = list()
-    for port in gen_util.convert_to_list(ports.split(',')):
-        if port in _port_match:
-            r.extend(_port_match.get(port)(switch_obj))
-        else:
-            r.extend(_ports(switch_obj, port))
-
-    r.extend(r)
+    # for port in gen_util.convert_to_list(ports.split(',')):
+    #     if port in _port_match:
+    #         r.extend(_port_match.get(port)(switch_obj))
+    #     else:
+    #         r.extend(_ports(switch_obj, port))
+    #
+    # r.extend(r)
     return gen_util.remove_duplicates(r)
 
 
@@ -297,7 +383,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
     is simple. It just creates a worksheet and adds columns as necessary, even if it's just one.
 
     :param wb: Excel workbook object
-    :type wb: Workbook object
+    :type wb: openpyxl.workbook.workbook.Workbook
     :param tc_page: Name of table of contents page
     :type tc_page: str
     :param t_content: Table of contents
@@ -312,19 +398,15 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
     """
     global _sheet_map
 
-    ml = list()
+    graph_num, sheet_index, ml = 0, start_i, list()
+
     proj_obj = base_switch_obj.r_project_obj()
     switch_obj_l = [proj_obj.r_switch_obj(wwn) for wwn in proj_obj.r_get('switch_list', list())]
     if len(switch_obj_l) < 2:
         brcdapi_log.log('Nothing to graph. No data collected.', echo=True)
         return ml
-    sheet_index = start_i
-    last_disp = {'font': 'std', 'align': 'wrap'}
-    std_disp = last_disp.copy()
-    std_disp.update({'new_row': False})
 
-    graph_num = 0
-    for graph_obj in graph_list:
+    for graph_d in graph_list:
 
         # Create the graph data page and figure out the common graphing request
         sname = 'graph_' + str(graph_num)
@@ -332,9 +414,8 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
         data_sheet = wb.create_sheet(title=sname + '_data')
         data_sheet.page_setup.paperSize = data_sheet.PAPERSIZE_LETTER
         data_sheet.page_setup.orientation = data_sheet.ORIENTATION_LANDSCAPE
-        port, stat = graph_obj.get('port'), graph_obj.get('stat')
-        y_name = 'Programming error. Neither port or stat specified.'
-        title, last_time = '', ''
+        port, stat = graph_d.get('port'), graph_d.get('stat')
+        title, last_time, y_name = '', '', 'Programming error. Neither port or stat specified.'
 
         if port is not None:
 
@@ -352,7 +433,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
             sheet = _sheet_map[port]
             data_sheet['A1'] = 'Time'  # Column header for the time stamp
             col = 2
-            for stat in gen_util.convert_to_list(graph_obj.get('parms')):
+            for stat in gen_util.convert_to_list(graph_d.get('parms')):
                 try:
                     stat_ref = stat if rt.Port.port_display_tbl['fibrechannel-statistics/' + stat]['d'] is None else \
                         rt.Port.port_display_tbl['fibrechannel-statistics/' + stat]['d']
@@ -369,7 +450,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
             max_col = len(rd.keys())
 
             # Add the time stamp
-            x = port_obj.r_get('fibrechannel-statistics/time-generated')
+            x = port_obj.r_get(brcdapi_util.stats_time)
             if x is None:
                 ml.append('Invalid sample for port ' + port + '. Skipping.')
                 break
@@ -377,7 +458,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
                 '%d %b %Y, %H:%M:%S')
             row = 2
             for port_obj in [obj.r_port_obj(port) for obj in switch_obj_l]:
-                x = None if port_obj is None else port_obj.r_get('fibrechannel-statistics/time-generated')
+                x = None if port_obj is None else port_obj.r_get(brcdapi_util.stats_time)
                 if x is None:
                     buf = 'Port ' + port + ' appears to have gone off line after ' + str(last_time)
                     buf += '. Switch: ' + port_obj.r_switch_obj().r_obj_key()
@@ -392,7 +473,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
                     col += 1
                 row += 1
 
-        elif stat is not None:
+        if stat is not None:
 
             # Figure out the title and graph Y axis title
             y_name = stat.split('/').pop()
@@ -403,7 +484,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
 
             # Find all the time stamps, reference sheets, and columns
             tl, rl = list(), list()
-            for port in gen_util.convert_to_list(graph_obj.get('parms')):
+            for port in gen_util.convert_to_list(graph_d.get('parms')):
                 port_obj = switch_obj_l[0].r_port_obj(port)
                 if port_obj is None:
                     ml.append('Could not find port ' + port)
@@ -417,7 +498,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
                                col=column_index_from_string(coordinate_from_string(cell)[0])))
                 if len(tl) == 0:
                     try:
-                        x = switch_obj_l[0].r_port_obj(port).r_get('fibrechannel-statistics/time-generated')
+                        x = switch_obj_l[0].r_port_obj(port).r_get(brcdapi_util.stats_time)
                     except (ValueError, TypeError):
                         x = None
                     if x is None:
@@ -425,7 +506,7 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
                         break
                     title = 'Statistics beginning: ' + datetime.datetime.fromtimestamp(x).strftime('%d %b %Y, %H:%M:%S')
                     for port_obj in [obj.r_port_obj(port) for obj in switch_obj_l]:
-                        x = port_obj.r_get('fibrechannel-statistics/time-generated')
+                        x = port_obj.r_get(brcdapi_util.stats_time)
                         if x is None:
                             buf = 'Port ' + port + ' appears to have gone off line after ' + str(last_time)
                             buf += '. Switch: ' + port_obj.r_switch_obj().r_obj_key()
@@ -449,16 +530,12 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
                             '=' + ref['name'] + '!' + xl.get_column_letter(ref['col']) + str(row + 3)
                         col += 1
 
-        else:
-            brcdapi_log.exception(y_name, echo=True)
-            continue
-
         # Create the Worksheet and add it to the table of contents
         max_row = len(switch_obj_l) + 1
         report_graph.graph(wb, '#' + tc_page + '!A1', sname, sheet_index,
                            dict(sheet=data_sheet,
                                 title=title,
-                                type=graph_obj['type'],
+                                type=graph_d['type'],
                                 x=dict(title='Time', min_col=1, min_row=1, max_row=max_row),
                                 y=dict(title=col_ref, min_col=2, max_col=max_col + 1, min_row=1, max_row=max_row)))
         t_content.append(dict(merge=4, font='link', align='wrap', hyper='#' + sname + '!A1', disp=col_ref))
@@ -469,140 +546,144 @@ def _add_graphs(wb, tc_page, t_content, start_i, base_switch_obj, graph_list):
     return ml
 
 
-def _graphs(switch_obj, single_port_graph_in, stats_graph_in, graph_type):
+def _graphs(base_switch_obj, params_d):
     """Parses the graphing information from the command line into a list of machine-readable dictionaries as follows:
 
-    +-----------+---------------------------------------------------------------------------------------------------+
-    | key       | Description                                                                                       |
-    +===========+===================================================================================================+
-    | stat      | Only present if -gs was entered on the command line. This is the fibrechannel-statistics to plot. |
-    +-----------+---------------------------------------------------------------------------------------------------+
-    | type      | Graph type. See brcddb.report.graph.chart_types.                                                  |
-    +-----------+---------------------------------------------------------------------------------------------------+
-    | port      | Only present if -gp was entered on the command line. This is the port number in s/p notation to   |
-    |           | plot.                                                                                             |
-    +-----------+---------------------------------------------------------------------------------------------------+
-    | params    | If stat is not None, this is the list of ports whose statistic is to be plotted. If port is not   |
-    |           | None, this is the list of statistics for the port to be plotted.                                  |
-    +-----------+---------------------------------------------------------------------------------------------------+
+    +---------------+-----------------------------------------------------------------------------------------------+
+    | key           | Description                                                                                   |
+    +===============+===============================================================================================+
+    | port          | Only present if -gp was entered on the command line. This is the port number in s/p notation  |
+    |               | to plot.                                                                                      |
+    +---------------+-----------------------------------------------------------------------------------------------+
+    | params        | For -gp, this is the list of statistics for the port to be plotted. For -gs this is the list  |
+    |               | of ports to be plotted.                                                                       |
+    +---------------+-----------------------------------------------------------------------------------------------+
+    | stat          | Only present if -gs was entered on the command line. This is the fibrechannel-statistics to   |
+    |               | plot.                                                                                         |
+    +---------------+-----------------------------------------------------------------------------------------------+
+    | type          | Graph type. See brcddb.report.graph.chart_types.                                              |
+    +---------------+-----------------------------------------------------------------------------------------------+
+    | _ports        | Only used by this module and only used with the -gs option. This is the dynamic port          |
+    |               | indicator: top-x, bot-x, peak-x, or None                                                      |
+    +---------------+-----------------------------------------------------------------------------------------------+
+    | _port_types   | Only used by this module and only used with the -gs option. This is the port type filter:     |
+    |               | E-Port, F-Port, or None.                                                                      |
+    +---------------+-----------------------------------------------------------------------------------------------+
 
-    :param switch_obj: First switch object with list of ports
-    :type switch_obj: brcddb.classes.switch.SwitchObj
-    :param single_port_graph_in: Command line text for single port graphs. See help for -gp option
-    :type single_port_graph_in: str
-    :param stats_graph_in: Command line text for statistics graphs. See help for -gs option
-    :type stats_graph_in: str
-    :param graph_type: Type of graph
-    :type graph_type: str
+    :param base_switch_obj: First switch object with list of ports
+    :type base_switch_obj: brcddb.classes.switch.SwitchObj
+    :param params_d: Dictionary of conditioned command line input. See _get_input() for details
+    :type params_d: dict
     :return graphs: List of dictionaries that define the graphs. See description of graph in _write_report() for details
     :rtype graphs: list
     :return messages: Error and warning messages
     :rtype messages: list
     """
+    global _port_match
+
     # Figure out the graph type and set up the return list of graphs
-    ml = list()
-    graphs = list()
-    if graph_type is None:
-        graph_type = 'line'
-    elif graph_type not in report_graph.chart_types.keys():
-        ml.append('Invalid graph type:   ' + graph_type + '. Defaulting to line')
-        graph_type = 'line'
+    ml, graphs, proj_obj = list(), list(), base_switch_obj.r_project_obj()
 
     # Single port, multiple statistics
-    if isinstance(single_port_graph_in, str):
-        for buf in single_port_graph_in.split(';'):
+    if isinstance(params_d['gp'], str):
+        for buf in params_d['gp'].split(';'):
             temp_l = buf.split(',')
             if len(temp_l) > 1:
                 port = temp_l.pop(0)
                 if '/' not in port:
                     port = '0/' + port
-                if switch_obj.r_port_obj(port) is None:
+                if base_switch_obj.r_port_obj(port) is None:
                     ml.append(port + ' not found. Skipping this port')
                 else:
-                    graphs.append(dict(port=port, parms=temp_l, type=graph_type))
+                    graphs.append(dict(port=port, parms=temp_l, type=params_d['gt']))
 
     # statistic, multiple ports
-    if isinstance(stats_graph_in, str):
-        for buf in stats_graph_in.split(';'):
+    if isinstance(params_d['gs'], str):
+        for buf in params_d['gs'].split(';'):
             temp_l = buf.split(',')
             if len(temp_l) > 1:
+
+                # Get a list of ports to consider
+                try:
+                    port_l = _port_match[temp_l[2] if len(temp_l) > 2 else '*'](base_switch_obj)
+                except KeyError:
+                    ml.append('Invalid port type, ' + temp_l[2] + ' in ' + buf + '. Re-run with -h for help')
+                    continue
+
                 statistic = 'fibrechannel-statistics/' + temp_l[0]
-                to_graph = dict(stat=statistic, type=graph_type)
-                temp_l = temp_l[1:]
+                to_graph = dict(stat=statistic, type=params_d['gs'])
 
-                # If top or avg was specified for the ports, figure out the top (peak) ports for this statistic and the
-                # top ports for the maximum sum for this statistic
-                if 'top-' in temp_l[0].lower() or 'avg-' in temp_l[0].lower():
-                    n = int(temp_l[0].split('-')[1])
-                    switch_obj_l = [o for o in switch_obj.r_project_obj().r_switch_objects() if '-' in o.r_obj_key()]
-                    port_total_d, port_peak_d, port_obj_l = dict(), dict(), list()
-                    for port_obj in switch_obj_l.pop(0).r_port_objects():
-                        port_stat = port_obj.r_get(statistic)
-                        if port_stat is not None:
-                            port_total_d.update({port_obj.r_obj_key(): port_stat})
-                            port_peak_d.update({port_obj.r_obj_key(): port_stat})
-                            port_obj_l.append(port_obj)
+                # Figure out which ports to plot. Note that the port list is based on the first sample only. If a port
+                # logged in after the first sample, it is skipped. If a port logs out after the first sample, it will
+                # still be in this list.
+                if 'top-' in temp_l[1].lower() or 'avg-' in temp_l[1].lower():
+                    range_l = temp_l[1].split('-')
+                    # How many ports?
+                    try:
+                        num_ports = int(range_l[1])
+                    except ValueError:
+                        ml.append('Expected integer in ' + temp_l[1] + '. Re-run with -h for help')
+                        continue
+
+                    # Set up a dictionary for each port with the last count for the statistic. Statistics are
+                    # cumulative. This is necessary to find the differences for the peaks and to determine total count
+                    # for the sample period
+                    last_port_d, port_d = dict(), dict()
+                    for port in port_l:
+                        last_port_d.update({port: base_switch_obj.r_port_obj(port).r_get(statistic)})
+                        port_d.update({port: dict(port=port, avg=0, top=0)})
+
+                    # Gather the statistics for each port in each sample. Keep in mind that multiple statistics are in
+                    # multiple switches with -xx appended to the WWN which is used as the switch key. Also note that the
+                    # switch objects are stored in a dict using wwn-xx as the key which is str. Sort on ASCII str is not
+                    # a numeric order. Hence the switch_l.sort() list.
+                    switch_l = [int(obj.r_obj_key().split('-')[1])
+                                for obj in proj_obj.r_switch_objects() if '-' in obj.r_obj_key()]
+                    switch_l.sort()
+                    base_wwn = base_switch_obj.r_obj_key()
+                    switch_obj_l = [proj_obj.r_switch_obj(base_wwn + '-' + str(key)) for key in switch_l]
                     for switch_obj in switch_obj_l:
-                        for port_obj in switch_obj.r_port_objects():
-                            port_stat = port_obj.r_get(statistic)
-                            if port_stat is not None:
-                                port_key = port_obj.r_obj_key()
-                                if port_key in port_total_d:
-                                    port_total_d[port_key] += port_stat
-                                    if port_stat > port_peak_d[port_key]:
-                                        port_peak_d[port_key] = port_stat
-                    for port_obj in port_obj_l:
-                        port_obj.s_new_key('_peak', port_peak_d[port_obj.r_obj_key()], True)
-                        port_obj.s_new_key('_total', port_total_d[port_obj.r_obj_key()], True)
-                    peak_ports = gen_util.sort_obj_num(port_obj_l, '_peak', True)[0: min(n, len(port_obj_l))]
-                    max_ports = gen_util.sort_obj_num(port_obj_l, '_total', True)[0: min(n, len(port_obj_l))]
+                        for port in port_l:
+                            port_obj = switch_obj.r_port_obj(port)
+                            if port_obj is not None:  # Just in case the port went offline during the data collection
+                                stat = port_obj.r_get(statistic)
+                                stat_diff = stat - last_port_d[port]
+                                last_port_d[port] = stat
+                                port_d[port]['avg'] += stat
+                                if stat_diff > port_d[port]['top']:
+                                    port_d[port]['top'] = stat_diff
 
-                    # Above sorts by port object. All we want is the port number
-                    if 'top' in temp_l[0]:
-                        to_graph.update(parms=[port_obj.r_obj_key() for port_obj in peak_ports])
-                    else:
-                        to_graph.update(parms=[port_obj.r_obj_key() for port_obj in max_ports])
+                    # Figure out what ports to graph
+                    port_d_l = gen_util.sort_obj_num([d for d in port_d.values()], range_l[0], r=True)[0:num_ports]
+                    # num_ports
+                    print(len(port_d_l))
 
-                elif 'eport' in temp_l[0].lower().replace('-', ''):
-                    port_list = brcddb_search.match_test(switch_obj.r_port_objects, brcddb_search.e_ports)
-                    if len(port_list) == 0:
-                        ml.append('No E-Ports found')
-                    to_graph.update(parms=[port_obj.r_obj_key() for port_obj in port_list])
-
-                else:  # It's a list of ports. Make sure they are valid and prepend '0/' if necessary
-                    port_list = list()
-                    for port in temp_l:
-                        mod_port = port if '/' in port else '0/' + port
-                        if switch_obj.r_port_obj(mod_port) is None:
-                            ml.append('Invalid port number or port not found in switch: ' + mod_port)
-                        else:
-                            port_list.append(mod_port)
-                    to_graph.update(parms=port_list)
-
-                if len(to_graph['parms']) > 0:
-                    graphs.append(to_graph)
+                else:
+                    ml.append('Invalid ports to plot in ' + temp_l[1] + '. Re-run with -h for help')
 
             else:
-                ml.append('Missing parameter in ' + buf)
+                ml.append('Missing parameter in ' + buf + ' for -gs option. Re-run with -h for help')
 
     return graphs, ml
 
 
-def _write_report(switch_obj, report, graph_list, ml):
+def _write_report(switch_obj, graph_list, ml, params_d):
     """Creates an Excel workbook with the port statistics differences. Operates off global data
 
     :param switch_obj: Base switch object with ports to write to report
     :type switch_obj: brcddb.classes.switch.SwitchObj
-    :param report: Name of report (Excel file name)
-    :type report: str
-    :param graph_list: List of dictionaries as returned from _graphs
+    :param graph_list: List of dictionaries as returned from _graphs()
     :type graph_list: list
+    :param ml: Running list of messages to print after writing report.
+    :type ml: list
+    :param params_d: Dictionary of conditioned command line input. See _get_input() for details
+    :type params_d: dict
     :return: Status code. See brcddb.brcddb_common.EXIT_xxxx
     :rtype: int
     """
 
     # Get the project and set up the workbook
-    brcdapi_log.log('Generating Report: ' + report + '. This may take several seconds', echo=True)
+    brcdapi_log.log('Generating Report: ' + params_d['r'] + '. This may take several seconds', echo=True)
     proj_obj = switch_obj.r_project_obj()
     wb = excel_util.new_report()
 
@@ -641,40 +722,27 @@ def _write_report(switch_obj, report, graph_list, ml):
     report_utils.title_page(wb, None, tc_page, 0, title, t_content, (12, 22, 16, 10, 64))
     ml.append('Saving the report.')
     brcdapi_log.log(ml, echo=True)
-    excel_util.save_report(wb, report)
+    try:
+        excel_util.save_report(wb, params_d['r'])
+    except FileExistsError:
+        brcdapi_log.log(['', 'A folder in ' + params_d['r'] + ' does not exist'], echo=True)
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR
+    except PermissionError:
+        brcdapi_log.log(['', 'Permission error writing ' + params_d['r'] + '. File may be open in another application.'],
+                        echo=True)
 
     return brcddb_common.EXIT_STATUS_OK
 
 
-def pseudo_main(report, in_f, single_port_graph, stats_graph, graph_type):
+def pseudo_main(proj_obj, base_switch_obj, params_d):
     """Basically the main(). Did it this way, so it can easily be used as a standalone module or called from another.
 
-    :param report: Name of Excel report.
-    :type report: str
-    :param in_f: Name of data input file. This must be the output file, -o, from stats_c.py.
-    :type in_f: str
-    :param single_port_graph: Name of the worksheet to create with a graph of one or more stats counters for a port.
-    :type single_port_graph: None, str
-    :param stats_graph: Name of the worksheet to create with a graph of one or more statistical counters for a port.
-    :type stats_graph: None, str
-    :param graph_type: Type of graph. see report_graph.chart_types for details
-    :type graph_type: str, None
+    :param params_d: Dictionary of conditioned command line input. See _get_input() for details
+    :type params_d: dict
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
     global __version__, _input_d
-
-    # Read in the previously collected data
-    brcdapi_log.log('Reading ' + in_f, echo=True)
-    obj = brcdapi_file.read_dump(in_f)
-    if obj is None:
-        return brcddb_common.EXIT_STATUS_ERROR
-    proj_obj = brcddb_project.new(obj.get('_obj_key'), obj.get('_date'))
-    proj_obj.s_python_version(sys.version)
-    proj_obj.s_description(obj.get('_description'))
-    brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
-    obj.clear()
-    base_switch_obj = proj_obj.r_switch_obj(proj_obj.r_get('base_switch_wwn'))
 
     # Build the cross-reference tables.
     brcddb_util.build_login_port_map(proj_obj)  # Correlates name server logins with ports
@@ -682,9 +750,28 @@ def pseudo_main(report, in_f, single_port_graph, stats_graph, graph_type):
     if fab_obj is not None:
         brcddb_fabric.zone_analysis(base_switch_obj.r_fabric_obj())  # Determines what zones each login participates in
 
-    graph_list, msg_list = _graphs(base_switch_obj, single_port_graph, stats_graph, graph_type)
-    brcdapi_log.log('Writing ' + report)
-    return _write_report(base_switch_obj, report, graph_list, msg_list)
+    graph_list, msg_list = _graphs(base_switch_obj, params_d)
+    brcdapi_log.log('Writing ' + params_d['r'])
+    return _write_report(base_switch_obj, graph_list, msg_list, params_d)
+
+
+#####################################################
+#                                                   #
+#           Case methods for _get_input()           #
+#                                                   #
+#####################################################
+def _e_port(port_l, split_param_l, filter_d):
+    """Returns a list of E-Ports in base_switch_obj.
+
+    :param port_l: Working list of port objects
+    :type port_l: list
+    :param split_param_l: Parameter list after parameter split, '-'
+    :type split_param_l: list
+    :param filter_d: Active filters - only used for bot-x, peak-s, and top-x
+    :return r_port_l: port_l after applying the filter
+    :rtype r_port_l: list
+    """
+    print()
 
 
 def _get_input():
@@ -693,35 +780,104 @@ def _get_input():
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d, _version_d, _eh_l
+
+    ec, graph_l, proj_obj, base_switch_obj = brcddb_common.EXIT_STATUS_OK, list(), None, None
 
     # Get command line input
-    buf = 'Create Excel Workbook from statistics gathered with stats_c.py with optional graphing capabilities.'
-    args_d = gen_util.get_input(buf, _input_d)
+    args_d = gen_util.get_input('Create Excel Workbook from statistics gathered with stats_c.py.', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+
+    # Extended Help
+    if args_d['eh']:
+        brcdapi_log.log(_eh_l, echo=True)
+        return brcddb_common.EXIT_STATUS_OK
+
+    # Make sure all required parameters were entered
+    for key, input_d in _input_d.items():
+        if input_d.get('_r', False) and args_d.get(key) is None:
+            args_d[key] = 'ERROR: Missing required input.'
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    # Read in the previously collected data
+    if ec == brcddb_common.EXIT_STATUS_OK:
+        args_d['r'] = brcdapi_file.full_file_name(args_d['r'], '.xlsx')
+        args_d['i'] = brcdapi_file.full_file_name(args_d['i'], '.json')
+        try:
+            obj = brcdapi_file.read_dump(args_d['i'])
+            if obj is None:
+                args_d['i'] = 'ERROR reading ' + args_d['i'] + '. Check the log for details.'
+                ec = brcddb_common.EXIT_STATUS_ERROR
+            else:
+                proj_obj = brcddb_project.new(obj.get('_obj_key'), obj.get('_date'))
+                proj_obj.s_python_version(sys.version)
+                proj_obj.s_description(obj.get('_description'))
+                brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
+                obj.clear()
+                base_switch_obj = proj_obj.r_switch_obj(proj_obj.r_get('base_switch_wwn'))
+        except FileNotFoundError:
+            args_d['i'] = 'ERROR. File not found: ' + args_d['i']
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        except FileExistsError:
+            args_d['i'] = 'ERROR. A folder in ' + args_d['i'] + ' does not exist.'
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Command line feedback
     ml = [
+        '',
         os.path.basename(__file__) + ' version: ' + __version__,
         'Report, -r:      ' + args_d['r'],
         'Input file, -i:  ' + args_d['i'],
-        'Port graph, -gp: ' + str(args_d['gp']),
-        'Stat graph, -gs: ' + str(args_d['gs']),
-        'Graph type, -gt: ' + str(args_d['gt']),
-        'Log, -log:       ' + str(args_d['log']),
-        'No log, -nl:     ' + str(args_d['nl']),
-        'Suppress, -sup:  ' + str(args_d['sup']),
+        'Port graph, -gp: ' + str(args_d.get('gp')),
+        'Stat graph, -gs: ' + str(args_d.get('gs')),
+        'Log, -log:       ' + str(args_d.get('log')),
+        'No log, -nl:     ' + str(args_d.get('nl', False)),
+        'Suppress, -sup:  ' + str(args_d.get('sup', False)),
         '',
         ]
-    brcdapi_log.log(ml, echo=True)
 
-    return pseudo_main(brcdapi_file.full_file_name(args_d['r'], '.xlsx'),
-                       brcdapi_file.full_file_name(args_d['i'], '.json'),
-                       args_d['gp'],
-                       args_d['gs'],
-                       args_d['gt'])
+    # Parse the graphing parameters (-gp and -gs)
+    if ec == brcddb_common.EXIT_STATUS_OK:
+        for key in [k for k in ('gp', 'gs') if isinstance(args_d.get(k), str)]:
+            for graphs in args_d.get(key).split(';'):
+                param_l = graphs.split(',')
+                if len(param_l) < 3:
+                    ml.append('At least 3 parameters are required for the -' + key + ' option. Only ' +
+                              str(len(param_l)) + ' were given in ' + ','.join(param_l))
+                    ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+                    break
+                graph_d = dict(_params=list(), _filter_d=dict())
+                if key == 'gp':
+                    graph_d['port'] = param_l[0] if '/' in param_l[0] else '0/' + param_l[0]
+                else:  # It must be 'gs'
+                    graph_d['stat'] = param_l[0]
+                if param_l[1].lower() in report_graph.chart_types:
+                    graph_d['type'] = param_l[1].lower()
+                else:
+                    ml.append('Invalid chart type, ' + param_l[1] + ', for the -' + key + ' option.')
+                    ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+                    break
+                if key == 'gp':
+                    graph_d['params'] = param_l[2:]
+                else:  # It must be 'gs'
+                    graph_param = ''
+                    try:
+                        for graph_param in param_l[2].split(','):
+                            temp_l = gen_util.sp_range_to_list(graph_param)
+                            if len(temp_l) == 0:
+                                ml.append('Invalid port or port range for ' + graph_param + ' for option -gs.')
+                                ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+                                break
+                            graph_d['params'].extend(temp_l)
+                    except InputError:
+                        ml.append('Invalid port parameter for ' + graph_param + ' for option -gs')
+                        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+                        break
+
+    brcdapi_log.log(ml, echo=True)
+    return pseudo_main(proj_obj, base_switch_obj, args_d) if ec == brcddb_common.EXIT_STATUS_OK else ec
 
 
 ##################################################################

@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -22,30 +22,33 @@ Creates a report in Excel Workbook format from a brcddb project
 
 **Version Control**
 
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| Version   | Last Edit     | Description                                                                       |
-+===========+===============+===================================================================================+
-| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.1     | 06 Mar 2024   | Improved error messaging.                                                         |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.2     | 09 Mar 2024   | Addd input parameters to the project object                                       |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.3     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.4     | 16 Jun 2024   | Improved help messages. Added -sheet input parameter.                             |
-+-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Improved error messaging.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 09 Mar 2024   | Addd input parameters to the project object                                           |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 16 Jun 2024   | Improved help messages. Added -sheet input parameter.                                 |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 06 Dec 2024   | Remove extraneous white space from user input in Workbook                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '16 Jun 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.5'
 
 import os
+import collections
 import brcdapi.log as brcdapi_log
 import brcdapi.file as brcdapi_file
 import brcdapi.excel_util as excel_util
@@ -61,6 +64,7 @@ import brcddb.util.iocp as brcddb_iocp
 import brcddb.util.obj_convert as brcddb_conv
 import brcddb.brcddb_port as brcddb_port
 import brcddb.util.search as brcddb_search
+
 _version_d = dict(
     brcdapi_log=brcdapi_log.__version__,
     gen_util=gen_util.__version__,
@@ -119,7 +123,6 @@ def _custom_report(proj_obj, options):
     :param options: As passed in via the shell
     :type options: str, None
     """
-
     return
 
 
@@ -207,64 +210,114 @@ def _groups(proj_obj, group_l, file):
     :return: Dictionary whose key is the group name and the value is a list of login objects
     :rtype: dict
     """
-    ml, grouped_d = list(), dict()
-    group_d = {zone_report.UNGROUPED_TARGET: dict(port_obj_l=list()),
-               zone_report.UNGROUPED_INITIATOR: dict(port_obj_l=list())}
-    if len(group_l) == 0:
-        return group_d
+    ml, ungrouped_initiator_l, ungrouped_target_l = list(), list(), list()
+    grouped_d, group_d = dict(), collections.OrderedDict()
 
-    # Find the column headers
-    col_d = excel_util.find_headers(group_l[0])
-    for key in ('Group', 'Filter', 'Operand', 'Operator'):
-        if key not in col_d:
-            ml.append(key + ' missing in ' + file)
-    if len(ml) > 0:
-        brcdapi_log.log(ml, echo=True)
-        return group_d
+    if len(group_l) > 0:
 
-    # Figure out what's in each group
-    row = 1
-    for row_l in group_l[1:]:
-        row += 1
-        group, g_filter, = row_l[col_d['Group']], row_l[col_d['Filter']]  # Just to save some typing
-        if not isinstance(group, str) or len(group) == 0:
-            continue
-        if not isinstance(g_filter, str) or g_filter not in _group_filter_list:
-            ml.append('Unknown Filter, ' + str(g_filter) + ', at row ' + str(row))
-        sub_group_d = group_d.get(group)
-        if sub_group_d is None:
-            sub_group_d = dict(group_wwn_d=dict(), port_obj_l=list())
-            group_d.update({group: sub_group_d})
-        sub_group_d['port_obj_l'].extend(
-            _group_filter_list[g_filter](proj_obj, row_l[col_d['Operand']], row_l[col_d['Operator']]))
+        # Find the column headers
+        col_d = excel_util.find_headers(group_l[0])
+        for key in ('Group', 'Filter', 'Operand', 'Operator'):
+            if key not in col_d:
+                ml.append(key + ' missing in ' + file)
+        if len(ml) > 0:
+            brcdapi_log.log(ml, echo=True)
+            return group_d
 
-    # Zone groups are typically used for storage enclosures. It's not uncommon to use standard zones with multiple
-    # target WWNs in the same zone. Below probably could have been more efficient. I didn't think of this until after
-    # the first test, so I just shoe horned it in. It adds a dictionary of WWNs that are part of the group. This
-    # dictionary is used in the report zone page to skip logins zoned to this group that are already part of the group.
-    for sub_group_d in group_d.values():
-        for port_obj in sub_group_d['port_obj_l']:
-            for wwn in port_obj.r_login_keys():
-                sub_group_d['group_wwn_d'].update({wwn: True})
-            # Keep track of ports already grouped:
-            grouped_d.update({port_obj.r_switch_key()+port_obj.r_obj_key(): True})
+        # Figure out what's in each group
+        row = 1
+        for row_l in group_l[1:]:
+            row += 1
+            group = row_l[col_d['Group']]
+            if not isinstance(group, str) or len(group) == 0:
+                continue
+            group = group.strip()  # This is read from a user created Workbook, so remove any accidental white space
+            operand = row_l[col_d['Operand']]
+            if isinstance(operand, str):
+                operand = operand.strip()  # This is read from a user created Workbook, Remove accidental white space
+            g_filter = row_l[col_d['Filter']]
+            if not isinstance(g_filter, str) or g_filter not in _group_filter_list:
+                ml.append('Unknown Filter, ' + str(g_filter) + ', at row ' + str(row))
+            sub_group_d = group_d.get(group)
+            if sub_group_d is None:
+                sub_group_d = dict(group_wwn_d=dict(), port_obj_l=list())
+                group_d.update({group: sub_group_d})
+            sub_group_d['port_obj_l'].extend(
+                _group_filter_list[g_filter](proj_obj, operand, row_l[col_d['Operator']]))
 
-    # Another after thought: find all the logins that are not grouped
-    for port_obj in proj_obj.r_port_objects():
-        if not bool(grouped_d.get(port_obj.r_switch_key()+port_obj.r_obj_key())):
+        # Zone groups are typically used for storage enclosures. It's not uncommon to use standard zones with multiple
+        # target WWNs in the same zone. Below probably could have been more efficient. I didn't think of this until
+        # after the first test, so I just shoe horned it in. It adds a dictionary of WWNs that are part of the group.
+        # This dictionary is used in the report zone page to skip logins zoned to this group that are already part of
+        # the group.
+        for sub_group_d in group_d.values():
+            for port_obj in sub_group_d['port_obj_l']:
+                for wwn in port_obj.r_login_keys():
+                    sub_group_d['group_wwn_d'].update({wwn: True})
+                # Keep track of ports already grouped:
+                grouped_d.update({port_obj.r_switch_key()+port_obj.r_obj_key(): True})
+
+    # Another after thought: find all the logins that are not grouped and get all groups by RNID Sequence number
+    # rnid_d: Key is the generic device type. Value is a dict whose key is the sequence number. Value is list of port
+    # objects. Sorting by generic device type was done to display groups in order of the device type.
+    rnid_d = dict()  # See comment above
+    for port_obj in [obj for obj in proj_obj.r_port_objects() if obj.r_is_online()]:
+
+        # Mainframe Groups
+        port_rnid_d = port_obj.r_get('rnid')
+        if isinstance(port_rnid_d, dict):
+            generic_type = brcddb_iocp.generic_device_type(port_rnid_d.get('type-number'))
+            port_rnid_seq = port_rnid_d.get('sequence-number', '000000000000')
+
+            # Get the generic device type dictionary from rnid_d. If it hasn't been added yet, add it.
+            generic_type_d = rnid_d.get(generic_type)
+            if not isinstance(generic_type_d, dict):
+                generic_type_d = dict()
+                rnid_d.update({generic_type: generic_type_d})
+
+            # Get the port object list for this sequence number
+            port_obj_l = generic_type_d.get(port_rnid_seq)
+            if not isinstance(port_obj_l, list):
+                port_obj_l = list()
+                generic_type_d.update({port_rnid_seq: port_obj_l})
+
+            # Add the port object
+            port_obj_l.append(port_obj)
+
+        elif not bool(grouped_d.get(port_obj.r_switch_key()+port_obj.r_obj_key())):
             login_obj_l = port_obj.r_login_objects()
             if len(login_obj_l) > 0:
                 fc4_features = login_obj_l[0].r_get('brocade-name-server/fibrechannel-name-server/fc4-features')
                 if isinstance(fc4_features, str):
                     if 'initiator' in fc4_features.lower():
-                        group_d[zone_report.UNGROUPED_INITIATOR]['port_obj_l'].append(port_obj)
+                        ungrouped_initiator_l.append(port_obj)
                     else:
-                        group_d[zone_report.UNGROUPED_TARGET]['port_obj_l'].append(port_obj)
+                        ungrouped_target_l.append(port_obj)
 
+    # Sort out the mainframe groups in order of storage followed by CHPID
+    for key in ('DASD', 'Tape', 'CUP', 'CTC', 'Switch', 'IDG', 'Test', 'UNKN', 'CPU'):
+        for sub_key, port_obj_l in rnid_d.get(key, dict()).items():
+            if len(port_obj_l) > 0:
+                group_d[key + '_' + sub_key] = dict(mf_group=key, port_obj_l=port_obj_l)
+
+    # Are there any missing CPUs?
+    missing_cpu_l, missing_cpu_d = list(), dict()
+    for port_obj in proj_obj.r_port_objects():
+        port_rnid_d = port_obj.r_get('rnid')
+        if isinstance(port_rnid_d, dict):
+            if brcddb_iocp.generic_device_type(port_rnid_d.get('type-number')) == 'CPU':
+                sn = port_rnid_d.get('sequence-number', '').upper()
+                if sn not in rnid_d['CPU'] and sn not in missing_cpu_d:
+                    missing_cpu_d[sn] = True
+                    missing_cpu_l.append(port_obj)
+
+    group_d[zone_report.UNGROUPED_TARGET] = dict(port_obj_l=ungrouped_target_l)
+    group_d[zone_report.UNGROUPED_INITIATOR] = dict(port_obj_l=ungrouped_initiator_l)
+    group_d[zone_report.MISSING_CPU] = dict(port_obj_l=missing_cpu_l)
     return group_d
 
 
-def pseudo_main(proj_obj, outf, bp_rules, bp_sheet, sfp_rules, group_file, iocp, custom_parms):
+def pseudo_main(proj_obj, outf, bp_rules, sfp_rules, group_file, iocp, custom_parms):
     """Basically the main(). Did it this way so that it can easily be used as a standalone module or called externally.
 
     :param proj_obj: Project object
@@ -273,8 +326,6 @@ def pseudo_main(proj_obj, outf, bp_rules, bp_sheet, sfp_rules, group_file, iocp,
     :type outf: str
     :param bp_rules: Best practice rules file, -bp
     :type bp_rules: str, None
-    :param bp_sheet: sheet in best practice, -bp, workbook to read.
-    :type bp_sheet: str, None
     :param sfp_rules: Name of SFP rules file, -sfp
     :type sfp_rules: str, None
     :param group_file: Name of group file
@@ -293,10 +344,14 @@ def pseudo_main(proj_obj, outf, bp_rules, bp_sheet, sfp_rules, group_file, iocp,
     brcdapi_log.log('Performing mainframe checks', echo=True)
     for file in brcdapi_file.read_directory(iocp):
         brcddb_iocp.parse_iocp(proj_obj, iocp + '/' + file)
+    brcdapi_log.log('Building mainframe device groups', echo=True)
+    brcddb_iocp.build_rnid_table(proj_obj)
+    brcdapi_log.log('Analyzing project for best practices', echo=True)
     brcddb_bp.best_practice(bp_rules, sfp_rules, al.AlertTable.alertTbl, proj_obj)
 
     # Get the groups, -group.
-    group_d = dict()
+    brcdapi_log.log('Building groups')
+    el, group_l = list(), list()
     if group_file is not None:  # Group file
         el, group_l = excel_util.read_workbook(group_file, dm=3, sheets='parameters')
         if len(el) > 0:
@@ -310,7 +365,7 @@ def pseudo_main(proj_obj, outf, bp_rules, bp_sheet, sfp_rules, group_file, iocp,
         except (IndexError, KeyError):
             brcdapi_log.log('"parameters" sheet not found in ' + group_file, echo=True)
             return brcddb_common.EXIT_STATUS_INPUT_ERROR
-        group_d = _groups(proj_obj, group_l, group_file)
+    group_d = _groups(proj_obj, group_l, group_file)
 
     # Generate the report
     brcddb_report.report(proj_obj, outf, group_d)
@@ -331,7 +386,7 @@ def _get_input():
     args_d = gen_util.get_input('Creates a general report in Excel ', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Command line feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,
@@ -345,7 +400,7 @@ def _get_input():
           'Custom, -c:                  ' + str(args_d['c']),
           'Log, -log:                   ' + str(args_d['log']),
           'No log, -nl:                 ' + str(args_d['nl']),
-          'Supress, -sup:               ' + str(args_d['sup']),
+          'Suppress, -sup:              ' + str(args_d['sup']),
           '',]
     brcdapi_log.log(ml, echo=True)
 
@@ -369,7 +424,7 @@ def _get_input():
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     proj_obj.s_description('\n'.join(ml))
 
-    return pseudo_main(proj_obj, out_file, bp_file, args_d['sheet'], sfp_file, group_file, args_d['iocp'], args_d['c'])
+    return pseudo_main(proj_obj, out_file, bp_file, sfp_file, group_file, args_d['iocp'], args_d['c'])
 
 
 ##################################################################

@@ -6,7 +6,7 @@ Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -22,24 +22,26 @@ Creates a report in Excel Workbook format with all differences between two conte
 
 **Version Control**
 
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| Version   | Last Edit     | Description                                                                       |
-+===========+===============+===================================================================================+
-| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                         |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.1     | 06 Mar 2024   | Fixed potential for invalid sheet names.                                          |
-+-----------+---------------+-----------------------------------------------------------------------------------+
-| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                      |
-+-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.1     | 06 Mar 2024   | Fixed potential for invalid sheet names.                                              |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.3     | 06 Dec 2024   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '03 Apr 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.2'
+__version__ = '4.0.3'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -846,7 +848,7 @@ def _get_input():
     args_d = gen_util.get_input('Create a MAPS report in Excel', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Command line feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,
@@ -855,7 +857,7 @@ def _get_input():
           'Report name, -r:     ' + args_d['r'],
           'Log, -log:           ' + str(args_d['log']),
           'No log, -nl:         ' + str(args_d['nl']),
-          'Supress, -sup:       ' + str(args_d['sup']),
+          'Suppress, -sup:      ' + str(args_d['sup']),
           '',]
     brcdapi_log.log(ml, echo=True)
 

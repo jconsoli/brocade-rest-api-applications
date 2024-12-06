@@ -37,15 +37,17 @@ Sets the zone configuration DB to that of a previously captured zone DB
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.5     | 29 Oct 2024   | Fixed -fid help message.                                                              |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | 06 Dec 2024   | Fixed spelling mistake in help message.                                               |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '29 Oct 2024'
+__date__ = '06 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.5'
+__version__ = '4.0.6'
 
 import signal
 import os
@@ -338,7 +340,7 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], supress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
     # Validate the input
     args_fid_help = ''
@@ -363,7 +365,7 @@ def _get_input():
           'Log, -log:               ' + str(args_d['log']),
           'No log, -nl:             ' + str(args_d['nl']),
           'Debug, -d:               ' + str(args_d['d']),
-          'Supress, -sup:           ' + str(args_d['sup']),
+          'Suppress, -sup:          ' + str(args_d['sup']),
           '',
           ]
     brcdapi_log.log(ml, echo=True)
