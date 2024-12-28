@@ -38,7 +38,7 @@ isn't how you expect the numerical values in s/p to be sorted.
 
 Adding the ports to the logical switch in sorted order will also result in the default addresses being in order. This is
 useful if you are not going to force the address by binding specified addresses to the ports. The fabric only cares that
-the port addresses are unique but again, humans like to see everything in order.
+the port addresses are unique, but again, humans like to see everything in order.
 
 **Version Control**
 
@@ -53,15 +53,17 @@ the port addresses are unique but again, humans like to see everything in order.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 06 Dec 2024   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 27 Dec 2024   | Fixed address binding and invalid port keys.                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__date__ = '27 Dec 2024'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import sys
 import datetime
@@ -302,7 +304,7 @@ def _create_switch(session, chassis_obj, switch_d, echo):
     fid = switch_d['switch_info']['fid']
     if chassis_obj.r_switch_obj_for_fid(fid) is not None:
         return brcddb_common.EXIT_STATUS_OK  # The switch already exists
-    buf = 'Creating FID ' + str(fid) + '. This will take about 20 sec per switch + 40 sec per group of 32 ports.'
+    buf = 'Creating FID ' + str(fid) + '. This will take about 30 sec per switch + 40 sec per group of 32 ports.'
     brcdapi_log.log(buf, echo=True)
     base = True if switch_d['switch_info']['switch_type'] == 'base' else False
     ficon = True if switch_d['switch_info']['switch_type'] == 'ficon' else False
@@ -518,7 +520,10 @@ def _remove_ports(session, chassis_obj, switch_d_l, echo):
                                                       echo=echo,
                                                       best=True)
         if len(fault_l) > 0:
-            switch_d['err_msgs'].append('Error moving ports from FID ' + str('fid') + ' to ' + str(default_fid))
+            buf = 'Error moving the following ports from FID ' + str(fid) + ' to ' + str(default_fid)
+            switch_d['err_msgs'].append(buf)
+            for buf in fault_l:
+                switch_d['err_msgs'].append('  ' + buf)
             ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
@@ -568,25 +573,39 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
 
         # Bind the addresses (PIDs)
         if switch_d['switch_info']['bind']:
-            bind_d = dict()
+            bind_d, unbind_d = dict(), dict()
             for port, d in port_d.items():
                 port_obj = switch_obj.r_port_obj(port)
                 if port_obj is None:
                     continue  # There was an error moving the port which should have been reported elsewhere
-                bound_l = [a.lower() for a in
-                           gen_util.convert_to_list(port_obj.r_get('fibrechannel/bound-address-list/bound-address'))]
                 a = '0x' + d['port_addr'] + '00'
-                if a.lower() not in bound_l:  # FOS returns an error even if the bound address is the same so check
-                    bind_d.update({port: a})
-            if len(bind_d) > 0:
-                obj = brcdapi_switch.bind_addresses(session, fid, bind_d, echo)
-                if fos_auth.is_error(obj):
-                    ml = ['port_d:',
-                          pprint.pformat(port_d),
-                          'Errors encountered binding port address for FID ' + str(fid),
-                          fos_auth.formatted_error_msg(obj)]
-                    brcdapi_log.exception(ml, echo=True)
-                    ec = brcddb_common.EXIT_STATUS_ERROR
+                if port_obj.r_get('fibrechannel/user-bound-enabled'):
+                    if d['port_addr'].lower() == port_obj.r_addr()[4:6].lower():
+                        continue  # The address is already bound to the address it needs to be bound to
+                    unbind_d.update({port: a})
+                bind_d.update({port: a})
+            for d in (
+                    dict(a=brcdapi_port.unbind_addresses, e='un-binding', d=unbind_d, disable=True),
+                    dict(a=brcdapi_port.bind_addresses, e='binding', d=bind_d, disable=False)
+            ):
+                if len(d['d']) > 0:
+                    if d['disable']:
+                        obj = brcdapi_port.disable_port(session, fid, [str(k) for k in d['d'].keys()])
+                        if fos_auth.is_error(obj):
+                            ml = ['Port: ' + str(k) for k in d['d'].keys()]
+                            ml.extend([pprint.pformat(port_d),
+                                       'Errors encountered disabling ports for FID ' + str(fid),
+                                       fos_auth.formatted_error_msg(obj)])
+                            brcdapi_log.exception(ml, echo=True)
+                            ec = brcddb_common.EXIT_STATUS_ERROR
+                    obj = d['a'](session, fid, d['d'], echo)
+                    if fos_auth.is_error(obj):
+                        ml = ['port_d:',
+                              pprint.pformat(port_d),
+                              'Errors encountered ' + d['e'] + ' port address for FID ' + str(fid),
+                              fos_auth.formatted_error_msg(obj)]
+                        brcdapi_log.exception(ml, echo=True)
+                        ec = brcddb_common.EXIT_STATUS_ERROR
 
         # Name the ports
         content = [{'name': d1['port'], 'user-friendly-name': d1['port_name']} for d1 in
@@ -645,7 +664,12 @@ def _enable_switch_and_ports(session, chassis_obj, switch_d_l, echo):
             # brcdapi_rest will sleep if switch is busy but no point in executing that logic when only 1 sec is needed
             time.sleep(_PORT_ENABLE_WAIT)
             persist_flag = True if switch_d['switch_info']['switch_type'] == 'ficon' else False
-            obj = brcdapi_port.enable_port(session, fid, switch_d['port_d'].keys(), persistent=persist_flag)
+            obj = brcdapi_port.enable_port(
+                session,
+                fid,
+                [str(k) for k in switch_d['port_d'].keys()],
+                persistent=persist_flag
+            )
             if fos_auth.is_error(obj):
                 buf = 'Failed to enable ports for FID ' + str(fid)
                 switch_d['err_msgs'].append(buf)
@@ -663,12 +687,10 @@ def _print_summary(chassis_obj, switch_d_list):
     :param switch_d_list: List of switch dictionaries
     :type switch_d_list: list
     """
-    port_errors = 0
     ml = ['', 'Summary', '_______', '']
     for switch_d in switch_d_list:
         switch_obj = chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid'])
         try:
-            port_errors += len(switch_d['fault_l'])
             ml.append('FID: ' + str(switch_d['switch_info']['fid']))
             ml.append('  Switch Name:             ' + brcddb_switch.best_switch_name(switch_obj, wwn=True))
             ml.append('  Ports Added:             ' + str(len(switch_d['success_l'])))
@@ -683,11 +705,6 @@ def _print_summary(chassis_obj, switch_d_list):
                 ml.extend(['    ' + buf for buf in switch_d['err_msgs']])
         except (AttributeError, KeyError):
             brcdapi_log.exception(['Malformed "switch_d":', pprint.pformat(switch_d)], echo=True)
-    if port_errors > 0:
-        ml.extend(['',
-                   'Failures moving ports are typically due to long distance settings which,',
-                   'as of FOS 9.1.1b, could not be cleared via the API. To fix this, manually',
-                   'set ports to the default with the portcfgdefault command.'])
     brcdapi_log.log(ml, echo=True)
 
 
