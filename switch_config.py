@@ -55,15 +55,17 @@ the port addresses are unique, but again, humans like to see everything in order
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 27 Dec 2024   | Fixed address binding and invalid port keys.                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 04 Jan 2025   | Added ability to make port configuration settings via the CLI.                        |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '27 Dec 2024'
+__date__ = '04 Jan 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.5'
 
 import sys
 import datetime
@@ -74,6 +76,7 @@ import brcdapi.log as brcdapi_log
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.switch as brcdapi_switch
 import brcdapi.fos_auth as fos_auth
+import brcdapi.fos_cli as fos_cli
 import brcdapi.port as brcdapi_port
 import brcdapi.util as brcdapi_util
 import brcdapi.file as brcdapi_file
@@ -84,6 +87,7 @@ import brcddb.api.interface as api_int
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_switch as brcddb_switch
+
 _version_d = dict(
     brcdapi_log=brcdapi_log.__version__,
     gen_util=gen_util.__version__,
@@ -105,9 +109,6 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
-
-# debug input (for copy and paste into Run->Edit Configurations->script parameters):
-# -ip 10.144.72.15 -id admin -pw AdminPassw0rd! -s self -i test/gsh_test -log _logs
 
 _input_d = gen_util.parseargs_login_d.copy()
 _input_d.update(
@@ -200,6 +201,8 @@ def _configure_chassis(session, chassis_d):
     if chassis_d is None:
         return brcddb_common.EXIT_STATUS_OK  # No chassis level changes to make
     for kpi, content in chassis_d.items():
+        if len(content) == 0:
+            continue
         tl = kpi.split('/')
         content_d = {tl[len(tl)-1]: content} if tl[0] == 'running' else content
         obj = brcdapi_rest.send_request(session, kpi, 'PATCH', content_d)
@@ -408,8 +411,7 @@ def _switch_config(session, switch_obj, switch_d, echo):
 
 
 def _ficon_config(session, switch_obj, switch_d, echo):
-    """Set the fabric parameters: brocade-fibrechannel-configuration/switch-configuration. See _fiberchannel_switch()
-    for input and output parameter definitions."""
+    """Enable CUP if it should be enabled. See _fiberchannel_switch() for parameter definitions."""
     global _fc_ficon_cup
 
     # Load common use stuff into local variables
@@ -430,14 +432,14 @@ def _ficon_config(session, switch_obj, switch_d, echo):
     if len(sub_content) > 0:
         obj = brcdapi_rest.send_request(session, _fc_ficon_cup, 'PATCH', dict(cup=sub_content), fid)
         if fos_auth.is_error(obj):
-            buf = 'Failed to configure FICON parameters for FID ' + str(fid)
+            buf = 'Failed to enable CUP for FID ' + str(fid) + '. This typically happens when the FMS license is not '
+            buf += 'installed. If the CUP license is installed, check the log for details.'
+            brcdapi_log.log(buf, echo=True)
             switch_d['err_msgs'].append(buf)
-            brcdapi_log.exception([buf,
-                                   'Sheet: ' + switch_d['switch_info']['sheet_name'],
+            brcdapi_log.exception(['Sheet: ' + switch_d['switch_info']['sheet_name'],
                                    fos_auth.formatted_error_msg(obj),
                                    'switch_d:',
-                                   pprint.pformat(switch_d)],
-                                  echo=True)
+                                   pprint.pformat(switch_d)])
             ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     return ec
@@ -530,7 +532,7 @@ def _remove_ports(session, chassis_obj, switch_d_l, echo):
 
 
 def _configure_ports(session, chassis_obj, switch_d_l, echo):
-    """Configure the ports. In this version, only bind, port name, and reserve is supported.
+    """Configure the ports. In this version, only bind, port name, reserve, and CLI is supported.
 
     :param session: Session object, or list of session objects, returned from brcdapi.fos_auth.login()
     :type session: dict
@@ -543,7 +545,7 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
     :return: Ending status. See brcddb/common.py for more details.
     :rtype: int
     """
-    ec = brcddb_common.EXIT_STATUS_OK
+    ec, cli_flag = brcddb_common.EXIT_STATUS_OK, False
 
     for switch_d in switch_d_l:
         fid = switch_d['switch_info']['fid']
@@ -626,15 +628,31 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
                       pprint.pformat(port_d)]
                 brcdapi_log.exception(ml, echo=True)
 
+        # Add CLI configurations
+        cli_l = list()
+        for port, d in port_d.items():
+            if switch_obj.r_port_obj(port) is None:
+                continue  # There was an error moving the port which should have been reported elsewhere
+            for buf in [b.strip() for b in gen_util.convert_to_list(d.get('cli'))]:
+                if len(buf) > 0:
+                    cli_l.append(buf.replace('s/p', port.replace('0/', '')))
+        if len(cli_l) > 0:
+            cli_flag = True
+            for buf in cli_l:
+                fos_cli.send_command(session, fid, buf)
+
+    if cli_flag:
+        fos_cli.cli_wait()
+
     return ec
 
 
 def _enable_switch_and_ports(session, chassis_obj, switch_d_l, echo):
-    """Enable the logical switches and ports
+    """Enable the logical switches and ports.
 
     :param session: Session object, or list of session objects, returned from brcdapi.fos_auth.login()
     :type session: dict
-    :param chassis_obj: Chassis object
+    :param chassis_obj: Chassis object. Not used. Called from a table with _configure_ports, so it must be here.
     :type chassis_obj: brcddb.classes.chassis.ChassisObj
     :param switch_d_l: List of switch object as returned from report_utils.parse_switch_file()
     :type switch_d_l: list
