@@ -3,6 +3,11 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
+**28 Dec 2024 & 4 Jan 2025**
+* Added fixed port switches and 4 slot directors to create_swconfig.py
+* Add mainframe zoning, mf_zone.py
+* Added column "CLI" column to switch configuration workbooks
+
 **Update 6 Dec 2024**
 * Automatically grouped mainframe devices in group section of report.py
 * Added Tx and Rx to several report pages
