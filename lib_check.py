@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -30,17 +30,17 @@ For a generic but more detailed library validation report, use lib_validate.py
 +===========+===============+=======================================================================================+
 | 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
-| 4.1.0     | 26 Dec 2024   | Updated versions references.                                                          |
+| 4.1.1     | 04 Jan 2025   | Updated versions references.                                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '26 Dec 2024'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '04 Jan 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.0'
+__version__ = '4.1.1'
 
 import sys
 import os
@@ -99,9 +99,9 @@ _imports = (
     {'l': 'brcdapi.excel_fonts', 'd': 'Required by modules that read or write Excel workbooks', 'r': '4.0.2'},
     {'l': 'brcdapi.file', 'd': 'Required by modules that perform file I/O.', 'r': '4.0.6'},
     {'l': 'brcdapi.fos_cli', 'd': 'Required by modules that need CLI access.', 'r': '4.0.2'},
-    {'l': 'brcdapi.gen_util', 'd': 'Required by most scripts.', 'r': '4.0.6'},
+    {'l': 'brcdapi.gen_util', 'd': 'Required by most scripts.', 'r': '4.0.7'},
     {'l': 'brcdapi.log', 'd': 'Required by all scripts.', 'r': '4.0.3'},
-    {'l': 'brcdapi.port', 'd': 'Required for reading and configuring ports.', 'r': '4.0.3'},
+    {'l': 'brcdapi.port', 'd': 'Required for reading and configuring ports.', 'r': '4.0.4'},
     {'l': 'brcdapi.switch', 'd': 'Required for reading and configuring switches.', 'r': '4.0.3'},
     {'l': 'brcdapi.util', 'd': 'Utilities supporting the FOS RESTConf API driver.', 'r': '4.0.5'},
     {'l': 'brcdapi.zone', 'd': 'Required by scripts performing zoning operations.', 'r': '4.0.1'},
@@ -147,7 +147,7 @@ _imports = (
     {'l': 'brcddb.report.login', 'd': 'Required for generating Excel reports', 'r': '4.0.1'},
     {'l': 'brcddb.report.port', 'd': 'Required for generating Excel reports', 'r': '4.0.3'},
     {'l': 'brcddb.report.switch', 'd': 'Required for generating Excel reports', 'r': '4.0.3'},
-    {'l': 'brcddb.report.utils', 'd': 'Required for generating Excel reports', 'r': '4.0.4'},
+    {'l': 'brcddb.report.utils', 'd': 'Required for generating Excel reports', 'r': '4.0.5'},
     {'l': 'brcddb.report.zone', 'd': 'Required for generating Excel reports', 'r': '4.0.4'},
     {'l': 'brcddb.app_data.alert_tables', 'd': 'Alert format tables. Required for best practice analysis.',
      'r': '4.0.3'},
@@ -261,7 +261,7 @@ def pseudo_main():
 
     # Now generate a simple report to STD_OUT
     s = '-'
-    for i in range(0, total_len + 1):
+    for i in range(0, total_len + 2):
         s = s + '-'
     print(s)
     ol = [{'l': 'Module', 'd': 'Description', 'r': 'Rec Ver'}]

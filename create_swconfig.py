@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -18,7 +18,7 @@ details.
 
 **Description**
 
-Parses IOCP files and generates planning workbooks
+Creates switch configuration workbooks for each chassis from a project for use with switch_config.py
 
 **Version Control**
 
@@ -27,15 +27,17 @@ Parses IOCP files and generates planning workbooks
 +===========+===============+=======================================================================================+
 | 1.0.0     | 06 Dec 2024   | Initial Launch                                                                        |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.1     | 04 Jan 2025   | Added core-4 blade sheets, fixed port switches, and column for CLI                    |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '04 Jan 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 import os
 import collections
@@ -126,6 +128,10 @@ _chassis_sheet_d = dict(
 _apt_policy_d = {'exchange-based': 'EBR', 'device-based': 'DBR'}  # Used in _switch_config()
 
 
+class Found(Exception):
+    pass
+
+
 # Functions used in _slot_sheet_d
 def _port_num(port_obj, row):
     """Returns the port number
@@ -180,6 +186,13 @@ def _fid(port_obj, row):
     return 0 if switch_obj is None else switch_obj.r_fid()
 
 
+def _cli(port_obj, row):
+    """Returns CLI for port configurations. See _port_num() for parameter definitions
+    
+    ToDo - -cli is a work in progress"""
+    return None
+
+
 def _attached_dev(port_obj, row):
     """Returns the attached device information. See _port_num() for parameter definitions"""
     return brcddb_port.port_best_desc(port_obj)
@@ -231,6 +244,7 @@ _slot_sheet_d = dict(
             dict(col=6, buf='Index', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=7, buf='Link Addr', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=4, buf='FID', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='CLI', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=27, buf='Attached Device', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=27, buf='Port Name', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=5, buf='Low Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
@@ -243,638 +257,14 @@ _slot_sheet_d = dict(
             dict(col=6, buf='Index', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=7, buf='Link Addr', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=4, buf='FID', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='CLI', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=27, buf='Attached Device', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=27, buf='Port Name', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=5, buf='Low Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=5, buf='Med Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=5, buf='High Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin)
         ),
-        port={
-            0: (
-                dict(row=27, col=2, buf=_port_num, asic=0),
-                dict(row=27, col=3, buf=_port_did, asic=0),
-                dict(row=27, col=4, buf=_port_addr, asic=0),
-                dict(row=27, col=5, buf=_port_index, asic=0),
-                dict(row=27, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=27, col=7, buf=_fid, asic=0),
-                dict(row=27, col=8, buf=_attached_dev, asic=0),
-                dict(row=27, col=9, buf=_port_name, asic=0),
-                dict(row=27, col=10, buf=_low_qos_l, asic=0),
-                dict(row=27, col=11, buf=_med_qos_l, asic=0),
-                dict(row=27, col=12, buf=_high_qos_l, asic=0),
-            ),
-            1: (
-                dict(row=26, col=2, buf=_port_num, asic=0),
-                dict(row=26, col=3, buf=_port_did, asic=0),
-                dict(row=26, col=4, buf=_port_addr, asic=0),
-                dict(row=26, col=5, buf=_port_index, asic=0),
-                dict(row=26, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=26, col=7, buf=_fid, asic=0),
-                dict(row=26, col=8, buf=_attached_dev, asic=0),
-                dict(row=26, col=9, buf=_port_name, asic=0),
-                dict(row=26, col=10, buf=_low_qos_l, asic=0),
-                dict(row=26, col=11, buf=_med_qos_l, asic=0),
-                dict(row=26, col=12, buf=_high_qos_l, asic=0),
-            ),
-            2: (
-                dict(row=25, col=2, buf=_port_num, asic=0),
-                dict(row=25, col=3, buf=_port_did, asic=0),
-                dict(row=25, col=4, buf=_port_addr, asic=0),
-                dict(row=25, col=5, buf=_port_index, asic=0),
-                dict(row=25, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=25, col=7, buf=_fid, asic=0),
-                dict(row=25, col=8, buf=_attached_dev, asic=0),
-                dict(row=25, col=9, buf=_port_name, asic=0),
-                dict(row=25, col=10, buf=_low_qos_l, asic=0),
-                dict(row=25, col=11, buf=_med_qos_l, asic=0),
-                dict(row=25, col=12, buf=_high_qos_l, asic=0),
-            ),
-            3: (
-                dict(row=24, col=2, buf=_port_num, asic=0),
-                dict(row=24, col=3, buf=_port_did, asic=0),
-                dict(row=24, col=4, buf=_port_addr, asic=0),
-                dict(row=24, col=5, buf=_port_index, asic=0),
-                dict(row=24, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=24, col=7, buf=_fid, asic=0),
-                dict(row=24, col=8, buf=_attached_dev, asic=0),
-                dict(row=24, col=9, buf=_port_name, asic=0),
-                dict(row=24, col=10, buf=_low_qos_l, asic=0),
-                dict(row=24, col=11, buf=_med_qos_l, asic=0),
-                dict(row=24, col=12, buf=_high_qos_l, asic=0),
-            ),
-            4: (
-                dict(row=23, col=2, buf=_port_num, asic=0),
-                dict(row=23, col=3, buf=_port_did, asic=0),
-                dict(row=23, col=4, buf=_port_addr, asic=0),
-                dict(row=23, col=5, buf=_port_index, asic=0),
-                dict(row=23, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=23, col=7, buf=_fid, asic=0),
-                dict(row=23, col=8, buf=_attached_dev, asic=0),
-                dict(row=23, col=9, buf=_port_name, asic=0),
-                dict(row=23, col=10, buf=_low_qos_l, asic=0),
-                dict(row=23, col=11, buf=_med_qos_l, asic=0),
-                dict(row=23, col=12, buf=_high_qos_l, asic=0),
-            ),
-            5: (
-                dict(row=22, col=2, buf=_port_num, asic=0),
-                dict(row=22, col=3, buf=_port_did, asic=0),
-                dict(row=22, col=4, buf=_port_addr, asic=0),
-                dict(row=22, col=5, buf=_port_index, asic=0),
-                dict(row=22, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=22, col=7, buf=_fid, asic=0),
-                dict(row=22, col=8, buf=_attached_dev, asic=0),
-                dict(row=22, col=9, buf=_port_name, asic=0),
-                dict(row=22, col=10, buf=_low_qos_l, asic=0),
-                dict(row=22, col=11, buf=_med_qos_l, asic=0),
-                dict(row=22, col=12, buf=_high_qos_l, asic=0),
-            ),
-            6: (
-                dict(row=21, col=2, buf=_port_num, asic=0),
-                dict(row=21, col=3, buf=_port_did, asic=0),
-                dict(row=21, col=4, buf=_port_addr, asic=0),
-                dict(row=21, col=5, buf=_port_index, asic=0),
-                dict(row=21, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=21, col=7, buf=_fid, asic=0),
-                dict(row=21, col=8, buf=_attached_dev, asic=0),
-                dict(row=21, col=9, buf=_port_name, asic=0),
-                dict(row=21, col=10, buf=_low_qos_l, asic=0),
-                dict(row=21, col=11, buf=_med_qos_l, asic=0),
-                dict(row=21, col=12, buf=_high_qos_l, asic=0),
-            ),
-            7: (
-                dict(row=20, col=2, buf=_port_num, asic=0),
-                dict(row=20, col=3, buf=_port_did, asic=0),
-                dict(row=20, col=4, buf=_port_addr, asic=0),
-                dict(row=20, col=5, buf=_port_index, asic=0),
-                dict(row=20, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=20, col=7, buf=_fid, asic=0),
-                dict(row=20, col=8, buf=_attached_dev, asic=0),
-                dict(row=20, col=9, buf=_port_name, asic=0),
-                dict(row=20, col=10, buf=_low_qos_l, asic=0),
-                dict(row=20, col=11, buf=_med_qos_l, asic=0),
-                dict(row=20, col=12, buf=_high_qos_l, asic=0),
-            ),
-            8: (
-                dict(row=19, col=2, buf=_port_num, asic=1),
-                dict(row=19, col=3, buf=_port_did, asic=1),
-                dict(row=19, col=4, buf=_port_addr, asic=1),
-                dict(row=19, col=5, buf=_port_index, asic=1),
-                dict(row=19, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=19, col=7, buf=_fid, asic=1),
-                dict(row=19, col=8, buf=_attached_dev, asic=1),
-                dict(row=19, col=9, buf=_port_name, asic=1),
-                dict(row=19, col=10, buf=_low_qos_l, asic=1),
-                dict(row=19, col=11, buf=_med_qos_l, asic=1),
-                dict(row=19, col=12, buf=_high_qos_l, asic=1),
-            ),
-            9: (
-                dict(row=18, col=2, buf=_port_num, asic=1),
-                dict(row=18, col=3, buf=_port_did, asic=1),
-                dict(row=18, col=4, buf=_port_addr, asic=1),
-                dict(row=18, col=5, buf=_port_index, asic=1),
-                dict(row=18, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=18, col=7, buf=_fid, asic=1),
-                dict(row=18, col=8, buf=_attached_dev, asic=1),
-                dict(row=18, col=9, buf=_port_name, asic=1),
-                dict(row=18, col=10, buf=_low_qos_l, asic=1),
-                dict(row=18, col=11, buf=_med_qos_l, asic=1),
-                dict(row=18, col=12, buf=_high_qos_l, asic=1),
-            ),
-            10: (
-                dict(row=17, col=2, buf=_port_num, asic=1),
-                dict(row=17, col=3, buf=_port_did, asic=1),
-                dict(row=17, col=4, buf=_port_addr, asic=1),
-                dict(row=17, col=5, buf=_port_index, asic=1),
-                dict(row=17, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=17, col=7, buf=_fid, asic=1),
-                dict(row=17, col=8, buf=_attached_dev, asic=1),
-                dict(row=17, col=9, buf=_port_name, asic=1),
-                dict(row=17, col=10, buf=_low_qos_l, asic=1),
-                dict(row=17, col=11, buf=_med_qos_l, asic=1),
-                dict(row=17, col=12, buf=_high_qos_l, asic=1),
-            ),
-            11: (
-                dict(row=16, col=2, buf=_port_num, asic=1),
-                dict(row=16, col=3, buf=_port_did, asic=1),
-                dict(row=16, col=4, buf=_port_addr, asic=1),
-                dict(row=16, col=5, buf=_port_index, asic=1),
-                dict(row=16, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=16, col=7, buf=_fid, asic=1),
-                dict(row=16, col=8, buf=_attached_dev, asic=1),
-                dict(row=16, col=9, buf=_port_name, asic=1),
-                dict(row=16, col=10, buf=_low_qos_l, asic=1),
-                dict(row=16, col=11, buf=_med_qos_l, asic=1),
-                dict(row=16, col=12, buf=_high_qos_l, asic=1),
-            ),
-            12: (
-                dict(row=15, col=2, buf=_port_num, asic=1),
-                dict(row=15, col=3, buf=_port_did, asic=1),
-                dict(row=15, col=4, buf=_port_addr, asic=1),
-                dict(row=15, col=5, buf=_port_index, asic=1),
-                dict(row=15, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=15, col=7, buf=_fid, asic=1),
-                dict(row=15, col=8, buf=_attached_dev, asic=1),
-                dict(row=15, col=9, buf=_port_name, asic=1),
-                dict(row=15, col=10, buf=_low_qos_l, asic=1),
-                dict(row=15, col=11, buf=_med_qos_l, asic=1),
-                dict(row=15, col=12, buf=_high_qos_l, asic=1),
-            ),
-            13: (
-                dict(row=14, col=2, buf=_port_num, asic=1),
-                dict(row=14, col=3, buf=_port_did, asic=1),
-                dict(row=14, col=4, buf=_port_addr, asic=1),
-                dict(row=14, col=5, buf=_port_index, asic=1),
-                dict(row=14, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=14, col=7, buf=_fid, asic=1),
-                dict(row=14, col=8, buf=_attached_dev, asic=1),
-                dict(row=14, col=9, buf=_port_name, asic=1),
-                dict(row=14, col=10, buf=_low_qos_l, asic=1),
-                dict(row=14, col=11, buf=_med_qos_l, asic=1),
-                dict(row=14, col=12, buf=_high_qos_l, asic=1),
-            ),
-            14: (
-                dict(row=13, col=2, buf=_port_num, asic=1),
-                dict(row=13, col=3, buf=_port_did, asic=1),
-                dict(row=13, col=4, buf=_port_addr, asic=1),
-                dict(row=13, col=5, buf=_port_index, asic=1),
-                dict(row=13, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=13, col=7, buf=_fid, asic=1),
-                dict(row=13, col=8, buf=_attached_dev, asic=1),
-                dict(row=13, col=9, buf=_port_name, asic=1),
-                dict(row=13, col=10, buf=_low_qos_l, asic=1),
-                dict(row=13, col=11, buf=_med_qos_l, asic=1),
-                dict(row=13, col=12, buf=_high_qos_l, asic=1),
-            ),
-            15: (
-                dict(row=12, col=2, buf=_port_num, asic=1),
-                dict(row=12, col=3, buf=_port_did, asic=1),
-                dict(row=12, col=4, buf=_port_addr, asic=1),
-                dict(row=12, col=5, buf=_port_index, asic=1),
-                dict(row=12, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=12, col=7, buf=_fid, asic=1),
-                dict(row=12, col=8, buf=_attached_dev, asic=1),
-                dict(row=12, col=9, buf=_port_name, asic=1),
-                dict(row=12, col=10, buf=_low_qos_l, asic=1),
-                dict(row=12, col=11, buf=_med_qos_l, asic=1),
-                dict(row=12, col=12, buf=_high_qos_l, asic=1),
-            ),
-            16: (
-                dict(row=11, col=2, buf=_port_num, asic=1),
-                dict(row=11, col=3, buf=_port_did, asic=1),
-                dict(row=11, col=4, buf=_port_addr, asic=1),
-                dict(row=11, col=5, buf=_port_index, asic=1),
-                dict(row=11, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=11, col=7, buf=_fid, asic=1),
-                dict(row=11, col=8, buf=_attached_dev, asic=1),
-                dict(row=11, col=9, buf=_port_name, asic=1),
-                dict(row=11, col=10, buf=_low_qos_l, asic=1),
-                dict(row=11, col=11, buf=_med_qos_l, asic=1),
-                dict(row=11, col=12, buf=_high_qos_l, asic=1),
-            ),
-            17: (
-                dict(row=10, col=2, buf=_port_num, asic=1),
-                dict(row=10, col=3, buf=_port_did, asic=1),
-                dict(row=10, col=4, buf=_port_addr, asic=1),
-                dict(row=10, col=5, buf=_port_index, asic=1),
-                dict(row=10, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=10, col=7, buf=_fid, asic=1),
-                dict(row=10, col=8, buf=_attached_dev, asic=1),
-                dict(row=10, col=9, buf=_port_name, asic=1),
-                dict(row=10, col=10, buf=_low_qos_l, asic=1),
-                dict(row=10, col=11, buf=_med_qos_l, asic=1),
-                dict(row=10, col=12, buf=_high_qos_l, asic=1),
-            ),
-            18: (
-                dict(row=9, col=2, buf=_port_num, asic=1),
-                dict(row=9, col=3, buf=_port_did, asic=1),
-                dict(row=9, col=4, buf=_port_addr, asic=1),
-                dict(row=9, col=5, buf=_port_index, asic=1),
-                dict(row=9, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=9, col=7, buf=_fid, asic=1),
-                dict(row=9, col=8, buf=_attached_dev, asic=1),
-                dict(row=9, col=9, buf=_port_name, asic=1),
-                dict(row=9, col=10, buf=_low_qos_l, asic=1),
-                dict(row=9, col=11, buf=_med_qos_l, asic=1),
-                dict(row=9, col=12, buf=_high_qos_l, asic=1),
-            ),
-            19: (
-                dict(row=8, col=2, buf=_port_num, asic=1),
-                dict(row=8, col=3, buf=_port_did, asic=1),
-                dict(row=8, col=4, buf=_port_addr, asic=1),
-                dict(row=8, col=5, buf=_port_index, asic=1),
-                dict(row=8, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=8, col=7, buf=_fid, asic=1),
-                dict(row=8, col=8, buf=_attached_dev, asic=1),
-                dict(row=8, col=9, buf=_port_name, asic=1),
-                dict(row=8, col=10, buf=_low_qos_l, asic=1),
-                dict(row=8, col=11, buf=_med_qos_l, asic=1),
-                dict(row=8, col=12, buf=_high_qos_l, asic=1),
-            ),
-            20: (
-                dict(row=7, col=2, buf=_port_num, asic=1),
-                dict(row=7, col=3, buf=_port_did, asic=1),
-                dict(row=7, col=4, buf=_port_addr, asic=1),
-                dict(row=7, col=5, buf=_port_index, asic=1),
-                dict(row=7, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=7, col=7, buf=_fid, asic=1),
-                dict(row=7, col=8, buf=_attached_dev, asic=1),
-                dict(row=7, col=9, buf=_port_name, asic=1),
-                dict(row=7, col=10, buf=_low_qos_l, asic=1),
-                dict(row=7, col=11, buf=_med_qos_l, asic=1),
-                dict(row=7, col=12, buf=_high_qos_l, asic=1),
-            ),
-            21: (
-                dict(row=6, col=2, buf=_port_num, asic=1),
-                dict(row=6, col=3, buf=_port_did, asic=1),
-                dict(row=6, col=4, buf=_port_addr, asic=1),
-                dict(row=6, col=5, buf=_port_index, asic=1),
-                dict(row=6, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=6, col=7, buf=_fid, asic=1),
-                dict(row=6, col=8, buf=_attached_dev, asic=1),
-                dict(row=6, col=9, buf=_port_name, asic=1),
-                dict(row=6, col=10, buf=_low_qos_l, asic=1),
-                dict(row=6, col=11, buf=_med_qos_l, asic=1),
-                dict(row=6, col=12, buf=_high_qos_l, asic=1),
-            ),
-            22: (
-                dict(row=5, col=2, buf=_port_num, asic=1),
-                dict(row=5, col=3, buf=_port_did, asic=1),
-                dict(row=5, col=4, buf=_port_addr, asic=1),
-                dict(row=5, col=5, buf=_port_index, asic=1),
-                dict(row=5, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=5, col=7, buf=_fid, asic=1),
-                dict(row=5, col=8, buf=_attached_dev, asic=1),
-                dict(row=5, col=9, buf=_port_name, asic=1),
-                dict(row=5, col=10, buf=_low_qos_l, asic=1),
-                dict(row=5, col=11, buf=_med_qos_l, asic=1),
-                dict(row=5, col=12, buf=_high_qos_l, asic=1),
-            ),
-            23: (
-                dict(row=4, col=2, buf=_port_num, asic=1),
-                dict(row=4, col=3, buf=_port_did, asic=1),
-                dict(row=4, col=4, buf=_port_addr, asic=1),
-                dict(row=4, col=5, buf=_port_index, asic=1),
-                dict(row=4, col=6, buf=_port_link_addr_l, asic=1),
-                dict(row=4, col=7, buf=_fid, asic=1),
-                dict(row=4, col=8, buf=_attached_dev, asic=1),
-                dict(row=4, col=9, buf=_port_name, asic=1),
-                dict(row=4, col=10, buf=_low_qos_l, asic=1),
-                dict(row=4, col=11, buf=_med_qos_l, asic=1),
-                dict(row=4, col=12, buf=_high_qos_l, asic=1),
-            ),
-            24: (
-                dict(row=27, col=14, buf=_port_num, asic=0),
-                dict(row=27, col=15, buf=_port_did, asic=0),
-                dict(row=27, col=16, buf=_port_addr, asic=0),
-                dict(row=27, col=17, buf=_port_index, asic=0),
-                dict(row=27, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=27, col=19, buf=_fid, asic=0),
-                dict(row=27, col=20, buf=_attached_dev, asic=0),
-                dict(row=27, col=21, buf=_port_name, asic=0),
-                dict(row=27, col=22, buf=_low_qos_r, asic=0),
-                dict(row=27, col=23, buf=_med_qos_r, asic=0),
-                dict(row=27, col=24, buf=_high_qos_r, asic=0),
-            ),
-            25: (
-                dict(row=26, col=14, buf=_port_num, asic=0),
-                dict(row=26, col=15, buf=_port_did, asic=0),
-                dict(row=26, col=16, buf=_port_addr, asic=0),
-                dict(row=26, col=17, buf=_port_index, asic=0),
-                dict(row=26, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=26, col=19, buf=_fid, asic=0),
-                dict(row=26, col=20, buf=_attached_dev, asic=0),
-                dict(row=26, col=21, buf=_port_name, asic=0),
-                dict(row=26, col=22, buf=_low_qos_r, asic=0),
-                dict(row=26, col=23, buf=_med_qos_r, asic=0),
-                dict(row=26, col=24, buf=_high_qos_r, asic=0),
-            ),
-            26: (
-                dict(row=25, col=14, buf=_port_num, asic=0),
-                dict(row=25, col=15, buf=_port_did, asic=0),
-                dict(row=25, col=16, buf=_port_addr, asic=0),
-                dict(row=25, col=17, buf=_port_index, asic=0),
-                dict(row=25, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=25, col=19, buf=_fid, asic=0),
-                dict(row=25, col=20, buf=_attached_dev, asic=0),
-                dict(row=25, col=21, buf=_port_name, asic=0),
-                dict(row=25, col=22, buf=_low_qos_r, asic=0),
-                dict(row=25, col=23, buf=_med_qos_r, asic=0),
-                dict(row=25, col=24, buf=_high_qos_r, asic=0),
-            ),
-            27: (
-                dict(row=24, col=14, buf=_port_num, asic=0),
-                dict(row=24, col=15, buf=_port_did, asic=0),
-                dict(row=24, col=16, buf=_port_addr, asic=0),
-                dict(row=24, col=17, buf=_port_index, asic=0),
-                dict(row=24, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=24, col=19, buf=_fid, asic=0),
-                dict(row=24, col=20, buf=_attached_dev, asic=0),
-                dict(row=24, col=21, buf=_port_name, asic=0),
-                dict(row=24, col=22, buf=_low_qos_r, asic=0),
-                dict(row=24, col=23, buf=_med_qos_r, asic=0),
-                dict(row=24, col=24, buf=_high_qos_r, asic=0),
-            ),
-            28: (
-                dict(row=23, col=14, buf=_port_num, asic=0),
-                dict(row=23, col=15, buf=_port_did, asic=0),
-                dict(row=23, col=16, buf=_port_addr, asic=0),
-                dict(row=23, col=17, buf=_port_index, asic=0),
-                dict(row=23, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=23, col=19, buf=_fid, asic=0),
-                dict(row=23, col=20, buf=_attached_dev, asic=0),
-                dict(row=23, col=21, buf=_port_name, asic=0),
-                dict(row=23, col=22, buf=_low_qos_r, asic=0),
-                dict(row=23, col=23, buf=_med_qos_r, asic=0),
-                dict(row=23, col=24, buf=_high_qos_r, asic=0),
-            ),
-            29: (
-                dict(row=22, col=14, buf=_port_num, asic=0),
-                dict(row=22, col=15, buf=_port_did, asic=0),
-                dict(row=22, col=16, buf=_port_addr, asic=0),
-                dict(row=22, col=17, buf=_port_index, asic=0),
-                dict(row=22, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=22, col=19, buf=_fid, asic=0),
-                dict(row=22, col=20, buf=_attached_dev, asic=0),
-                dict(row=22, col=21, buf=_port_name, asic=0),
-                dict(row=22, col=22, buf=_low_qos_r, asic=0),
-                dict(row=22, col=23, buf=_med_qos_r, asic=0),
-                dict(row=22, col=24, buf=_high_qos_r, asic=0),
-            ),
-            30: (
-                dict(row=21, col=14, buf=_port_num, asic=0),
-                dict(row=21, col=15, buf=_port_did, asic=0),
-                dict(row=21, col=16, buf=_port_addr, asic=0),
-                dict(row=21, col=17, buf=_port_index, asic=0),
-                dict(row=21, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=21, col=19, buf=_fid, asic=0),
-                dict(row=21, col=20, buf=_attached_dev, asic=0),
-                dict(row=21, col=21, buf=_port_name, asic=0),
-                dict(row=21, col=22, buf=_low_qos_r, asic=0),
-                dict(row=21, col=23, buf=_med_qos_r, asic=0),
-                dict(row=21, col=24, buf=_high_qos_r, asic=0),
-            ),
-            31: (
-                dict(row=20, col=14, buf=_port_num, asic=0),
-                dict(row=20, col=15, buf=_port_did, asic=0),
-                dict(row=20, col=16, buf=_port_addr, asic=0),
-                dict(row=20, col=17, buf=_port_index, asic=0),
-                dict(row=20, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=20, col=19, buf=_fid, asic=0),
-                dict(row=20, col=20, buf=_attached_dev, asic=0),
-                dict(row=20, col=21, buf=_port_name, asic=0),
-                dict(row=20, col=22, buf=_low_qos_r, asic=0),
-                dict(row=20, col=23, buf=_med_qos_r, asic=0),
-                dict(row=20, col=24, buf=_high_qos_r, asic=0),
-            ),
-            32: (
-                dict(row=19, col=14, buf=_port_num, asic=0),
-                dict(row=19, col=15, buf=_port_did, asic=0),
-                dict(row=19, col=16, buf=_port_addr, asic=0),
-                dict(row=19, col=17, buf=_port_index, asic=0),
-                dict(row=19, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=19, col=19, buf=_fid, asic=0),
-                dict(row=19, col=20, buf=_attached_dev, asic=0),
-                dict(row=19, col=21, buf=_port_name, asic=0),
-                dict(row=19, col=22, buf=_low_qos_r, asic=0),
-                dict(row=19, col=23, buf=_med_qos_r, asic=0),
-                dict(row=19, col=24, buf=_high_qos_r, asic=0),
-            ),
-            33: (
-                dict(row=18, col=14, buf=_port_num, asic=0),
-                dict(row=18, col=15, buf=_port_did, asic=0),
-                dict(row=18, col=16, buf=_port_addr, asic=0),
-                dict(row=18, col=17, buf=_port_index, asic=0),
-                dict(row=18, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=18, col=19, buf=_fid, asic=0),
-                dict(row=18, col=20, buf=_attached_dev, asic=0),
-                dict(row=18, col=21, buf=_port_name, asic=0),
-                dict(row=18, col=22, buf=_low_qos_r, asic=0),
-                dict(row=18, col=23, buf=_med_qos_r, asic=0),
-                dict(row=18, col=24, buf=_high_qos_r, asic=0),
-            ),
-            34: (
-                dict(row=17, col=14, buf=_port_num, asic=0),
-                dict(row=17, col=15, buf=_port_did, asic=0),
-                dict(row=17, col=16, buf=_port_addr, asic=0),
-                dict(row=17, col=17, buf=_port_index, asic=0),
-                dict(row=17, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=17, col=19, buf=_fid, asic=0),
-                dict(row=17, col=20, buf=_attached_dev, asic=0),
-                dict(row=17, col=21, buf=_port_name, asic=0),
-                dict(row=17, col=22, buf=_low_qos_r, asic=0),
-                dict(row=17, col=23, buf=_med_qos_r, asic=0),
-                dict(row=17, col=24, buf=_high_qos_r, asic=0),
-            ),
-            35: (
-                dict(row=16, col=14, buf=_port_num, asic=0),
-                dict(row=16, col=15, buf=_port_did, asic=0),
-                dict(row=16, col=16, buf=_port_addr, asic=0),
-                dict(row=16, col=17, buf=_port_index, asic=0),
-                dict(row=16, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=16, col=19, buf=_fid, asic=0),
-                dict(row=16, col=20, buf=_attached_dev, asic=0),
-                dict(row=16, col=21, buf=_port_name, asic=0),
-                dict(row=16, col=22, buf=_low_qos_r, asic=0),
-                dict(row=16, col=23, buf=_med_qos_r, asic=0),
-                dict(row=16, col=24, buf=_high_qos_r, asic=0),
-            ),
-            36: (
-                dict(row=15, col=14, buf=_port_num, asic=0),
-                dict(row=15, col=15, buf=_port_did, asic=0),
-                dict(row=15, col=16, buf=_port_addr, asic=0),
-                dict(row=15, col=17, buf=_port_index, asic=0),
-                dict(row=15, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=15, col=19, buf=_fid, asic=0),
-                dict(row=15, col=20, buf=_attached_dev, asic=0),
-                dict(row=15, col=21, buf=_port_name, asic=0),
-                dict(row=15, col=22, buf=_low_qos_r, asic=0),
-                dict(row=15, col=23, buf=_med_qos_r, asic=0),
-                dict(row=15, col=24, buf=_high_qos_r, asic=0),
-            ),
-            37: (
-                dict(row=14, col=14, buf=_port_num, asic=0),
-                dict(row=14, col=15, buf=_port_did, asic=0),
-                dict(row=14, col=16, buf=_port_addr, asic=0),
-                dict(row=14, col=17, buf=_port_index, asic=0),
-                dict(row=14, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=14, col=19, buf=_fid, asic=0),
-                dict(row=14, col=20, buf=_attached_dev, asic=0),
-                dict(row=14, col=21, buf=_port_name, asic=0),
-                dict(row=14, col=22, buf=_low_qos_r, asic=0),
-                dict(row=14, col=23, buf=_med_qos_r, asic=0),
-                dict(row=14, col=24, buf=_high_qos_r, asic=0),
-            ),
-            38: (
-                dict(row=13, col=14, buf=_port_num, asic=0),
-                dict(row=13, col=15, buf=_port_did, asic=0),
-                dict(row=13, col=16, buf=_port_addr, asic=0),
-                dict(row=13, col=17, buf=_port_index, asic=0),
-                dict(row=13, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=13, col=19, buf=_fid, asic=0),
-                dict(row=13, col=20, buf=_attached_dev, asic=0),
-                dict(row=13, col=21, buf=_port_name, asic=0),
-                dict(row=13, col=22, buf=_low_qos_r, asic=0),
-                dict(row=13, col=23, buf=_med_qos_r, asic=0),
-                dict(row=13, col=24, buf=_high_qos_r, asic=0),
-            ),
-            39: (
-                dict(row=12, col=14, buf=_port_num, asic=0),
-                dict(row=12, col=15, buf=_port_did, asic=0),
-                dict(row=12, col=16, buf=_port_addr, asic=0),
-                dict(row=12, col=17, buf=_port_index, asic=0),
-                dict(row=12, col=18, buf=_port_link_addr_r, asic=0),
-                dict(row=12, col=19, buf=_fid, asic=0),
-                dict(row=12, col=20, buf=_attached_dev, asic=0),
-                dict(row=12, col=21, buf=_port_name, asic=0),
-                dict(row=12, col=22, buf=_low_qos_r, asic=0),
-                dict(row=12, col=23, buf=_med_qos_r, asic=0),
-                dict(row=12, col=24, buf=_high_qos_r, asic=0),
-            ),
-            40: (
-                dict(row=11, col=14, buf=_port_num, asic=1),
-                dict(row=11, col=15, buf=_port_did, asic=1),
-                dict(row=11, col=16, buf=_port_addr, asic=1),
-                dict(row=11, col=17, buf=_port_index, asic=1),
-                dict(row=11, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=11, col=19, buf=_fid, asic=1),
-                dict(row=11, col=20, buf=_attached_dev, asic=1),
-                dict(row=11, col=21, buf=_port_name, asic=1),
-                dict(row=11, col=22, buf=_low_qos_r, asic=1),
-                dict(row=11, col=23, buf=_med_qos_r, asic=1),
-                dict(row=11, col=24, buf=_high_qos_r, asic=1),
-            ),
-            41: (
-                dict(row=10, col=14, buf=_port_num, asic=1),
-                dict(row=10, col=15, buf=_port_did, asic=1),
-                dict(row=10, col=16, buf=_port_addr, asic=1),
-                dict(row=10, col=17, buf=_port_index, asic=1),
-                dict(row=10, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=10, col=19, buf=_fid, asic=1),
-                dict(row=10, col=20, buf=_attached_dev, asic=1),
-                dict(row=10, col=21, buf=_port_name, asic=1),
-                dict(row=10, col=22, buf=_low_qos_r, asic=1),
-                dict(row=10, col=23, buf=_med_qos_r, asic=1),
-                dict(row=10, col=24, buf=_high_qos_r, asic=1),
-            ),
-            42: (
-                dict(row=9, col=14, buf=_port_num, asic=1),
-                dict(row=9, col=15, buf=_port_did, asic=1),
-                dict(row=9, col=16, buf=_port_addr, asic=1),
-                dict(row=9, col=17, buf=_port_index, asic=1),
-                dict(row=9, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=9, col=19, buf=_fid, asic=1),
-                dict(row=9, col=20, buf=_attached_dev, asic=1),
-                dict(row=9, col=21, buf=_port_name, asic=1),
-                dict(row=9, col=22, buf=_low_qos_r, asic=1),
-                dict(row=9, col=23, buf=_med_qos_r, asic=1),
-                dict(row=9, col=24, buf=_high_qos_r, asic=1),
-            ),
-            43: (
-                dict(row=8, col=14, buf=_port_num, asic=1),
-                dict(row=8, col=15, buf=_port_did, asic=1),
-                dict(row=8, col=16, buf=_port_addr, asic=1),
-                dict(row=8, col=17, buf=_port_index, asic=1),
-                dict(row=8, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=8, col=19, buf=_fid, asic=1),
-                dict(row=8, col=20, buf=_attached_dev, asic=1),
-                dict(row=8, col=21, buf=_port_name, asic=1),
-                dict(row=8, col=22, buf=_low_qos_r, asic=1),
-                dict(row=8, col=23, buf=_med_qos_r, asic=1),
-                dict(row=8, col=24, buf=_high_qos_r, asic=1),
-            ),
-            44: (
-                dict(row=7, col=14, buf=_port_num, asic=1),
-                dict(row=7, col=15, buf=_port_did, asic=1),
-                dict(row=7, col=16, buf=_port_addr, asic=1),
-                dict(row=7, col=17, buf=_port_index, asic=1),
-                dict(row=7, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=7, col=19, buf=_fid, asic=1),
-                dict(row=7, col=20, buf=_attached_dev, asic=1),
-                dict(row=7, col=21, buf=_port_name, asic=1),
-                dict(row=7, col=22, buf=_low_qos_r, asic=1),
-                dict(row=7, col=23, buf=_med_qos_r, asic=1),
-                dict(row=7, col=24, buf=_high_qos_r, asic=1),
-            ),
-            45: (
-                dict(row=6, col=14, buf=_port_num, asic=1),
-                dict(row=6, col=15, buf=_port_did, asic=1),
-                dict(row=6, col=16, buf=_port_addr, asic=1),
-                dict(row=6, col=17, buf=_port_index, asic=1),
-                dict(row=6, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=6, col=19, buf=_fid, asic=1),
-                dict(row=6, col=20, buf=_attached_dev, asic=1),
-                dict(row=6, col=21, buf=_port_name, asic=1),
-                dict(row=6, col=22, buf=_low_qos_r, asic=1),
-                dict(row=6, col=23, buf=_med_qos_r, asic=1),
-                dict(row=6, col=24, buf=_high_qos_r, asic=1),
-            ),
-            46: (
-                dict(row=5, col=14, buf=_port_num, asic=1),
-                dict(row=5, col=15, buf=_port_did, asic=1),
-                dict(row=5, col=16, buf=_port_addr, asic=1),
-                dict(row=5, col=17, buf=_port_index, asic=1),
-                dict(row=5, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=5, col=19, buf=_fid, asic=1),
-                dict(row=5, col=20, buf=_attached_dev, asic=1),
-                dict(row=5, col=21, buf=_port_name, asic=1),
-                dict(row=5, col=22, buf=_low_qos_r, asic=1),
-                dict(row=5, col=23, buf=_med_qos_r, asic=1),
-                dict(row=5, col=24, buf=_high_qos_r, asic=1),
-            ),
-            47: (
-                dict(row=4, col=14, buf=_port_num, asic=1),
-                dict(row=4, col=15, buf=_port_did, asic=1),
-                dict(row=4, col=16, buf=_port_addr, asic=1),
-                dict(row=4, col=17, buf=_port_index, asic=1),
-                dict(row=4, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=4, col=19, buf=_fid, asic=1),
-                dict(row=4, col=20, buf=_attached_dev, asic=1),
-                dict(row=4, col=21, buf=_port_name, asic=1),
-                dict(row=4, col=22, buf=_low_qos_r, asic=1),
-                dict(row=4, col=23, buf=_med_qos_r, asic=1),
-                dict(row=4, col=24, buf=_high_qos_r, asic=1),
-            ),
-        }
+        port=dict(),
     ),
     pc_64=dict(
         hdr=(
@@ -903,840 +293,26 @@ _slot_sheet_d = dict(
             dict(col=5, buf='Med Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=5, buf='High Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin)
         ),
-        port={
-            0: (
-                dict(row=35, col=2, buf=_port_num, asic=0),
-                dict(row=35, col=3, buf=_port_did, asic=0),
-                dict(row=35, col=4, buf=_port_addr, asic=0),
-                dict(row=35, col=5, buf=_port_index, asic=0),
-                dict(row=35, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=35, col=7, buf=_fid, asic=0),
-                dict(row=35, col=8, buf=_attached_dev, asic=0),
-                dict(row=35, col=9, buf=_port_name, asic=0),
-                dict(row=35, col=10, buf=_low_qos_l, asic=0),
-                dict(row=35, col=11, buf=_med_qos_l, asic=0),
-                dict(row=35, col=12, buf=_high_qos_l, asic=0),
-            ),
-            1: (
-                dict(row=34, col=2, buf=_port_num, asic=0),
-                dict(row=34, col=3, buf=_port_did, asic=0),
-                dict(row=34, col=4, buf=_port_addr, asic=0),
-                dict(row=34, col=5, buf=_port_index, asic=0),
-                dict(row=34, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=34, col=7, buf=_fid, asic=0),
-                dict(row=34, col=8, buf=_attached_dev, asic=0),
-                dict(row=34, col=9, buf=_port_name, asic=0),
-                dict(row=34, col=10, buf=_low_qos_l, asic=0),
-                dict(row=34, col=11, buf=_med_qos_l, asic=0),
-                dict(row=34, col=12, buf=_high_qos_l, asic=0),
-            ),
-            2: (
-                dict(row=33, col=2, buf=_port_num, asic=0),
-                dict(row=33, col=3, buf=_port_did, asic=0),
-                dict(row=33, col=4, buf=_port_addr, asic=0),
-                dict(row=33, col=5, buf=_port_index, asic=0),
-                dict(row=33, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=33, col=7, buf=_fid, asic=0),
-                dict(row=33, col=8, buf=_attached_dev, asic=0),
-                dict(row=33, col=9, buf=_port_name, asic=0),
-                dict(row=33, col=10, buf=_low_qos_l, asic=0),
-                dict(row=33, col=11, buf=_med_qos_l, asic=0),
-                dict(row=33, col=12, buf=_high_qos_l, asic=0),
-            ),
-            3: (
-                dict(row=32, col=2, buf=_port_num, asic=0),
-                dict(row=32, col=3, buf=_port_did, asic=0),
-                dict(row=32, col=4, buf=_port_addr, asic=0),
-                dict(row=32, col=5, buf=_port_index, asic=0),
-                dict(row=32, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=32, col=7, buf=_fid, asic=0),
-                dict(row=32, col=8, buf=_attached_dev, asic=0),
-                dict(row=32, col=9, buf=_port_name, asic=0),
-                dict(row=32, col=10, buf=_low_qos_l, asic=0),
-                dict(row=32, col=11, buf=_med_qos_l, asic=0),
-                dict(row=32, col=12, buf=_high_qos_l, asic=0),
-            ),
-            4: (
-                dict(row=31, col=2, buf=_port_num, asic=0),
-                dict(row=31, col=3, buf=_port_did, asic=0),
-                dict(row=31, col=4, buf=_port_addr, asic=0),
-                dict(row=31, col=5, buf=_port_index, asic=0),
-                dict(row=31, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=31, col=7, buf=_fid, asic=0),
-                dict(row=31, col=8, buf=_attached_dev, asic=0),
-                dict(row=31, col=9, buf=_port_name, asic=0),
-                dict(row=31, col=10, buf=_low_qos_l, asic=0),
-                dict(row=31, col=11, buf=_med_qos_l, asic=0),
-                dict(row=31, col=12, buf=_high_qos_l, asic=0),
-            ),
-            5: (
-                dict(row=30, col=2, buf=_port_num, asic=0),
-                dict(row=30, col=3, buf=_port_did, asic=0),
-                dict(row=30, col=4, buf=_port_addr, asic=0),
-                dict(row=30, col=5, buf=_port_index, asic=0),
-                dict(row=30, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=30, col=7, buf=_fid, asic=0),
-                dict(row=30, col=8, buf=_attached_dev, asic=0),
-                dict(row=30, col=9, buf=_port_name, asic=0),
-                dict(row=30, col=10, buf=_low_qos_l, asic=0),
-                dict(row=30, col=11, buf=_med_qos_l, asic=0),
-                dict(row=30, col=12, buf=_high_qos_l, asic=0),
-            ),
-            6: (
-                dict(row=29, col=2, buf=_port_num, asic=0),
-                dict(row=29, col=3, buf=_port_did, asic=0),
-                dict(row=29, col=4, buf=_port_addr, asic=0),
-                dict(row=29, col=5, buf=_port_index, asic=0),
-                dict(row=29, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=29, col=7, buf=_fid, asic=0),
-                dict(row=29, col=8, buf=_attached_dev, asic=0),
-                dict(row=29, col=9, buf=_port_name, asic=0),
-                dict(row=29, col=10, buf=_low_qos_l, asic=0),
-                dict(row=29, col=11, buf=_med_qos_l, asic=0),
-                dict(row=29, col=12, buf=_high_qos_l, asic=0),
-            ),
-            7: (
-                dict(row=28, col=2, buf=_port_num, asic=0),
-                dict(row=28, col=3, buf=_port_did, asic=0),
-                dict(row=28, col=4, buf=_port_addr, asic=0),
-                dict(row=28, col=5, buf=_port_index, asic=0),
-                dict(row=28, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=28, col=7, buf=_fid, asic=0),
-                dict(row=28, col=8, buf=_attached_dev, asic=0),
-                dict(row=28, col=9, buf=_port_name, asic=0),
-                dict(row=28, col=10, buf=_low_qos_l, asic=0),
-                dict(row=28, col=11, buf=_med_qos_l, asic=0),
-                dict(row=28, col=12, buf=_high_qos_l, asic=0),
-            ),
-            8: (
-                dict(row=27, col=2, buf=_port_num, asic=0),
-                dict(row=27, col=3, buf=_port_did, asic=0),
-                dict(row=27, col=4, buf=_port_addr, asic=0),
-                dict(row=27, col=5, buf=_port_index, asic=0),
-                dict(row=27, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=27, col=7, buf=_fid, asic=0),
-                dict(row=27, col=8, buf=_attached_dev, asic=0),
-                dict(row=27, col=9, buf=_port_name, asic=0),
-                dict(row=27, col=10, buf=_low_qos_l, asic=0),
-                dict(row=27, col=11, buf=_med_qos_l, asic=0),
-                dict(row=27, col=12, buf=_high_qos_l, asic=0),
-            ),
-            9: (
-                dict(row=26, col=2, buf=_port_num, asic=0),
-                dict(row=26, col=3, buf=_port_did, asic=0),
-                dict(row=26, col=4, buf=_port_addr, asic=0),
-                dict(row=26, col=5, buf=_port_index, asic=0),
-                dict(row=26, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=26, col=7, buf=_fid, asic=0),
-                dict(row=26, col=8, buf=_attached_dev, asic=0),
-                dict(row=26, col=9, buf=_port_name, asic=0),
-                dict(row=26, col=10, buf=_low_qos_l, asic=0),
-                dict(row=26, col=11, buf=_med_qos_l, asic=0),
-                dict(row=26, col=12, buf=_high_qos_l, asic=0),
-            ),
-            10: (
-                dict(row=25, col=2, buf=_port_num, asic=0),
-                dict(row=25, col=3, buf=_port_did, asic=0),
-                dict(row=25, col=4, buf=_port_addr, asic=0),
-                dict(row=25, col=5, buf=_port_index, asic=0),
-                dict(row=25, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=25, col=7, buf=_fid, asic=0),
-                dict(row=25, col=8, buf=_attached_dev, asic=0),
-                dict(row=25, col=9, buf=_port_name, asic=0),
-                dict(row=25, col=10, buf=_low_qos_l, asic=0),
-                dict(row=25, col=11, buf=_med_qos_l, asic=0),
-                dict(row=25, col=12, buf=_high_qos_l, asic=0),
-            ),
-            11: (
-                dict(row=24, col=2, buf=_port_num, asic=0),
-                dict(row=24, col=3, buf=_port_did, asic=0),
-                dict(row=24, col=4, buf=_port_addr, asic=0),
-                dict(row=24, col=5, buf=_port_index, asic=0),
-                dict(row=24, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=24, col=7, buf=_fid, asic=0),
-                dict(row=24, col=8, buf=_attached_dev, asic=0),
-                dict(row=24, col=9, buf=_port_name, asic=0),
-                dict(row=24, col=10, buf=_low_qos_l, asic=0),
-                dict(row=24, col=11, buf=_med_qos_l, asic=0),
-                dict(row=24, col=12, buf=_high_qos_l, asic=0),
-            ),
-            12: (
-                dict(row=23, col=2, buf=_port_num, asic=0),
-                dict(row=23, col=3, buf=_port_did, asic=0),
-                dict(row=23, col=4, buf=_port_addr, asic=0),
-                dict(row=23, col=5, buf=_port_index, asic=0),
-                dict(row=23, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=23, col=7, buf=_fid, asic=0),
-                dict(row=23, col=8, buf=_attached_dev, asic=0),
-                dict(row=23, col=9, buf=_port_name, asic=0),
-                dict(row=23, col=10, buf=_low_qos_l, asic=0),
-                dict(row=23, col=11, buf=_med_qos_l, asic=0),
-                dict(row=23, col=12, buf=_high_qos_l, asic=0),
-            ),
-            13: (
-                dict(row=22, col=2, buf=_port_num, asic=0),
-                dict(row=22, col=3, buf=_port_did, asic=0),
-                dict(row=22, col=4, buf=_port_addr, asic=0),
-                dict(row=22, col=5, buf=_port_index, asic=0),
-                dict(row=22, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=22, col=7, buf=_fid, asic=0),
-                dict(row=22, col=8, buf=_attached_dev, asic=0),
-                dict(row=22, col=9, buf=_port_name, asic=0),
-                dict(row=22, col=10, buf=_low_qos_l, asic=0),
-                dict(row=22, col=11, buf=_med_qos_l, asic=0),
-                dict(row=22, col=12, buf=_high_qos_l, asic=0),
-            ),
-            14: (
-                dict(row=21, col=2, buf=_port_num, asic=0),
-                dict(row=21, col=3, buf=_port_did, asic=0),
-                dict(row=21, col=4, buf=_port_addr, asic=0),
-                dict(row=21, col=5, buf=_port_index, asic=0),
-                dict(row=21, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=21, col=7, buf=_fid, asic=0),
-                dict(row=21, col=8, buf=_attached_dev, asic=0),
-                dict(row=21, col=9, buf=_port_name, asic=0),
-                dict(row=21, col=10, buf=_low_qos_l, asic=0),
-                dict(row=21, col=11, buf=_med_qos_l, asic=0),
-                dict(row=21, col=12, buf=_high_qos_l, asic=0),
-            ),
-            15: (
-                dict(row=20, col=2, buf=_port_num, asic=0),
-                dict(row=20, col=3, buf=_port_did, asic=0),
-                dict(row=20, col=4, buf=_port_addr, asic=0),
-                dict(row=20, col=5, buf=_port_index, asic=0),
-                dict(row=20, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=20, col=7, buf=_fid, asic=0),
-                dict(row=20, col=8, buf=_attached_dev, asic=0),
-                dict(row=20, col=9, buf=_port_name, asic=0),
-                dict(row=20, col=10, buf=_low_qos_l, asic=0),
-                dict(row=20, col=11, buf=_med_qos_l, asic=0),
-                dict(row=20, col=12, buf=_high_qos_l, asic=0),
-            ),
-            16: (
-                dict(row=19, col=2, buf=_port_num, asic=0),
-                dict(row=19, col=3, buf=_port_did, asic=0),
-                dict(row=19, col=4, buf=_port_addr, asic=0),
-                dict(row=19, col=5, buf=_port_index, asic=0),
-                dict(row=19, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=19, col=7, buf=_fid, asic=0),
-                dict(row=19, col=8, buf=_attached_dev, asic=0),
-                dict(row=19, col=9, buf=_port_name, asic=0),
-                dict(row=19, col=10, buf=_low_qos_l, asic=0),
-                dict(row=19, col=11, buf=_med_qos_l, asic=0),
-                dict(row=19, col=12, buf=_high_qos_l, asic=0),
-            ),
-            17: (
-                dict(row=18, col=2, buf=_port_num, asic=0),
-                dict(row=18, col=3, buf=_port_did, asic=0),
-                dict(row=18, col=4, buf=_port_addr, asic=0),
-                dict(row=18, col=5, buf=_port_index, asic=0),
-                dict(row=18, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=18, col=7, buf=_fid, asic=0),
-                dict(row=18, col=8, buf=_attached_dev, asic=0),
-                dict(row=18, col=9, buf=_port_name, asic=0),
-                dict(row=18, col=10, buf=_low_qos_l, asic=0),
-                dict(row=18, col=11, buf=_med_qos_l, asic=0),
-                dict(row=18, col=12, buf=_high_qos_l, asic=0),
-            ),
-            18: (
-                dict(row=17, col=2, buf=_port_num, asic=0),
-                dict(row=17, col=3, buf=_port_did, asic=0),
-                dict(row=17, col=4, buf=_port_addr, asic=0),
-                dict(row=17, col=5, buf=_port_index, asic=0),
-                dict(row=17, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=17, col=7, buf=_fid, asic=0),
-                dict(row=17, col=8, buf=_attached_dev, asic=0),
-                dict(row=17, col=9, buf=_port_name, asic=0),
-                dict(row=17, col=10, buf=_low_qos_l, asic=0),
-                dict(row=17, col=11, buf=_med_qos_l, asic=0),
-                dict(row=17, col=12, buf=_high_qos_l, asic=0),
-            ),
-            19: (
-                dict(row=16, col=2, buf=_port_num, asic=0),
-                dict(row=16, col=3, buf=_port_did, asic=0),
-                dict(row=16, col=4, buf=_port_addr, asic=0),
-                dict(row=16, col=5, buf=_port_index, asic=0),
-                dict(row=16, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=16, col=7, buf=_fid, asic=0),
-                dict(row=16, col=8, buf=_attached_dev, asic=0),
-                dict(row=16, col=9, buf=_port_name, asic=0),
-                dict(row=16, col=10, buf=_low_qos_l, asic=0),
-                dict(row=16, col=11, buf=_med_qos_l, asic=0),
-                dict(row=16, col=12, buf=_high_qos_l, asic=0),
-            ),
-            20: (
-                dict(row=15, col=2, buf=_port_num, asic=0),
-                dict(row=15, col=3, buf=_port_did, asic=0),
-                dict(row=15, col=4, buf=_port_addr, asic=0),
-                dict(row=15, col=5, buf=_port_index, asic=0),
-                dict(row=15, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=15, col=7, buf=_fid, asic=0),
-                dict(row=15, col=8, buf=_attached_dev, asic=0),
-                dict(row=15, col=9, buf=_port_name, asic=0),
-                dict(row=15, col=10, buf=_low_qos_l, asic=0),
-                dict(row=15, col=11, buf=_med_qos_l, asic=0),
-                dict(row=15, col=12, buf=_high_qos_l, asic=0),
-            ),
-            21: (
-                dict(row=14, col=2, buf=_port_num, asic=0),
-                dict(row=14, col=3, buf=_port_did, asic=0),
-                dict(row=14, col=4, buf=_port_addr, asic=0),
-                dict(row=14, col=5, buf=_port_index, asic=0),
-                dict(row=14, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=14, col=7, buf=_fid, asic=0),
-                dict(row=14, col=8, buf=_attached_dev, asic=0),
-                dict(row=14, col=9, buf=_port_name, asic=0),
-                dict(row=14, col=10, buf=_low_qos_l, asic=0),
-                dict(row=14, col=11, buf=_med_qos_l, asic=0),
-                dict(row=14, col=12, buf=_high_qos_l, asic=0),
-            ),
-            22: (
-                dict(row=13, col=2, buf=_port_num, asic=0),
-                dict(row=13, col=3, buf=_port_did, asic=0),
-                dict(row=13, col=4, buf=_port_addr, asic=0),
-                dict(row=13, col=5, buf=_port_index, asic=0),
-                dict(row=13, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=13, col=7, buf=_fid, asic=0),
-                dict(row=13, col=8, buf=_attached_dev, asic=0),
-                dict(row=13, col=9, buf=_port_name, asic=0),
-                dict(row=13, col=10, buf=_low_qos_l, asic=0),
-                dict(row=13, col=11, buf=_med_qos_l, asic=0),
-                dict(row=13, col=12, buf=_high_qos_l, asic=0),
-            ),
-            23: (
-                dict(row=12, col=2, buf=_port_num, asic=0),
-                dict(row=12, col=3, buf=_port_did, asic=0),
-                dict(row=12, col=4, buf=_port_addr, asic=0),
-                dict(row=12, col=5, buf=_port_index, asic=0),
-                dict(row=12, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=12, col=7, buf=_fid, asic=0),
-                dict(row=12, col=8, buf=_attached_dev, asic=0),
-                dict(row=12, col=9, buf=_port_name, asic=0),
-                dict(row=12, col=10, buf=_low_qos_l, asic=0),
-                dict(row=12, col=11, buf=_med_qos_l, asic=0),
-                dict(row=12, col=12, buf=_high_qos_l, asic=0),
-            ),
-            24: (
-                dict(row=11, col=2, buf=_port_num, asic=0),
-                dict(row=11, col=3, buf=_port_did, asic=0),
-                dict(row=11, col=4, buf=_port_addr, asic=0),
-                dict(row=11, col=5, buf=_port_index, asic=0),
-                dict(row=11, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=11, col=7, buf=_fid, asic=0),
-                dict(row=11, col=8, buf=_attached_dev, asic=0),
-                dict(row=11, col=9, buf=_port_name, asic=0),
-                dict(row=11, col=10, buf=_low_qos_l, asic=0),
-                dict(row=11, col=11, buf=_med_qos_l, asic=0),
-                dict(row=11, col=12, buf=_high_qos_l, asic=0),
-            ),
-            25: (
-                dict(row=10, col=2, buf=_port_num, asic=0),
-                dict(row=10, col=3, buf=_port_did, asic=0),
-                dict(row=10, col=4, buf=_port_addr, asic=0),
-                dict(row=10, col=5, buf=_port_index, asic=0),
-                dict(row=10, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=10, col=7, buf=_fid, asic=0),
-                dict(row=10, col=8, buf=_attached_dev, asic=0),
-                dict(row=10, col=9, buf=_port_name, asic=0),
-                dict(row=10, col=10, buf=_low_qos_l, asic=0),
-                dict(row=10, col=11, buf=_med_qos_l, asic=0),
-                dict(row=10, col=12, buf=_high_qos_l, asic=0),
-            ),
-            26: (
-                dict(row=9, col=2, buf=_port_num, asic=0),
-                dict(row=9, col=3, buf=_port_did, asic=0),
-                dict(row=9, col=4, buf=_port_addr, asic=0),
-                dict(row=9, col=5, buf=_port_index, asic=0),
-                dict(row=9, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=9, col=7, buf=_fid, asic=0),
-                dict(row=9, col=8, buf=_attached_dev, asic=0),
-                dict(row=9, col=9, buf=_port_name, asic=0),
-                dict(row=9, col=10, buf=_low_qos_l, asic=0),
-                dict(row=9, col=11, buf=_med_qos_l, asic=0),
-                dict(row=9, col=12, buf=_high_qos_l, asic=0),
-            ),
-            27: (
-                dict(row=8, col=2, buf=_port_num, asic=0),
-                dict(row=8, col=3, buf=_port_did, asic=0),
-                dict(row=8, col=4, buf=_port_addr, asic=0),
-                dict(row=8, col=5, buf=_port_index, asic=0),
-                dict(row=8, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=8, col=7, buf=_fid, asic=0),
-                dict(row=8, col=8, buf=_attached_dev, asic=0),
-                dict(row=8, col=9, buf=_port_name, asic=0),
-                dict(row=8, col=10, buf=_low_qos_l, asic=0),
-                dict(row=8, col=11, buf=_med_qos_l, asic=0),
-                dict(row=8, col=12, buf=_high_qos_l, asic=0),
-            ),
-            28: (
-                dict(row=7, col=2, buf=_port_num, asic=0),
-                dict(row=7, col=3, buf=_port_did, asic=0),
-                dict(row=7, col=4, buf=_port_addr, asic=0),
-                dict(row=7, col=5, buf=_port_index, asic=0),
-                dict(row=7, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=7, col=7, buf=_fid, asic=0),
-                dict(row=7, col=8, buf=_attached_dev, asic=0),
-                dict(row=7, col=9, buf=_port_name, asic=0),
-                dict(row=7, col=10, buf=_low_qos_l, asic=0),
-                dict(row=7, col=11, buf=_med_qos_l, asic=0),
-                dict(row=7, col=12, buf=_high_qos_l, asic=0),
-            ),
-            29: (
-                dict(row=6, col=2, buf=_port_num, asic=0),
-                dict(row=6, col=3, buf=_port_did, asic=0),
-                dict(row=6, col=4, buf=_port_addr, asic=0),
-                dict(row=6, col=5, buf=_port_index, asic=0),
-                dict(row=6, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=6, col=7, buf=_fid, asic=0),
-                dict(row=6, col=8, buf=_attached_dev, asic=0),
-                dict(row=6, col=9, buf=_port_name, asic=0),
-                dict(row=6, col=10, buf=_low_qos_l, asic=0),
-                dict(row=6, col=11, buf=_med_qos_l, asic=0),
-                dict(row=6, col=12, buf=_high_qos_l, asic=0),
-            ),
-            30: (
-                dict(row=5, col=2, buf=_port_num, asic=0),
-                dict(row=5, col=3, buf=_port_did, asic=0),
-                dict(row=5, col=4, buf=_port_addr, asic=0),
-                dict(row=5, col=5, buf=_port_index, asic=0),
-                dict(row=5, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=5, col=7, buf=_fid, asic=0),
-                dict(row=5, col=8, buf=_attached_dev, asic=0),
-                dict(row=5, col=9, buf=_port_name, asic=0),
-                dict(row=5, col=10, buf=_low_qos_l, asic=0),
-                dict(row=5, col=11, buf=_med_qos_l, asic=0),
-                dict(row=5, col=12, buf=_high_qos_l, asic=0),
-            ),
-            31: (
-                dict(row=4, col=2, buf=_port_num, asic=0),
-                dict(row=4, col=3, buf=_port_did, asic=0),
-                dict(row=4, col=4, buf=_port_addr, asic=0),
-                dict(row=4, col=5, buf=_port_index, asic=0),
-                dict(row=4, col=6, buf=_port_link_addr_l, asic=0),
-                dict(row=4, col=7, buf=_fid, asic=0),
-                dict(row=4, col=8, buf=_attached_dev, asic=0),
-                dict(row=4, col=9, buf=_port_name, asic=0),
-                dict(row=4, col=10, buf=_low_qos_l, asic=0),
-                dict(row=4, col=11, buf=_med_qos_l, asic=0),
-                dict(row=4, col=12, buf=_high_qos_l, asic=0),
-            ),
-            32: (
-                dict(row=35, col=14, buf=_port_num, asic=1),
-                dict(row=35, col=15, buf=_port_did, asic=1),
-                dict(row=35, col=16, buf=_port_addr, asic=1),
-                dict(row=35, col=17, buf=_port_index, asic=1),
-                dict(row=35, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=35, col=19, buf=_fid, asic=1),
-                dict(row=35, col=20, buf=_attached_dev, asic=1),
-                dict(row=35, col=21, buf=_port_name, asic=1),
-                dict(row=35, col=22, buf=_low_qos_r, asic=1),
-                dict(row=35, col=23, buf=_med_qos_r, asic=1),
-                dict(row=35, col=24, buf=_high_qos_r, asic=1),
-            ),
-            33: (
-                dict(row=34, col=14, buf=_port_num, asic=1),
-                dict(row=34, col=15, buf=_port_did, asic=1),
-                dict(row=34, col=16, buf=_port_addr, asic=1),
-                dict(row=34, col=17, buf=_port_index, asic=1),
-                dict(row=34, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=34, col=19, buf=_fid, asic=1),
-                dict(row=34, col=20, buf=_attached_dev, asic=1),
-                dict(row=34, col=21, buf=_port_name, asic=1),
-                dict(row=34, col=22, buf=_low_qos_r, asic=1),
-                dict(row=34, col=23, buf=_med_qos_r, asic=1),
-                dict(row=34, col=24, buf=_high_qos_r, asic=1),
-            ),
-            34: (
-                dict(row=33, col=14, buf=_port_num, asic=1),
-                dict(row=33, col=15, buf=_port_did, asic=1),
-                dict(row=33, col=16, buf=_port_addr, asic=1),
-                dict(row=33, col=17, buf=_port_index, asic=1),
-                dict(row=33, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=33, col=19, buf=_fid, asic=1),
-                dict(row=33, col=20, buf=_attached_dev, asic=1),
-                dict(row=33, col=21, buf=_port_name, asic=1),
-                dict(row=33, col=22, buf=_low_qos_r, asic=1),
-                dict(row=33, col=23, buf=_med_qos_r, asic=1),
-                dict(row=33, col=24, buf=_high_qos_r, asic=1),
-            ),
-            35: (
-                dict(row=32, col=14, buf=_port_num, asic=1),
-                dict(row=32, col=15, buf=_port_did, asic=1),
-                dict(row=32, col=16, buf=_port_addr, asic=1),
-                dict(row=32, col=17, buf=_port_index, asic=1),
-                dict(row=32, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=32, col=19, buf=_fid, asic=1),
-                dict(row=32, col=20, buf=_attached_dev, asic=1),
-                dict(row=32, col=21, buf=_port_name, asic=1),
-                dict(row=32, col=22, buf=_low_qos_r, asic=1),
-                dict(row=32, col=23, buf=_med_qos_r, asic=1),
-                dict(row=32, col=24, buf=_high_qos_r, asic=1),
-            ),
-            36: (
-                dict(row=31, col=14, buf=_port_num, asic=1),
-                dict(row=31, col=15, buf=_port_did, asic=1),
-                dict(row=31, col=16, buf=_port_addr, asic=1),
-                dict(row=31, col=17, buf=_port_index, asic=1),
-                dict(row=31, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=31, col=19, buf=_fid, asic=1),
-                dict(row=31, col=20, buf=_attached_dev, asic=1),
-                dict(row=31, col=21, buf=_port_name, asic=1),
-                dict(row=31, col=22, buf=_low_qos_r, asic=1),
-                dict(row=31, col=23, buf=_med_qos_r, asic=1),
-                dict(row=31, col=24, buf=_high_qos_r, asic=1),
-            ),
-            37: (
-                dict(row=30, col=14, buf=_port_num, asic=1),
-                dict(row=30, col=15, buf=_port_did, asic=1),
-                dict(row=30, col=16, buf=_port_addr, asic=1),
-                dict(row=30, col=17, buf=_port_index, asic=1),
-                dict(row=30, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=30, col=19, buf=_fid, asic=1),
-                dict(row=30, col=20, buf=_attached_dev, asic=1),
-                dict(row=30, col=21, buf=_port_name, asic=1),
-                dict(row=30, col=22, buf=_low_qos_r, asic=1),
-                dict(row=30, col=23, buf=_med_qos_r, asic=1),
-                dict(row=30, col=24, buf=_high_qos_r, asic=1),
-            ),
-            38: (
-                dict(row=29, col=14, buf=_port_num, asic=1),
-                dict(row=29, col=15, buf=_port_did, asic=1),
-                dict(row=29, col=16, buf=_port_addr, asic=1),
-                dict(row=29, col=17, buf=_port_index, asic=1),
-                dict(row=29, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=29, col=19, buf=_fid, asic=1),
-                dict(row=29, col=20, buf=_attached_dev, asic=1),
-                dict(row=29, col=21, buf=_port_name, asic=1),
-                dict(row=29, col=22, buf=_low_qos_r, asic=1),
-                dict(row=29, col=23, buf=_med_qos_r, asic=1),
-                dict(row=29, col=24, buf=_high_qos_r, asic=1),
-            ),
-            39: (
-                dict(row=28, col=14, buf=_port_num, asic=1),
-                dict(row=28, col=15, buf=_port_did, asic=1),
-                dict(row=28, col=16, buf=_port_addr, asic=1),
-                dict(row=28, col=17, buf=_port_index, asic=1),
-                dict(row=28, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=28, col=19, buf=_fid, asic=1),
-                dict(row=28, col=20, buf=_attached_dev, asic=1),
-                dict(row=28, col=21, buf=_port_name, asic=1),
-                dict(row=28, col=22, buf=_low_qos_r, asic=1),
-                dict(row=28, col=23, buf=_med_qos_r, asic=1),
-                dict(row=28, col=24, buf=_high_qos_r, asic=1),
-            ),
-            40: (
-                dict(row=27, col=14, buf=_port_num, asic=1),
-                dict(row=27, col=15, buf=_port_did, asic=1),
-                dict(row=27, col=16, buf=_port_addr, asic=1),
-                dict(row=27, col=17, buf=_port_index, asic=1),
-                dict(row=27, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=27, col=19, buf=_fid, asic=1),
-                dict(row=27, col=20, buf=_attached_dev, asic=1),
-                dict(row=27, col=21, buf=_port_name, asic=1),
-                dict(row=27, col=22, buf=_low_qos_r, asic=1),
-                dict(row=27, col=23, buf=_med_qos_r, asic=1),
-                dict(row=27, col=24, buf=_high_qos_r, asic=1),
-            ),
-            41: (
-                dict(row=26, col=14, buf=_port_num, asic=1),
-                dict(row=26, col=15, buf=_port_did, asic=1),
-                dict(row=26, col=16, buf=_port_addr, asic=1),
-                dict(row=26, col=17, buf=_port_index, asic=1),
-                dict(row=26, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=26, col=19, buf=_fid, asic=1),
-                dict(row=26, col=20, buf=_attached_dev, asic=1),
-                dict(row=26, col=21, buf=_port_name, asic=1),
-                dict(row=26, col=22, buf=_low_qos_r, asic=1),
-                dict(row=26, col=23, buf=_med_qos_r, asic=1),
-                dict(row=26, col=24, buf=_high_qos_r, asic=1),
-            ),
-            42: (
-                dict(row=25, col=14, buf=_port_num, asic=1),
-                dict(row=25, col=15, buf=_port_did, asic=1),
-                dict(row=25, col=16, buf=_port_addr, asic=1),
-                dict(row=25, col=17, buf=_port_index, asic=1),
-                dict(row=25, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=25, col=19, buf=_fid, asic=1),
-                dict(row=25, col=20, buf=_attached_dev, asic=1),
-                dict(row=25, col=21, buf=_port_name, asic=1),
-                dict(row=25, col=22, buf=_low_qos_r, asic=1),
-                dict(row=25, col=23, buf=_med_qos_r, asic=1),
-                dict(row=25, col=24, buf=_high_qos_r, asic=1),
-            ),
-            43: (
-                dict(row=24, col=14, buf=_port_num, asic=1),
-                dict(row=24, col=15, buf=_port_did, asic=1),
-                dict(row=24, col=16, buf=_port_addr, asic=1),
-                dict(row=24, col=17, buf=_port_index, asic=1),
-                dict(row=24, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=24, col=19, buf=_fid, asic=1),
-                dict(row=24, col=20, buf=_attached_dev, asic=1),
-                dict(row=24, col=21, buf=_port_name, asic=1),
-                dict(row=24, col=22, buf=_low_qos_r, asic=1),
-                dict(row=24, col=23, buf=_med_qos_r, asic=1),
-                dict(row=24, col=24, buf=_high_qos_r, asic=1),
-            ),
-            44: (
-                dict(row=23, col=14, buf=_port_num, asic=1),
-                dict(row=23, col=15, buf=_port_did, asic=1),
-                dict(row=23, col=16, buf=_port_addr, asic=1),
-                dict(row=23, col=17, buf=_port_index, asic=1),
-                dict(row=23, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=23, col=19, buf=_fid, asic=1),
-                dict(row=23, col=20, buf=_attached_dev, asic=1),
-                dict(row=23, col=21, buf=_port_name, asic=1),
-                dict(row=23, col=22, buf=_low_qos_r, asic=1),
-                dict(row=23, col=23, buf=_med_qos_r, asic=1),
-                dict(row=23, col=24, buf=_high_qos_r, asic=1),
-            ),
-            45: (
-                dict(row=22, col=14, buf=_port_num, asic=1),
-                dict(row=22, col=15, buf=_port_did, asic=1),
-                dict(row=22, col=16, buf=_port_addr, asic=1),
-                dict(row=22, col=17, buf=_port_index, asic=1),
-                dict(row=22, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=22, col=19, buf=_fid, asic=1),
-                dict(row=22, col=20, buf=_attached_dev, asic=1),
-                dict(row=22, col=21, buf=_port_name, asic=1),
-                dict(row=22, col=22, buf=_low_qos_r, asic=1),
-                dict(row=22, col=23, buf=_med_qos_r, asic=1),
-                dict(row=22, col=24, buf=_high_qos_r, asic=1),
-            ),
-            46: (
-                dict(row=21, col=14, buf=_port_num, asic=1),
-                dict(row=21, col=15, buf=_port_did, asic=1),
-                dict(row=21, col=16, buf=_port_addr, asic=1),
-                dict(row=21, col=17, buf=_port_index, asic=1),
-                dict(row=21, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=21, col=19, buf=_fid, asic=1),
-                dict(row=21, col=20, buf=_attached_dev, asic=1),
-                dict(row=21, col=21, buf=_port_name, asic=1),
-                dict(row=21, col=22, buf=_low_qos_r, asic=1),
-                dict(row=21, col=23, buf=_med_qos_r, asic=1),
-                dict(row=21, col=24, buf=_high_qos_r, asic=1),
-            ),
-            47: (
-                dict(row=20, col=14, buf=_port_num, asic=1),
-                dict(row=20, col=15, buf=_port_did, asic=1),
-                dict(row=20, col=16, buf=_port_addr, asic=1),
-                dict(row=20, col=17, buf=_port_index, asic=1),
-                dict(row=20, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=20, col=19, buf=_fid, asic=1),
-                dict(row=20, col=20, buf=_attached_dev, asic=1),
-                dict(row=20, col=21, buf=_port_name, asic=1),
-                dict(row=20, col=22, buf=_low_qos_r, asic=1),
-                dict(row=20, col=23, buf=_med_qos_r, asic=1),
-                dict(row=20, col=24, buf=_high_qos_r, asic=1),
-            ),
-            48: (
-                dict(row=19, col=14, buf=_port_num, asic=1),
-                dict(row=19, col=15, buf=_port_did, asic=1),
-                dict(row=19, col=16, buf=_port_addr, asic=1),
-                dict(row=19, col=17, buf=_port_index, asic=1),
-                dict(row=19, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=19, col=19, buf=_fid, asic=1),
-                dict(row=19, col=20, buf=_attached_dev, asic=1),
-                dict(row=19, col=21, buf=_port_name, asic=1),
-                dict(row=19, col=22, buf=_low_qos_r, asic=1),
-                dict(row=19, col=23, buf=_med_qos_r, asic=1),
-                dict(row=19, col=24, buf=_high_qos_r, asic=1),
-            ),
-            49: (
-                dict(row=18, col=14, buf=_port_num, asic=1),
-                dict(row=18, col=15, buf=_port_did, asic=1),
-                dict(row=18, col=16, buf=_port_addr, asic=1),
-                dict(row=18, col=17, buf=_port_index, asic=1),
-                dict(row=18, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=18, col=19, buf=_fid, asic=1),
-                dict(row=18, col=20, buf=_attached_dev, asic=1),
-                dict(row=18, col=21, buf=_port_name, asic=1),
-                dict(row=18, col=22, buf=_low_qos_r, asic=1),
-                dict(row=18, col=23, buf=_med_qos_r, asic=1),
-                dict(row=18, col=24, buf=_high_qos_r, asic=1),
-            ),
-            50: (
-                dict(row=17, col=14, buf=_port_num, asic=1),
-                dict(row=17, col=15, buf=_port_did, asic=1),
-                dict(row=17, col=16, buf=_port_addr, asic=1),
-                dict(row=17, col=17, buf=_port_index, asic=1),
-                dict(row=17, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=17, col=19, buf=_fid, asic=1),
-                dict(row=17, col=20, buf=_attached_dev, asic=1),
-                dict(row=17, col=21, buf=_port_name, asic=1),
-                dict(row=17, col=22, buf=_low_qos_r, asic=1),
-                dict(row=17, col=23, buf=_med_qos_r, asic=1),
-                dict(row=17, col=24, buf=_high_qos_r, asic=1),
-            ),
-            51: (
-                dict(row=16, col=14, buf=_port_num, asic=1),
-                dict(row=16, col=15, buf=_port_did, asic=1),
-                dict(row=16, col=16, buf=_port_addr, asic=1),
-                dict(row=16, col=17, buf=_port_index, asic=1),
-                dict(row=16, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=16, col=19, buf=_fid, asic=1),
-                dict(row=16, col=20, buf=_attached_dev, asic=1),
-                dict(row=16, col=21, buf=_port_name, asic=1),
-                dict(row=16, col=22, buf=_low_qos_r, asic=1),
-                dict(row=16, col=23, buf=_med_qos_r, asic=1),
-                dict(row=16, col=24, buf=_high_qos_r, asic=1),
-            ),
-            52: (
-                dict(row=15, col=14, buf=_port_num, asic=1),
-                dict(row=15, col=15, buf=_port_did, asic=1),
-                dict(row=15, col=16, buf=_port_addr, asic=1),
-                dict(row=15, col=17, buf=_port_index, asic=1),
-                dict(row=15, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=15, col=19, buf=_fid, asic=1),
-                dict(row=15, col=20, buf=_attached_dev, asic=1),
-                dict(row=15, col=21, buf=_port_name, asic=1),
-                dict(row=15, col=22, buf=_low_qos_r, asic=1),
-                dict(row=15, col=23, buf=_med_qos_r, asic=1),
-                dict(row=15, col=24, buf=_high_qos_r, asic=1),
-            ),
-            53: (
-                dict(row=14, col=14, buf=_port_num, asic=1),
-                dict(row=14, col=15, buf=_port_did, asic=1),
-                dict(row=14, col=16, buf=_port_addr, asic=1),
-                dict(row=14, col=17, buf=_port_index, asic=1),
-                dict(row=14, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=14, col=19, buf=_fid, asic=1),
-                dict(row=14, col=20, buf=_attached_dev, asic=1),
-                dict(row=14, col=21, buf=_port_name, asic=1),
-                dict(row=14, col=22, buf=_low_qos_r, asic=1),
-                dict(row=14, col=23, buf=_med_qos_r, asic=1),
-                dict(row=14, col=24, buf=_high_qos_r, asic=1),
-            ),
-            54: (
-                dict(row=13, col=14, buf=_port_num, asic=1),
-                dict(row=13, col=15, buf=_port_did, asic=1),
-                dict(row=13, col=16, buf=_port_addr, asic=1),
-                dict(row=13, col=17, buf=_port_index, asic=1),
-                dict(row=13, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=13, col=19, buf=_fid, asic=1),
-                dict(row=13, col=20, buf=_attached_dev, asic=1),
-                dict(row=13, col=21, buf=_port_name, asic=1),
-                dict(row=13, col=22, buf=_low_qos_r, asic=1),
-                dict(row=13, col=23, buf=_med_qos_r, asic=1),
-                dict(row=13, col=24, buf=_high_qos_r, asic=1),
-            ),
-            55: (
-                dict(row=12, col=14, buf=_port_num, asic=1),
-                dict(row=12, col=15, buf=_port_did, asic=1),
-                dict(row=12, col=16, buf=_port_addr, asic=1),
-                dict(row=12, col=17, buf=_port_index, asic=1),
-                dict(row=12, col=18, buf=_port_link_addr_r, asic=1),
-                dict(row=12, col=19, buf=_fid, asic=1),
-                dict(row=12, col=20, buf=_attached_dev, asic=1),
-                dict(row=12, col=21, buf=_port_name, asic=1),
-                dict(row=12, col=22, buf=_low_qos_r, asic=1),
-                dict(row=12, col=23, buf=_med_qos_r, asic=1),
-                dict(row=12, col=24, buf=_high_qos_r, asic=1),
-            ),
-            56: (
-                dict(row=11, col=14, buf=_port_num, asic=1),
-                dict(row=11, col=15, buf=_port_did, asic=1),
-                dict(row=11, col=16, buf=_port_addr, asic=1),
-                dict(row=11, col=17, buf=_port_index, asic=1),
-                dict(row=11, col=18, buf=_port_link_addr_l, asic=1),
-                dict(row=11, col=19, buf=_fid, asic=1),
-                dict(row=11, col=20, buf=_attached_dev, asic=1),
-                dict(row=11, col=21, buf=_port_name, asic=1),
-                dict(row=11, col=10, buf=_low_qos_l, asic=1),
-                dict(row=11, col=11, buf=_med_qos_l, asic=1),
-                dict(row=11, col=12, buf=_high_qos_l, asic=1),
-            ),
-            57: (
-                dict(row=10, col=14, buf=_port_num, asic=1),
-                dict(row=10, col=15, buf=_port_did, asic=1),
-                dict(row=10, col=16, buf=_port_addr, asic=1),
-                dict(row=10, col=17, buf=_port_index, asic=1),
-                dict(row=10, col=18, buf=_port_link_addr_l, asic=1),
-                dict(row=10, col=19, buf=_fid, asic=1),
-                dict(row=10, col=20, buf=_attached_dev, asic=1),
-                dict(row=10, col=21, buf=_port_name, asic=1),
-                dict(row=10, col=10, buf=_low_qos_l, asic=1),
-                dict(row=10, col=11, buf=_med_qos_l, asic=1),
-                dict(row=10, col=12, buf=_high_qos_l, asic=1),
-            ),
-            58: (
-                dict(row=9, col=14, buf=_port_num, asic=1),
-                dict(row=9, col=15, buf=_port_did, asic=1),
-                dict(row=9, col=16, buf=_port_addr, asic=1),
-                dict(row=9, col=17, buf=_port_index, asic=1),
-                dict(row=9, col=18, buf=_port_link_addr_l, asic=1),
-                dict(row=9, col=19, buf=_fid, asic=1),
-                dict(row=9, col=20, buf=_attached_dev, asic=1),
-                dict(row=9, col=21, buf=_port_name, asic=1),
-                dict(row=9, col=10, buf=_low_qos_l, asic=1),
-                dict(row=9, col=11, buf=_med_qos_l, asic=1),
-                dict(row=9, col=12, buf=_high_qos_l, asic=1),
-            ),
-            59: (
-                dict(row=8, col=14, buf=_port_num, asic=1),
-                dict(row=8, col=15, buf=_port_did, asic=1),
-                dict(row=8, col=16, buf=_port_addr, asic=1),
-                dict(row=8, col=17, buf=_port_index, asic=1),
-                dict(row=8, col=18, buf=_port_link_addr_l, asic=1),
-                dict(row=8, col=19, buf=_fid, asic=1),
-                dict(row=8, col=20, buf=_attached_dev, asic=1),
-                dict(row=8, col=21, buf=_port_name, asic=1),
-                dict(row=8, col=10, buf=_low_qos_l, asic=1),
-                dict(row=8, col=11, buf=_med_qos_l, asic=1),
-                dict(row=8, col=12, buf=_high_qos_l, asic=1),
-            ),
-            60: (
-                dict(row=7, col=14, buf=_port_num, asic=1),
-                dict(row=7, col=15, buf=_port_did, asic=1),
-                dict(row=7, col=16, buf=_port_addr, asic=1),
-                dict(row=7, col=17, buf=_port_index, asic=1),
-                dict(row=7, col=18, buf=_port_link_addr_l, asic=1),
-                dict(row=7, col=19, buf=_fid, asic=1),
-                dict(row=7, col=20, buf=_attached_dev, asic=1),
-                dict(row=7, col=21, buf=_port_name, asic=1),
-                dict(row=7, col=10, buf=_low_qos_l, asic=1),
-                dict(row=7, col=11, buf=_med_qos_l, asic=1),
-                dict(row=7, col=12, buf=_high_qos_l, asic=1),
-            ),
-            61: (
-                dict(row=6, col=14, buf=_port_num, asic=1),
-                dict(row=6, col=15, buf=_port_did, asic=1),
-                dict(row=6, col=16, buf=_port_addr, asic=1),
-                dict(row=6, col=17, buf=_port_index, asic=1),
-                dict(row=6, col=18, buf=_port_link_addr_l, asic=1),
-                dict(row=6, col=19, buf=_fid, asic=1),
-                dict(row=6, col=20, buf=_attached_dev, asic=1),
-                dict(row=6, col=21, buf=_port_name, asic=1),
-                dict(row=6, col=10, buf=_low_qos_l, asic=1),
-                dict(row=6, col=11, buf=_med_qos_l, asic=1),
-                dict(row=6, col=12, buf=_high_qos_l, asic=1),
-            ),
-            62: (
-                dict(row=5, col=14, buf=_port_num, asic=1),
-                dict(row=5, col=15, buf=_port_did, asic=1),
-                dict(row=5, col=16, buf=_port_addr, asic=1),
-                dict(row=5, col=17, buf=_port_index, asic=1),
-                dict(row=5, col=18, buf=_port_link_addr_l, asic=1),
-                dict(row=5, col=19, buf=_fid, asic=1),
-                dict(row=5, col=20, buf=_attached_dev, asic=1),
-                dict(row=5, col=21, buf=_port_name, asic=1),
-                dict(row=5, col=10, buf=_low_qos_l, asic=1),
-                dict(row=5, col=11, buf=_med_qos_l, asic=1),
-                dict(row=5, col=12, buf=_high_qos_l, asic=1),
-            ),
-            63: (
-                dict(row=4, col=14, buf=_port_num, asic=1),
-                dict(row=4, col=15, buf=_port_did, asic=1),
-                dict(row=4, col=16, buf=_port_addr, asic=1),
-                dict(row=4, col=5, buf=_port_index, asic=1),
-                dict(row=4, col=18, buf=_port_link_addr_l, asic=1),
-                dict(row=4, col=19, buf=_fid, asic=1),
-                dict(row=4, col=20, buf=_attached_dev, asic=1),
-                dict(row=4, col=21, buf=_port_name, asic=1),
-                dict(row=4, col=10, buf=_low_qos_l, asic=1),
-                dict(row=4, col=11, buf=_med_qos_l, asic=1),
-                dict(row=4, col=12, buf=_high_qos_l, asic=1),
-            ),
-        }
+        port=dict()
+    ),
+    core_4=dict(
+        hdr=(
+            dict(col=3),
+            dict(col=5, buf='Port', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=6, buf='Index', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='FID', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='CLI', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=27, buf='ICL Description', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=27, buf='Port Name', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=2),
+            dict(col=5, buf='Port', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=6, buf='Index', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='FID', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='CLI', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=27, buf='ICL Description', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=27, buf='Port Name', font=_std_font, align=_align_wrap_c, border=_border_thin),
+        ),
+        port=dict()
     ),
     core_8=dict(
         hdr=(
@@ -1744,467 +320,257 @@ _slot_sheet_d = dict(
             dict(col=5, buf='Port', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=6, buf='Index', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=4, buf='FID', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='CLI', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=27, buf='ICL Description', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=27, buf='Port Name', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=2),
-            dict(col=17, buf='Port', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=5, buf='Port', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=6, buf='Index', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=4, buf='FID', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='CLI', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=27, buf='ICL Description', font=_std_font, align=_align_wrap_c, border=_border_thin),
             dict(col=27, buf='Port Name', font=_std_font, align=_align_wrap_c, border=_border_thin),
         ),
-        port={
-            0: (
-                dict(row=35, col=2, buf=_port_num, asic=0),
-                dict(row=35, col=3, buf=_port_index, asic=0),
-                dict(row=35, col=4, buf=_fid, asic=0),
-                dict(row=35, col=5, buf=_attached_dev, asic=0),
-                dict(row=35, col=6, buf=_port_name, asic=0),
-            ),
-            1: (
-                dict(row=34, col=2, buf=_port_num, asic=0),
-                dict(row=34, col=3, buf=_port_index, asic=0),
-                dict(row=34, col=4, buf=_fid, asic=0),
-                dict(row=34, col=5, buf=_attached_dev, asic=0),
-                dict(row=34, col=6, buf=_port_name, asic=0),
-            ),
-            2: (
-                dict(row=33, col=2, buf=_port_num, asic=0),
-                dict(row=33, col=3, buf=_port_index, asic=0),
-                dict(row=33, col=4, buf=_fid, asic=0),
-                dict(row=33, col=5, buf=_attached_dev, asic=0),
-                dict(row=33, col=6, buf=_port_name, asic=0),
-            ),
-            3: (
-                dict(row=32, col=2, buf=_port_num, asic=0),
-                dict(row=32, col=3, buf=_port_index, asic=0),
-                dict(row=32, col=4, buf=_fid, asic=0),
-                dict(row=32, col=5, buf=_attached_dev, asic=0),
-                dict(row=32, col=6, buf=_port_name, asic=0),
-            ),
-            4: (
-                dict(row=31, col=2, buf=_port_num, asic=0),
-                dict(row=31, col=3, buf=_port_index, asic=0),
-                dict(row=31, col=4, buf=_fid, asic=0),
-                dict(row=31, col=5, buf=_attached_dev, asic=0),
-                dict(row=31, col=6, buf=_port_name, asic=0),
-            ),
-            5: (
-                dict(row=30, col=2, buf=_port_num, asic=0),
-                dict(row=30, col=3, buf=_port_index, asic=0),
-                dict(row=30, col=4, buf=_fid, asic=0),
-                dict(row=30, col=5, buf=_attached_dev, asic=0),
-                dict(row=30, col=6, buf=_port_name, asic=0),
-            ),
-            6: (
-                dict(row=29, col=2, buf=_port_num, asic=0),
-                dict(row=29, col=3, buf=_port_index, asic=0),
-                dict(row=29, col=4, buf=_fid, asic=0),
-                dict(row=29, col=5, buf=_attached_dev, asic=0),
-                dict(row=29, col=6, buf=_port_name, asic=0),
-            ),
-            7: (
-                dict(row=28, col=2, buf=_port_num, asic=0),
-                dict(row=28, col=3, buf=_port_index, asic=0),
-                dict(row=28, col=4, buf=_fid, asic=0),
-                dict(row=28, col=5, buf=_attached_dev, asic=0),
-                dict(row=28, col=6, buf=_port_name, asic=0),
-            ),
-            8: (
-                dict(row=27, col=2, buf=_port_num, asic=0),
-                dict(row=27, col=3, buf=_port_index, asic=0),
-                dict(row=27, col=4, buf=_fid, asic=0),
-                dict(row=27, col=5, buf=_attached_dev, asic=0),
-                dict(row=27, col=6, buf=_port_name, asic=0),
-            ),
-            9: (
-                dict(row=26, col=2, buf=_port_num, asic=0),
-                dict(row=26, col=3, buf=_port_index, asic=0),
-                dict(row=26, col=4, buf=_fid, asic=0),
-                dict(row=26, col=5, buf=_attached_dev, asic=0),
-                dict(row=26, col=6, buf=_port_name, asic=0),
-            ),
-            10: (
-                dict(row=25, col=2, buf=_port_num, asic=0),
-                dict(row=25, col=3, buf=_port_index, asic=0),
-                dict(row=25, col=4, buf=_fid, asic=0),
-                dict(row=25, col=5, buf=_attached_dev, asic=0),
-                dict(row=25, col=6, buf=_port_name, asic=0),
-            ),
-            11: (
-                dict(row=24, col=2, buf=_port_num, asic=0),
-                dict(row=24, col=3, buf=_port_index, asic=0),
-                dict(row=24, col=4, buf=_fid, asic=0),
-                dict(row=24, col=5, buf=_attached_dev, asic=0),
-                dict(row=24, col=6, buf=_port_name, asic=0),
-            ),
-            12: (
-                dict(row=23, col=2, buf=_port_num, asic=0),
-                dict(row=23, col=3, buf=_port_index, asic=0),
-                dict(row=23, col=4, buf=_fid, asic=0),
-                dict(row=23, col=5, buf=_attached_dev, asic=0),
-                dict(row=23, col=6, buf=_port_name, asic=0),
-            ),
-            13: (
-                dict(row=22, col=2, buf=_port_num, asic=0),
-                dict(row=22, col=3, buf=_port_index, asic=0),
-                dict(row=22, col=4, buf=_fid, asic=0),
-                dict(row=22, col=5, buf=_attached_dev, asic=0),
-                dict(row=22, col=6, buf=_port_name, asic=0),
-            ),
-            14: (
-                dict(row=21, col=2, buf=_port_num, asic=0),
-                dict(row=21, col=3, buf=_port_index, asic=0),
-                dict(row=21, col=4, buf=_fid, asic=0),
-                dict(row=21, col=5, buf=_attached_dev, asic=0),
-                dict(row=21, col=6, buf=_port_name, asic=0),
-            ),
-            15: (
-                dict(row=20, col=2, buf=_port_num, asic=0),
-                dict(row=20, col=3, buf=_port_index, asic=0),
-                dict(row=20, col=4, buf=_fid, asic=0),
-                dict(row=20, col=5, buf=_attached_dev, asic=0),
-                dict(row=20, col=6, buf=_port_name, asic=0),
-            ),
-            16: (
-                dict(row=19, col=2, buf=_port_num, asic=0),
-                dict(row=19, col=3, buf=_port_index, asic=0),
-                dict(row=19, col=4, buf=_fid, asic=0),
-                dict(row=19, col=5, buf=_attached_dev, asic=0),
-                dict(row=19, col=6, buf=_port_name, asic=0),
-            ),
-            17: (
-                dict(row=18, col=2, buf=_port_num, asic=0),
-                dict(row=18, col=3, buf=_port_index, asic=0),
-                dict(row=18, col=4, buf=_fid, asic=0),
-                dict(row=18, col=5, buf=_attached_dev, asic=0),
-                dict(row=18, col=6, buf=_port_name, asic=0),
-            ),
-            18: (
-                dict(row=17, col=2, buf=_port_num, asic=0),
-                dict(row=17, col=3, buf=_port_index, asic=0),
-                dict(row=17, col=4, buf=_fid, asic=0),
-                dict(row=17, col=5, buf=_attached_dev, asic=0),
-                dict(row=17, col=6, buf=_port_name, asic=0),
-            ),
-            19: (
-                dict(row=16, col=2, buf=_port_num, asic=0),
-                dict(row=16, col=3, buf=_port_index, asic=0),
-                dict(row=16, col=4, buf=_fid, asic=0),
-                dict(row=16, col=5, buf=_attached_dev, asic=0),
-                dict(row=16, col=6, buf=_port_name, asic=0),
-            ),
-            20: (
-                dict(row=15, col=2, buf=_port_num, asic=0),
-                dict(row=15, col=3, buf=_port_index, asic=0),
-                dict(row=15, col=4, buf=_fid, asic=0),
-                dict(row=15, col=5, buf=_attached_dev, asic=0),
-                dict(row=15, col=6, buf=_port_name, asic=0),
-            ),
-            21: (
-                dict(row=14, col=2, buf=_port_num, asic=0),
-                dict(row=14, col=3, buf=_port_index, asic=0),
-                dict(row=14, col=4, buf=_fid, asic=0),
-                dict(row=14, col=5, buf=_attached_dev, asic=0),
-                dict(row=14, col=6, buf=_port_name, asic=0),
-            ),
-            22: (
-                dict(row=13, col=2, buf=_port_num, asic=0),
-                dict(row=13, col=3, buf=_port_index, asic=0),
-                dict(row=13, col=4, buf=_fid, asic=0),
-                dict(row=13, col=5, buf=_attached_dev, asic=0),
-                dict(row=13, col=6, buf=_port_name, asic=0),
-            ),
-            23: (
-                dict(row=12, col=2, buf=_port_num, asic=0),
-                dict(row=12, col=3, buf=_port_index, asic=0),
-                dict(row=12, col=4, buf=_fid, asic=0),
-                dict(row=12, col=5, buf=_attached_dev, asic=0),
-                dict(row=12, col=6, buf=_port_name, asic=0),
-            ),
-            24: (
-                dict(row=11, col=2, buf=_port_num, asic=0),
-                dict(row=11, col=3, buf=_port_index, asic=0),
-                dict(row=11, col=4, buf=_fid, asic=0),
-                dict(row=11, col=5, buf=_attached_dev, asic=0),
-                dict(row=11, col=6, buf=_port_name, asic=0),
-            ),
-            25: (
-                dict(row=10, col=2, buf=_port_num, asic=0),
-                dict(row=10, col=3, buf=_port_index, asic=0),
-                dict(row=10, col=4, buf=_fid, asic=0),
-                dict(row=10, col=5, buf=_attached_dev, asic=0),
-                dict(row=10, col=6, buf=_port_name, asic=0),
-            ),
-            26: (
-                dict(row=9, col=2, buf=_port_num, asic=0),
-                dict(row=9, col=3, buf=_port_index, asic=0),
-                dict(row=9, col=4, buf=_fid, asic=0),
-                dict(row=9, col=5, buf=_attached_dev, asic=0),
-                dict(row=9, col=6, buf=_port_name, asic=0),
-            ),
-            27: (
-                dict(row=8, col=2, buf=_port_num, asic=0),
-                dict(row=8, col=3, buf=_port_index, asic=0),
-                dict(row=8, col=4, buf=_fid, asic=0),
-                dict(row=8, col=5, buf=_attached_dev, asic=0),
-                dict(row=8, col=6, buf=_port_name, asic=0),
-            ),
-            28: (
-                dict(row=7, col=2, buf=_port_num, asic=0),
-                dict(row=7, col=3, buf=_port_index, asic=0),
-                dict(row=7, col=4, buf=_fid, asic=0),
-                dict(row=7, col=5, buf=_attached_dev, asic=0),
-                dict(row=7, col=6, buf=_port_name, asic=0),
-            ),
-            29: (
-                dict(row=6, col=2, buf=_port_num, asic=0),
-                dict(row=6, col=3, buf=_port_index, asic=0),
-                dict(row=6, col=4, buf=_fid, asic=0),
-                dict(row=6, col=5, buf=_attached_dev, asic=0),
-                dict(row=6, col=6, buf=_port_name, asic=0),
-            ),
-            30: (
-                dict(row=5, col=2, buf=_port_num, asic=0),
-                dict(row=5, col=3, buf=_port_index, asic=0),
-                dict(row=5, col=4, buf=_fid, asic=0),
-                dict(row=5, col=5, buf=_attached_dev, asic=0),
-                dict(row=5, col=6, buf=_port_name, asic=0),
-            ),
-            31: (
-                dict(row=4, col=2, buf=_port_num, asic=0),
-                dict(row=4, col=3, buf=_port_index, asic=0),
-                dict(row=4, col=4, buf=_fid, asic=0),
-                dict(row=4, col=5, buf=_attached_dev, asic=0),
-                dict(row=4, col=6, buf=_port_name, asic=0),
-            ),
-            32: (
-                dict(row=35, col=8, buf=_port_num, asic=1),
-                dict(row=35, col=9, buf=_port_index, asic=1),
-                dict(row=35, col=10, buf=_fid, asic=1),
-                dict(row=35, col=11, buf=_attached_dev, asic=1),
-                dict(row=35, col=12, buf=_port_name, asic=1),
-            ),
-            33: (
-                dict(row=34, col=8, buf=_port_num, asic=1),
-                dict(row=34, col=9, buf=_port_index, asic=1),
-                dict(row=34, col=10, buf=_fid, asic=1),
-                dict(row=34, col=11, buf=_attached_dev, asic=1),
-                dict(row=34, col=12, buf=_port_name, asic=1),
-            ),
-            34: (
-                dict(row=33, col=8, buf=_port_num, asic=1),
-                dict(row=33, col=9, buf=_port_index, asic=1),
-                dict(row=33, col=10, buf=_fid, asic=1),
-                dict(row=33, col=11, buf=_attached_dev, asic=1),
-                dict(row=33, col=12, buf=_port_name, asic=1),
-            ),
-            35: (
-                dict(row=32, col=8, buf=_port_num, asic=1),
-                dict(row=32, col=9, buf=_port_index, asic=1),
-                dict(row=32, col=10, buf=_fid, asic=1),
-                dict(row=32, col=11, buf=_attached_dev, asic=1),
-                dict(row=32, col=12, buf=_port_name, asic=1),
-            ),
-            36: (
-                dict(row=31, col=8, buf=_port_num, asic=1),
-                dict(row=31, col=9, buf=_port_index, asic=1),
-                dict(row=31, col=10, buf=_fid, asic=1),
-                dict(row=31, col=11, buf=_attached_dev, asic=1),
-                dict(row=31, col=12, buf=_port_name, asic=1),
-            ),
-            37: (
-                dict(row=30, col=8, buf=_port_num, asic=1),
-                dict(row=30, col=9, buf=_port_index, asic=1),
-                dict(row=30, col=10, buf=_fid, asic=1),
-                dict(row=30, col=11, buf=_attached_dev, asic=1),
-                dict(row=30, col=12, buf=_port_name, asic=1),
-            ),
-            38: (
-                dict(row=29, col=8, buf=_port_num, asic=1),
-                dict(row=29, col=9, buf=_port_index, asic=1),
-                dict(row=29, col=10, buf=_fid, asic=1),
-                dict(row=29, col=11, buf=_attached_dev, asic=1),
-                dict(row=29, col=12, buf=_port_name, asic=1),
-            ),
-            39: (
-                dict(row=28, col=8, buf=_port_num, asic=1),
-                dict(row=28, col=9, buf=_port_index, asic=1),
-                dict(row=28, col=10, buf=_fid, asic=1),
-                dict(row=28, col=11, buf=_attached_dev, asic=1),
-                dict(row=28, col=12, buf=_port_name, asic=1),
-            ),
-            40: (
-                dict(row=27, col=8, buf=_port_num, asic=1),
-                dict(row=27, col=9, buf=_port_index, asic=1),
-                dict(row=27, col=10, buf=_fid, asic=1),
-                dict(row=27, col=11, buf=_attached_dev, asic=1),
-                dict(row=27, col=12, buf=_port_name, asic=1),
-            ),
-            41: (
-                dict(row=26, col=8, buf=_port_num, asic=1),
-                dict(row=26, col=9, buf=_port_index, asic=1),
-                dict(row=26, col=10, buf=_fid, asic=1),
-                dict(row=26, col=11, buf=_attached_dev, asic=1),
-                dict(row=26, col=12, buf=_port_name, asic=1),
-            ),
-            42: (
-                dict(row=25, col=8, buf=_port_num, asic=1),
-                dict(row=25, col=9, buf=_port_index, asic=1),
-                dict(row=25, col=10, buf=_fid, asic=1),
-                dict(row=25, col=11, buf=_attached_dev, asic=1),
-                dict(row=25, col=12, buf=_port_name, asic=1),
-            ),
-            43: (
-                dict(row=24, col=8, buf=_port_num, asic=1),
-                dict(row=24, col=9, buf=_port_index, asic=1),
-                dict(row=24, col=10, buf=_fid, asic=1),
-                dict(row=24, col=11, buf=_attached_dev, asic=1),
-                dict(row=24, col=12, buf=_port_name, asic=1),
-            ),
-            44: (
-                dict(row=23, col=8, buf=_port_num, asic=1),
-                dict(row=23, col=9, buf=_port_index, asic=1),
-                dict(row=23, col=10, buf=_fid, asic=1),
-                dict(row=23, col=11, buf=_attached_dev, asic=1),
-                dict(row=23, col=12, buf=_port_name, asic=1),
-            ),
-            45: (
-                dict(row=22, col=8, buf=_port_num, asic=1),
-                dict(row=22, col=9, buf=_port_index, asic=1),
-                dict(row=22, col=10, buf=_fid, asic=1),
-                dict(row=22, col=11, buf=_attached_dev, asic=1),
-                dict(row=22, col=12, buf=_port_name, asic=1),
-            ),
-            46: (
-                dict(row=21, col=8, buf=_port_num, asic=1),
-                dict(row=21, col=9, buf=_port_index, asic=1),
-                dict(row=21, col=10, buf=_fid, asic=1),
-                dict(row=21, col=11, buf=_attached_dev, asic=1),
-                dict(row=21, col=12, buf=_port_name, asic=1),
-            ),
-            47: (
-                dict(row=20, col=8, buf=_port_num, asic=1),
-                dict(row=20, col=9, buf=_port_index, asic=1),
-                dict(row=20, col=10, buf=_fid, asic=1),
-                dict(row=20, col=11, buf=_attached_dev, asic=1),
-                dict(row=20, col=12, buf=_port_name, asic=1),
-            ),
-            48: (
-                dict(row=19, col=8, buf=_port_num, asic=1),
-                dict(row=19, col=9, buf=_port_index, asic=1),
-                dict(row=19, col=10, buf=_fid, asic=1),
-                dict(row=19, col=11, buf=_attached_dev, asic=1),
-                dict(row=19, col=12, buf=_port_name, asic=1),
-            ),
-            49: (
-                dict(row=18, col=8, buf=_port_num, asic=1),
-                dict(row=18, col=9, buf=_port_index, asic=1),
-                dict(row=18, col=10, buf=_fid, asic=1),
-                dict(row=18, col=11, buf=_attached_dev, asic=1),
-                dict(row=18, col=12, buf=_port_name, asic=1),
-            ),
-            50: (
-                dict(row=17, col=8, buf=_port_num, asic=1),
-                dict(row=17, col=9, buf=_port_index, asic=1),
-                dict(row=17, col=10, buf=_fid, asic=1),
-                dict(row=17, col=11, buf=_attached_dev, asic=1),
-                dict(row=17, col=12, buf=_port_name, asic=1),
-            ),
-            51: (
-                dict(row=16, col=8, buf=_port_num, asic=1),
-                dict(row=16, col=9, buf=_port_index, asic=1),
-                dict(row=16, col=10, buf=_fid, asic=1),
-                dict(row=16, col=11, buf=_attached_dev, asic=1),
-                dict(row=16, col=12, buf=_port_name, asic=1),
-            ),
-            52: (
-                dict(row=15, col=8, buf=_port_num, asic=1),
-                dict(row=15, col=9, buf=_port_index, asic=1),
-                dict(row=15, col=10, buf=_fid, asic=1),
-                dict(row=15, col=11, buf=_attached_dev, asic=1),
-                dict(row=15, col=12, buf=_port_name, asic=1),
-            ),
-            53: (
-                dict(row=14, col=8, buf=_port_num, asic=1),
-                dict(row=14, col=9, buf=_port_index, asic=1),
-                dict(row=14, col=10, buf=_fid, asic=1),
-                dict(row=14, col=11, buf=_attached_dev, asic=1),
-                dict(row=14, col=12, buf=_port_name, asic=1),
-            ),
-            54: (
-                dict(row=13, col=8, buf=_port_num, asic=1),
-                dict(row=13, col=9, buf=_port_index, asic=1),
-                dict(row=13, col=10, buf=_fid, asic=1),
-                dict(row=13, col=11, buf=_attached_dev, asic=1),
-                dict(row=13, col=12, buf=_port_name, asic=1),
-            ),
-            55: (
-                dict(row=12, col=8, buf=_port_num, asic=1),
-                dict(row=12, col=9, buf=_port_index, asic=1),
-                dict(row=12, col=10, buf=_fid, asic=1),
-                dict(row=12, col=11, buf=_attached_dev, asic=1),
-                dict(row=12, col=12, buf=_port_name, asic=1),
-            ),
-            56: (
-                dict(row=11, col=8, buf=_port_num, asic=1),
-                dict(row=11, col=9, buf=_port_index, asic=1),
-                dict(row=11, col=10, buf=_fid, asic=1),
-                dict(row=11, col=11, buf=_attached_dev, asic=1),
-                dict(row=11, col=12, buf=_port_name, asic=1),
-            ),
-            57: (
-                dict(row=10, col=8, buf=_port_num, asic=1),
-                dict(row=10, col=9, buf=_port_index, asic=1),
-                dict(row=10, col=10, buf=_fid, asic=1),
-                dict(row=10, col=11, buf=_attached_dev, asic=1),
-                dict(row=10, col=12, buf=_port_name, asic=1),
-            ),
-            58: (
-                dict(row=9, col=8, buf=_port_num, asic=1),
-                dict(row=9, col=9, buf=_port_index, asic=1),
-                dict(row=9, col=10, buf=_fid, asic=1),
-                dict(row=9, col=11, buf=_attached_dev, asic=1),
-                dict(row=9, col=12, buf=_port_name, asic=1),
-            ),
-            59: (
-                dict(row=8, col=8, buf=_port_num, asic=1),
-                dict(row=8, col=9, buf=_port_index, asic=1),
-                dict(row=8, col=10, buf=_fid, asic=1),
-                dict(row=8, col=11, buf=_attached_dev, asic=1),
-                dict(row=8, col=12, buf=_port_name, asic=1),
-            ),
-            60: (
-                dict(row=7, col=8, buf=_port_num, asic=1),
-                dict(row=7, col=9, buf=_port_index, asic=1),
-                dict(row=7, col=10, buf=_fid, asic=1),
-                dict(row=7, col=11, buf=_attached_dev, asic=1),
-                dict(row=7, col=12, buf=_port_name, asic=1),
-            ),
-            61: (
-                dict(row=6, col=8, buf=_port_num, asic=1),
-                dict(row=6, col=9, buf=_port_index, asic=1),
-                dict(row=6, col=10, buf=_fid, asic=1),
-                dict(row=6, col=11, buf=_attached_dev, asic=1),
-                dict(row=6, col=12, buf=_port_name, asic=1),
-            ),
-            62: (
-                dict(row=5, col=8, buf=_port_num, asic=1),
-                dict(row=5, col=9, buf=_port_index, asic=1),
-                dict(row=5, col=10, buf=_fid, asic=1),
-                dict(row=5, col=11, buf=_attached_dev, asic=1),
-                dict(row=5, col=12, buf=_port_name, asic=1),
-            ),
-            63: (
-                dict(row=4, col=8, buf=_port_num, asic=1),
-                dict(row=4, col=9, buf=_port_index, asic=1),
-                dict(row=4, col=10, buf=_fid, asic=1),
-                dict(row=4, col=11, buf=_attached_dev, asic=1),
-                dict(row=4, col=12, buf=_port_name, asic=1),
-            ),
-        }
+        port=dict()
+    ),
+    fixed_64=dict(
+        hdr=(
+            dict(col=3),
+            dict(col=5, buf='Port', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=6, buf='DID (Hex)', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=6, buf='Port Addr (Hex)', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=6, buf='Index', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=7, buf='Link Addr', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='FID', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='CLI', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=27, buf='Attached Device', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=27, buf='Port Name', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=5, buf='Low Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=5, buf='Med Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=5, buf='High Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
+        ),
+        port=dict()
+    ),
+    fixed_128=dict(
+        hdr=(
+            dict(col=3),
+            dict(col=5, buf='Port', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=6, buf='DID (Hex)', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=6, buf='Port Addr (Hex)', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=6, buf='Index', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=7, buf='Link Addr', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='FID', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=4, buf='CLI', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=27, buf='Attached Device', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=27, buf='Port Name', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=5, buf='Low Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=5, buf='Med Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
+            dict(col=5, buf='High Qos VC', font=_std_font, align=_align_wrap_c, border=_border_thin),
+        ),
+        port=dict()
     ),
 )
+
+# Fill in the _slot_sheet_d for 48 port cards
+_pc_48_asic_map_d = {
+    0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 1, 9: 1, 10:  1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1,
+    16: 1, 17: 1, 18: 1, 19: 1, 20: 1, 21: 1, 22: 1, 23: 1, 24: 0, 25: 0, 26: 0, 27: 0, 28: 0, 29: 0, 30: 0, 31: 0,
+    32: 0, 33: 0, 34: 0, 35: 0, 36: 0, 37: 0, 38: 0, 39: 1, 40: 1, 41: 1, 42: 1, 43: 1, 44: 1, 45: 1, 46: 1, 47: 1,
+}
+_row = 27
+for port in range(0, 24): 
+    _col_l_l = [
+        dict(row=_row, col=2, buf=_port_num, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=3, buf=_port_did, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=4, buf=_port_addr, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=5, buf=_port_index, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=6, buf=_port_link_addr_l, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=7, buf=_fid, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=8, buf=_cli, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=9, buf=_attached_dev, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=10, buf=_port_name, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=11, buf=_low_qos_l, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=12, buf=_med_qos_l, asic=_pc_48_asic_map_d[port]),
+        dict(row=_row, col=13, buf=_high_qos_l, asic=_pc_48_asic_map_d[port]),
+    ]
+    _slot_sheet_d['pc_48']['port'].update({port: _col_l_l.copy()})
+    _row -= 1
+_row = 27
+for _port in range(24, 48):
+    _col_r_l = [
+        dict(row=_row, col=15, buf=_port_num, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=16, buf=_port_did, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=17, buf=_port_addr, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=18, buf=_port_index, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=19, buf=_port_link_addr_l, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=20, buf=_fid, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=21, buf=_cli, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=22, buf=_attached_dev, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=23, buf=_port_name, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=24, buf=_low_qos_l, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=25, buf=_med_qos_l, asic=_pc_48_asic_map_d[_port]),
+        dict(row=_row, col=26, buf=_high_qos_l, asic=_pc_48_asic_map_d[_port]),
+    ]
+    _slot_sheet_d['pc_48']['port'].update({_port: _col_r_l.copy()})
+    _row -= 1
+
+# Fill in the _slot_sheet_d for 64 port cards
+_pc_64_asic_map_d = {
+    0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0,
+    16: 0, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0, 22: 0, 23: 0, 24: 0, 25: 0, 26: 0, 27: 0, 28: 0, 29: 0, 30: 0, 31: 0,
+    32: 1, 33: 1, 34: 1, 35: 1, 36: 1, 37: 1, 38: 1, 39: 1, 40: 1, 41: 1, 42: 1, 43: 1, 44: 1, 45: 1, 46: 1, 47: 1,
+    48: 1, 49: 1, 50: 1, 51: 1, 52: 1, 53: 1, 54: 1, 55: 1, 56: 1, 57: 1, 58: 1, 59: 1, 60: 1, 61: 1, 62: 1, 63: 1,
+}
+_row = 35
+for _port in range(0, 32):
+    _col_l_l = [
+        dict(row=_row, col=2, buf=_port_num, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=3, buf=_port_did, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=4, buf=_port_addr, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=5, buf=_port_index, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=6, buf=_port_link_addr_l, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=7, buf=_fid, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=8, buf=_cli, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=9, buf=_attached_dev, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=10, buf=_port_name, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=11, buf=_low_qos_l, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=12, buf=_med_qos_l, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=13, buf=_high_qos_l, asic=_pc_64_asic_map_d[_port]),
+    ]
+    _slot_sheet_d['pc_64']['port'].update({_port: _col_l_l.copy()})
+    _row -= 1
+_row = 35
+for _port in range(32, 64):
+    _col_r_l = [
+        dict(row=_row, col=15, buf=_port_num, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=16, buf=_port_did, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=17, buf=_port_addr, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=18, buf=_port_index, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=19, buf=_port_link_addr_l, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=20, buf=_fid, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=21, buf=_cli, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=22, buf=_attached_dev, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=23, buf=_port_name, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=24, buf=_low_qos_l, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=25, buf=_med_qos_l, asic=_pc_64_asic_map_d[_port]),
+        dict(row=_row, col=26, buf=_high_qos_l, asic=_pc_64_asic_map_d[_port]),
+    ]
+    _slot_sheet_d['pc_64']['port'].update({_port: _col_r_l.copy()})
+    _row -= 1
+    
+# Fill in the _slot_sheet_d for 4 slot core blade.
+_core_4_asic_map_d = {
+    0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0,
+    16: 1, 17: 1, 18: 1, 19: 1, 20: 1, 21: 1, 22: 1, 23: 1, 24: 1, 25: 1, 26: 1, 27: 1, 28: 1, 29: 1, 30: 1, 31: 1,
+}
+_row = 19
+for _port in range(0, 16):
+    _col_l_l = [
+        dict(row=_row, col=2, buf=_port_num, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=3, buf=_port_index, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=4, buf=_fid, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=5, buf=_cli, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=6, buf=_attached_dev, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=7, buf=_port_name, asic=_core_4_asic_map_d[_port]),
+    ]
+    _slot_sheet_d['core_4']['port'].update({_port: _col_l_l.copy()})
+    _row -= 1
+_row = 19
+for _port in range(16, 32):
+    _col_l_l = [
+        dict(row=_row, col=9, buf=_port_num, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=10, buf=_port_index, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=11, buf=_fid, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=12, buf=_cli, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=13, buf=_attached_dev, asic=_core_4_asic_map_d[_port]),
+        dict(row=_row, col=14, buf=_port_name, asic=_core_4_asic_map_d[_port]),
+    ]
+    _slot_sheet_d['core_4']['port'].update({_port: _col_l_l.copy()})
+    _row -= 1
+
+# Fill in the _slot_sheet_d for 8 slot core blade.
+_core_8_asic_map_d = {
+    0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0,
+    16: 0, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0, 22: 0, 23: 0, 24: 0, 25: 0, 26: 0, 27: 0, 28: 0, 29: 0, 30: 0, 31: 0,
+    32: 1, 33: 1, 34: 1, 35: 1, 36: 1, 37: 1, 38: 1, 39: 1, 40: 1, 41: 1, 42: 1, 43: 1, 44: 1, 45: 1, 46: 1, 47: 1,
+    48: 1, 49: 1, 50: 1, 51: 1, 52: 1, 53: 1, 54: 1, 55: 1, 56: 1, 57: 1, 58: 1, 59: 1, 60: 1, 61: 1, 62: 1, 63: 1,
+}
+_row = 35
+for _port in range(0, 32):
+    _col_l_l = [
+        dict(row=_row, col=2, buf=_port_num, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=3, buf=_port_index, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=4, buf=_fid, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=5, buf=_cli, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=6, buf=_attached_dev, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=7, buf=_port_name, asic=_core_8_asic_map_d[_port]),
+    ]
+    _slot_sheet_d['core_8']['port'].update({_port: _col_l_l.copy()})
+    _row -= 1
+_row = 35
+for _port in range(32, 64):
+    _col_l_l = [
+        dict(row=_row, col=9, buf=_port_num, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=10, buf=_port_index, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=11, buf=_fid, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=12, buf=_cli, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=13, buf=_attached_dev, asic=_core_8_asic_map_d[_port]),
+        dict(row=_row, col=14, buf=_port_name, asic=_core_8_asic_map_d[_port]),
+    ]
+    _slot_sheet_d['core_8']['port'].update({_port: _col_l_l.copy()})
+    _row -= 1
+
+# Fill in the _slot_sheet_d for 64 port fixed port switches. These are single ASIC switches, so no point in creating an
+# ASIC map
+_row = 67
+for _port in range(0, 64):
+    _col_l_l = [
+        dict(row=_row, col=2, buf=_port_num, asic=0),
+        dict(row=_row, col=3, buf=_port_did, asic=0),
+        dict(row=_row, col=4, buf=_port_addr, asic=0),
+        dict(row=_row, col=5, buf=_port_index, asic=0),
+        dict(row=_row, col=6, buf=_port_link_addr_l, asic=0),
+        dict(row=_row, col=7, buf=_fid, asic=0),
+        dict(row=_row, col=8, buf=_cli, asic=0),
+        dict(row=_row, col=9, buf=_attached_dev, asic=0),
+        dict(row=_row, col=10, buf=_port_name, asic=0),
+        dict(row=_row, col=11, buf=_low_qos_l, asic=0),
+        dict(row=_row, col=12, buf=_med_qos_l, asic=0),
+        dict(row=_row, col=13, buf=_high_qos_l, asic=0),
+    ]
+    _slot_sheet_d['fixed_64']['port'].update({_port: _col_l_l.copy()})
+    _row -= 1
+
+# Fill in the _slot_sheet_d for 128 port fixed port switches.
+_fixed_128_asic_map_d = {  # ToDo - These are not the correct ASIC numbers. This needs to get updated
+    0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0,
+    16: 0, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0, 22: 0, 23: 0, 24: 0, 25: 0, 26: 0, 27: 0, 28: 0, 29: 0, 30: 0, 31: 0,
+    32: 0, 33: 0, 34: 0, 35: 0, 36: 0, 37: 0, 38: 0, 39: 0, 40: 0, 41: 0, 42: 0, 43: 0, 44: 0, 45: 0, 46: 0, 47: 0,
+    48: 0, 49: 0, 50: 0, 51: 0, 52: 0, 53: 0, 54: 0, 55: 0, 56: 0, 57: 0, 58: 0, 59: 0, 60: 0, 61: 0, 62: 0, 63: 0,
+    64: 0, 65: 0, 66: 0, 67: 0, 68: 0, 69: 0, 70: 0, 71: 0, 72: 0, 73: 0, 74: 0, 75: 0, 76: 0, 77: 0, 78: 0, 79: 0,
+    80: 0, 81: 0, 82: 0, 83: 0, 84: 0, 85: 0, 86: 0, 87: 0, 88: 0, 89: 0, 90: 0, 91: 0, 92: 0, 93: 0, 94: 0, 95: 0,
+    96: 0, 97: 0, 98: 0, 99: 0, 100: 0, 101: 0, 102: 0, 103: 0, 104: 0, 105: 0, 106: 0, 107: 0, 108: 0, 109: 0, 110: 0,
+    111: 0, 112: 0, 113: 0, 114: 0, 115: 0, 116: 0, 117: 0, 118: 0, 119: 0, 120: 0, 121: 0, 122: 0, 123: 0, 124: 0,
+    125: 0, 126: 0, 127: 0
+}
+_row = 131
+for _port in range(0, 128):
+    _col_l_l = [
+        dict(row=_row, col=2, buf=_port_num, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=3, buf=_port_did, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=4, buf=_port_addr, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=5, buf=_port_index, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=6, buf=_port_link_addr_l, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=7, buf=_fid, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=8, buf=_cli, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=9, buf=_attached_dev, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=10, buf=_port_name, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=11, buf=_low_qos_l, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=12, buf=_med_qos_l, asic=_fixed_128_asic_map_d[_port]),
+        dict(row=_row, col=13, buf=_high_qos_l, asic=_fixed_128_asic_map_d[_port]),
+    ]
+    _slot_sheet_d['fixed_128']['port'].update({_port: _col_l_l.copy()})
+    _row -= 1
 
 _fill_asic_d = {0: excel_fonts.fill_type('config_asic_0'), 1: excel_fonts.fill_type('config_asic_1')}
 
@@ -2527,9 +893,7 @@ def _switch_config(wb, sheet_index, switch_obj, sheet_l):
 
 
 def _determine_slots(chassis_obj):
-    """Determines the slot types and number of ports in each slot.
-
-    The return list is a list of dictionaries as follows:
+    """Determines the slot types and number of ports in each slot. Return is a list of dictionaries as follows:
 
     +-------+-------+-------------------------------------------+
     | Key   | Type  | Description                               |
@@ -2543,25 +907,75 @@ def _determine_slots(chassis_obj):
 
     :param chassis_obj: Chassis Object
     :type chassis_obj: brcddb_classes.chassis.ChassisObj
-    :return: Slot dictionaries. See function header description for details
-    :rtype ec: list
+    :return: List of slot dictionaries. See function header description for details
+    :rtype: list
     """
-    slot_d = dict()
+    chassis_name = brcddb_chassis.best_chassis_name(chassis_obj)
 
+    # Figure out what ports go with which slot
+    slot_d = dict()  # Key is the slot number. Value is a dictionary as specified in the function header
     for port_obj in chassis_obj.r_port_objects():
-        slot = int(port_obj.r_obj_key().split('/')[0])
-        port_d = slot_d.get(slot)
-        if port_d is None:
-            # ToDo - Use blade-id to figure out what the blade type is
-            slot_type = 'core_8' if slot == 7 or slot == 8 else 'pc_48'
-            port_d = dict(slot=slot, type=slot_type, ports=list())
-            slot_d.update({slot: port_d})
-        port_d['ports'].append(port_obj)
+        sp_d = gen_util.slot_port_dict(port_obj.r_obj_key())
+        sub_slot_d = slot_d.get(sp_d['slot'])
+        if sub_slot_d is None:
+            sub_slot_d = dict(slot=sp_d['slot'], ports=list())
+            slot_d.update({sp_d['slot']: sub_slot_d})
+        sub_slot_d['ports'].append(port_obj)
 
-    slot_d_keys = [int(key) for key in slot_d.keys()]
-    slot_d_keys.sort()
+    sw_blade_type_d = {  # Used to determine what the blade type is
+        'sw blade': {'skip': False, 'supported': True, 48: 'pc_48', 64: 'pc_64'},
+        'core blade': {'skip': False, 'supported': True, 32: 'core_4', 64: 'core_8'},
+        'cp blade': dict(skip=True, supported=True),
+        'ap blade': dict(skip=True, supported=False),
+        'None': dict(skip=True, supported=False),
+    }
 
-    return [slot_d[key] for key in slot_d_keys]
+    product_name = chassis_obj.r_get(brcdapi_util.bc_product_name)
+
+    if not isinstance(product_name, str):
+        brcdapi_log.log(brcdapi_util.bc_product_name + ' missing in chassis ' + chassis_name, echo=True)
+        raise TypeError
+
+    for blade_d in chassis_obj.r_get(brcdapi_util.fru_blade, list()):
+        slot_num = blade_d['slot-number']
+        blade_type = blade_d.get('blade-type', 'None')
+        if blade_type not in sw_blade_type_d:
+            blade_type = 'None'
+        try:
+            sub_slot_d = slot_d.get(slot_num)
+            if sub_slot_d is None:
+                slot_d.update({slot_num: dict(slot=slot_num, ports=list())})
+            if slot_num == 0:
+                slot_d[slot_num]['type'] = 'fixed_64' if blade_d['fc-port-count'] == 64 else 'fixed_128'
+                continue  # This is effectively a break in fixed port switches.
+            blade_type_d = sw_blade_type_d.get(blade_type)
+            if blade_type_d['supported']:
+                if blade_type_d['skip']:
+                    if slot_num in slot_d:
+                        slot_d.pop(slot_num)
+                    continue
+                blade_type_key = sw_blade_type_d[blade_type].get(blade_d['fc-port-count'])
+                if blade_type_key is None:
+                    raise Found
+                slot_d[blade_d['slot-number']]['type'] = blade_type_key
+            else:
+                raise Found
+        except Found:
+            buf = 'Unsupported blade type: ' + blade_type + ' in slot ' + str(slot_num) + chassis_name
+            buf += '. Skipping.'
+            if slot_num in slot_d:
+                slot_d.pop(slot_num)
+            brcdapi_log.log(buf, echo=False)
+
+    if len(slot_d) == 0:
+        brcdapi_log.log(brcdapi_util.fru_blade + ' missing, empty, or no supported blade types in ' + chassis_name,
+                        echo=True)
+        raise TypeError
+
+    slot_d_key_l = [int(key) for key in slot_d.keys()]
+    slot_d_key_l.sort()  # Although not necessary, humans like to see the workbook with slots in order
+
+    return [slot_d[key] for key in slot_d_key_l]
 
 
 def _add_slot(wb, sheet_index, slot, slot_type, port_obj_l):
@@ -2579,7 +993,10 @@ def _add_slot(wb, sheet_index, slot, slot_type, port_obj_l):
     :rtype ec: int
     """
     global _slot_sheet_d, _white_bold_font, _align_wrap_c, _fill_slot, _border_thin, _std_font, _fill_asic_d
-    
+
+    # Debug
+    global _debug_i
+
     ec = brcddb_common.EXIT_STATUS_OK
 
     # Create the slot sheet and perform basic sheet setup
@@ -2689,9 +1106,12 @@ def psuedo_main(folder, proj_obj, sheet_l):
             sheet_index += 1
 
         # Add the slot worksheets
-        for slot_d in _determine_slots(chassis_obj):
-            ec_l.append(_add_slot(wb, sheet_index, slot_d['slot'], slot_d['type'], slot_d['ports']))
-            sheet_index += 1
+        try:
+            for slot_d in _determine_slots(chassis_obj):
+                ec_l.append(_add_slot(wb, sheet_index, slot_d['slot'], slot_d['type'], slot_d['ports']))
+                sheet_index += 1
+        except TypeError:
+            return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
         # Save the workbook
         try:
@@ -2716,9 +1136,8 @@ def _get_input():
     global __version__, _input_d, _version_d
 
     # Get command line input
-    buf = 'Creates switch configuration workbooks project. WARNING: For openpyxl to read the workbooks generated '\
-          'by this script, which uses the same openpyxl library, the files must be opened and saved in Excel. There '\
-          'is no need to make any changes. This affects switch_confi.py and switch_config_cli.py.'
+    buf = 'Creates switch configuration workbooks for each chassis found in a project. WARNING: The ASIC '\
+          'number is not correct with 128 port fixed port switches and CLI port configurations have not been filled in.'
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
@@ -2729,7 +1148,6 @@ def _get_input():
         os.path.basename(__file__) + ', ' + __version__,
         'In file, -i:         ' + args_d['i'],
         'Out folder, -o:      ' + args_d['o'],
-        # 'IOCP folder, -iocp:  ' + str(args_d['iocp']),
         'Log, -log:           ' + str(args_d['log']),
         'No log, -nl:         ' + str(args_d['nl']),
         'Suppress, -sup:      ' + str(args_d['sup']),

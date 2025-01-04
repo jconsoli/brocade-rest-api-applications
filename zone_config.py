@@ -53,15 +53,20 @@ then applied to the switch all at once. Specifically:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.5     | 29 Oct 2024   | Improved error messages.                                                              |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | 26 Dec 2024   | Allow aliases to be added on separate rows with just additional members.              |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 04 Jan 2025   | Removed requirement for login credentials or input file. This way, just a test of the |
+|           |               | zone configuration workbook is done and, optionally, a CLI file generated.            |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '29 Oct 2024'
+__date__ = '04 Jan 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.5'
+__version__ = '4.0.7'
 
 import collections
 import sys
@@ -104,12 +109,12 @@ _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only us
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # Typically True. See note above
-_DEBUG = False  # Forces local debug without setting -d
+_debug = False  # Set True to force local debug. Also gets set to True if -d is specified on the command line
 
-_input_d = gen_util.parseargs_login_false_d.copy()
+_input_d = gen_util.parseargs_login_nr_d
 _input_d['fid'] = dict(
     r=False, d=None, t='int', v=gen_util.range_to_list('1-128'),
-    h='Optional. Required when -i is not specified. Fabric ID of logical switch.')
+    h='Optional. Fabric ID of logical switch. Required when -i is not specified and -ip is specified.')
 _input_d['i'] = dict(
     r=False, d=None,
     h='Optional. Output of capture.py, multi_capture.py, or combine.py. When this option is specified, -ip, -id, -pw, '
@@ -137,7 +142,6 @@ _input_d.update(gen_util.parseargs_scan_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
 
-_debug = False
 _eff_zone_l, _eff_mem_l = list(), list()
 _pertinent_headers = ('Zone_Object', 'Action', 'Name', 'Match', 'Member', 'Principal Member')
 _zone_kpis = ('running/brocade-fibrechannel-switch/fibrechannel-switch',
@@ -213,11 +217,13 @@ def _add_to_tracking(key, zone_d, eff_zonecfg_del=False):
         _tracking_d['eff_zonecfg_del'] = True
 
 
-def _build_cli_file(cli_file):
+def _build_cli_file(cli_file, fid):
     """Write the CLI commands to a file
 
     :param cli_file: Name of CLI file
     :type cli_file: str, None
+    :param fid: Fabric ID
+    :type fid: int, str, None
     :return: Error messages
     :rtype: list
     """
@@ -226,7 +232,12 @@ def _build_cli_file(cli_file):
     if not isinstance(cli_file, str):
         return list()
 
+    # Initial file setup
     cli_l = list()
+    if isinstance(fid, (str, int)):
+        cli_l.extend(['setcontext ' + str(fid), ''])
+
+    # Add zoning commands
     for d in (
             dict(o='zonecfg', a='delete', c='# Delete Zone Configurations'),
             dict(o='zonecfg', a='remove', c='# Remove Zone Configuration Members'),
@@ -364,6 +375,11 @@ def _alias_create(fab_obj, zone_d, search_d):
 
     # Make sure it's a valid alias definition
     el, wl = list(), list()
+
+    # If it's a previous action, members are being added
+    if zone_d['name_c']:
+        return _alias_add_mem(fab_obj, zone_d, search_d)
+
     if isinstance(zone_d['Principal Member'], str):  # Principal members are not supported in an alias
         el.append('Principal members not supported in alias create at row ' + str(zone_d['row']))
     elif not gen_util.is_valid_zone_name(zone_d['Name']):  # Is it a valid alias name?
@@ -448,7 +464,7 @@ def _alias_add_mem(fab_obj, zone_d, search_d):
                       str(zone_d['row']))
             return el, wl  # The member is already in the alias so there is nothing to do.
         else:
-            alias_obj.s_add_member(zone_d['Name'], zone_d['Member'])
+            alias_obj.s_add_member(zone_d['Member'])
             _pending_flag = True
             if search_d['eff_alias_d'].get(zone_d['Name']) is not None:
                 copy_zone_d = zone_d.copy()
@@ -1183,13 +1199,16 @@ def _get_fabric(args_d):
     :return fab_obj: Fabric object as read from the input file, -i, or from reading the fabric information from the API
     :rtype fab_obj: brcddb.classes.fabric.FabricObj, None
     """
-    for key in ('id', 'pw', 'ip'):
-        if args_d.get(key) is None:
-            return None, None
     # Create a project
     proj_obj = brcddb_project.new('zone_config', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
     proj_obj.s_python_version(sys.version)
     proj_obj.s_description('zone_config')
+
+    # Create an empty test fabric if there aren't any login credentials.
+    for key in ('id', 'pw', 'ip'):
+        if args_d.get(key) is None:
+            proj_obj.s_add_fabric('test_fabric')
+            return None, proj_obj.r_fabric_obj('test_fabric')
 
     # Login
     session = api_int.login(args_d['id'], args_d['pw'], args_d['ip'], args_d['s'], proj_obj)
@@ -1359,7 +1378,7 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
     """
     global _zone_action_d, _pending_flag, _debug, _eff_zone_l, _eff_mem_l
 
-    saved, purge_fail_d, el, wl = False, dict(), list(), list()
+    debug_i, saved, purge_fail_d, el, wl = 0, False, dict(), list(), list()
     session, zone_d, action, proj_obj, eff_zonecfg = None, None, None, None, None
 
     # Get the project object
@@ -1373,33 +1392,38 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
         for zone_obj in fab_obj.r_eff_zone_objects():
             _eff_zone_l.append(zone_obj.r_obj_key())
             _eff_mem_l.extend(zone_obj.r_members() + zone_obj.r_pmembers())
-
     if proj_obj is None:
-        brcdapi_log.log('Could not find or create a project object.', echo=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    if args_d['scan']:
-        brcddb_project.scan(proj_obj, fab_only=False, logical_switch=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
+        proj_obj = brcddb_project.new('zone_config', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
+        proj_obj.s_python_version(sys.version)
+        proj_obj.s_description('Created by zone_config.py')
 
     # Fill in search_d (lists of all items to use where Match is supported).
-    eff_zonecfg_obj = fab_obj.r_defined_eff_zonecfg_obj()
-    search_d = dict(wwn_l=fab_obj.r_login_keys(),
-                    alias_l=fab_obj.r_alias_keys(),
-                    zone_l=fab_obj.r_zone_keys(),
+    search_d = dict(wwn_l=list(),
+                    alias_l=list(),
+                    zone_l=list(),
                     eff_alias_d=dict(),
                     eff_zone_d=dict(),
-                    eff_zonecfg_obj=eff_zonecfg_obj)
-    if eff_zonecfg_obj is not None:
-        for zone_obj in eff_zonecfg_obj.r_zone_objects():
-            for alias in zone_obj.r_members() + zone_obj.r_pmembers():
-                search_d['eff_alias_d'][alias] = True
-            search_d['eff_zone_d'][zone_obj.r_obj_key()] = True
+                    eff_zonecfg_obj=None)
+    if fab_obj is not None:
+        eff_zonecfg_obj = fab_obj.r_defined_eff_zonecfg_obj()
+        search_d['wwn_l'] = fab_obj.r_login_keys()
+        search_d['alias_l'] = fab_obj.r_alias_keys()
+        search_d['zone_l'] = fab_obj.r_zone_keys()
+        search_d['eff_zonecfg_obj'] = eff_zonecfg_obj
+        if eff_zonecfg_obj is not None:
+            for zone_obj in eff_zonecfg_obj.r_zone_objects():
+                for alias in zone_obj.r_members() + zone_obj.r_pmembers():
+                    search_d['eff_alias_d'][alias] = True
+                search_d['eff_zone_d'][zone_obj.r_obj_key()] = True
 
     try:
         # Process each action in zone_wb_l
         for zone_d in zone_wb_l:
             if _debug:
-                brcdapi_log.log(pprint.pformat(zone_d), echo=True)
+                brcdapi_log.log(['debug_i: ' + str(debug_i), pprint.pformat(zone_d)], echo=True)
+                if debug_i == 1:
+                    brcdapi_log.log('TP_100', echo=True)
+                debug_i += 1
             try:
                 action = _zone_action_d[zone_d['Zone_Object']][zone_d['Action']][zone_d['Match']]['a']
             except KeyError:
@@ -1448,8 +1472,11 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
                     saved = True
                 _cli_d['enable'] = args_d['a']
 
-    except BaseException as e:
-        el.extend(['Software error.', str(type(e)) + ': ' + str(e), 'zone_d:', pprint.pformat(zone_d)])
+    # Debug
+    # except BaseException as e:
+    #     el.extend(['Software error.', str(type(e)) + ': ' + str(e), 'zone_d:', pprint.pformat(zone_d)])
+    except FloatingPointError:
+        print('TP_101')
 
     # Log out
     if session is not None:
@@ -1458,8 +1485,8 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
         if fos_auth.is_error(obj):
             el.extend(['Logout failed', fos_auth.formatted_error_msg(obj)])
 
-    # Write out the CLi file
-    cli_el = _build_cli_file(args_d['cli'])
+    # Write out the CLI file
+    cli_el = _build_cli_file(args_d['cli'], args_d['fid'])
 
     # Write out the summaries
     _summary_report(fab_obj, args_d, saved, cli_el, purge_fail_d, el, wl)
@@ -1473,12 +1500,12 @@ def _get_input():
     :return ec: Error code. See brcddb_common.EXIT_* for details
     :rtype ec: int
     """
-    global __version__, _input_d, _version_d, _debug, _DEBUG
+    global __version__, _input_d, _version_d, _debug
 
-    args_z_help = args_sheet_help = args_i_help = args_fid_help = args_wwn_help = ''
     ec, error_l, zone_wb_l, proj_obj, fab_obj = brcddb_common.EXIT_STATUS_OK, list(), list(), None, None
     e_buf = ' **ERROR**: Missing required input parameter'
     w_buf = ' Ignored because -i was specified.'
+    args_help_d = dict(ip='', id='', pw='', s='', fid='', i='', wwn='', z='', sheet='')
 
     # Get command line input
     buf = 'Creates, deletes, and modifies zone objects from a workbook. See zone_sample.xlsx for details and ' \
@@ -1495,95 +1522,99 @@ def _get_input():
     args_d['cli'] = brcdapi_file.full_file_name(args_d['cli'], '.txt', dot=True)
 
     # Set up logging
-    _debug = _DEBUG
     if args_d['d']:
         _debug = True
         brcdapi_rest.verbose_debug(True)
     brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
-
-    login_credentials_d = dict(ip=dict(s=args_d['ip'], m=''),
-                               id=dict(s=args_d['id'], m=''),
-                               pw=dict(s=args_d['pw'], m=''))
 
     # If a file name was specified, read the project object from the file.
     if isinstance(args_d['i'], str):
         try:
             proj_obj = brcddb_project.read_from(args_d['i'])
             if proj_obj is None:
-                args_i_help += ' *ERROR: ' if len(args_i_help) == 0 else ', '
-                args_i_help += 'Unknown error. Typical of a non-JSON formatted project file.'
+                args_help_d['i'] += ' **ERROR** ' if len(args_help_d['i']) == 0 else ', '
+                args_help_d['i'] += 'Unknown error. Typical of a non-JSON formatted project file.'
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
             elif not args_d['scan']:
                 if args_d['wwn'] is None:
-                    args_wwn_help = e_buf
+                    args_help_d['wwn'] = e_buf
                     ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
                 else:
                     fab_obj = proj_obj.r_fabric_obj(args_d['wwn'])
                     if fab_obj is None:
-                        args_wwn_help = ' *ERROR: Fabric with this WWN not found in ' + args_d['i']
+                        args_help_d['wwn'] = ' **ERROR** Fabric with this WWN not found in ' + args_d['i']
                         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
         except FileNotFoundError:
-            args_i_help += ' *ERROR: ' if len(args_i_help) == 0 else ', '
-            args_i_help += 'Not found'
+            args_help_d['i'] += ' **ERROR** ' if len(args_help_d['i']) == 0 else ', '
+            args_help_d['i'] += 'Not found'
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
         except FileExistsError:
-            args_i_help += ' *ERROR: ' if len(args_i_help) == 0 else ', '
-            args_i_help += 'A Folder in parameter does not exist'
+            args_help_d['i'] += ' **ERROR** ' if len(args_help_d['i']) == 0 else ', '
+            args_help_d['i'] += 'A Folder in parameter does not exist'
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Input validation
     if not args_d['scan']:
 
         # Validate the login credentials.
-        buf = e_buf if args_d['i'] is None else w_buf
-        for key, d in login_credentials_d.items():
-            if isinstance(d['s'], str):
-                if args_d['i'] is not None:
-                    d['m'] = buf
-            elif args_d['i'] is None:
-                d['m'] = buf
-                ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        i, key_l = 0, list()
+        for key in ['ip', 'id', 'pw']:
+            if args_d['i'] is None:
+                if args_d[key] is not None:
+                    key_l.append(key)
+                    i += 1
+            else:
+                args_help_d[key] = w_buf
+        if 0 < i < 3:
+            login_e_buf = ' **ERROR** Required when -' + ', -'.join(key_l) + ' is specified'
+            for key in ['ip', 'id', 'pw']:
+                if args_d[key] is None:
+                    args_help_d[key] += login_e_buf
+                    ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
         # Is the fid required?
-        if args_d['i'] is None and args_d['fid'] is None:
-            args_fid_help = ' *ERROR: Required when -i is not specified.'
+        if args_d['i'] is None and args_d['ip'] is not None and args_d['fid'] is None:
+            args_help_d['fid'] = ' **ERROR** Required when -ip is specified.'
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
         # Read in the workbook with the zone definitions
         if not isinstance(args_d['z'], str):
-            args_z_help = e_buf
+            args_help_d['z'] = e_buf
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
         if not isinstance(args_d['sheet'], str):
-            args_sheet_help = e_buf
+            args_help_d['sheet'] = e_buf
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
         if isinstance(args_d['z'], str) and isinstance(args_d['sheet'], str):
             args_z = brcdapi_file.full_file_name(args_d['z'], '.xlsx')
+            brcdapi_log.log('Reading ' + args_z, echo=True)
             el, workbook_l = excel_util.read_workbook(args_z, dm=0, sheets=args_d['sheet'], hidden=False)
             if len(el) > 0:
                 error_l.extend(el)
-                args_z_help += ' *ERROR: ' + ','.join(el)
+                args_help_d['z'] += ' **ERROR** ' + ','.join(el)
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
             elif len(workbook_l) != 1:
-                args_sheet_help += ' *ERROR: Worksheet not found.'
+                args_help_d['sheet'] += ' **ERROR** Worksheet not found.'
+                ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
             else:
                 el, zone_wb_l = _parse_zone_workbook(workbook_l[0]['al'])
                 if len(el) > 0:
                     error_l.extend(el)
-                    args_sheet_help = ' *ERROR: Invalid. See below for details.'
+                    args_help_d['sheet'] = ' **ERROR** Invalid. See below for details.'
                     ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Command line feedback
+    pw_buf = 'None' if args_d['pw'] is None else '****'
     ml = [
         os.path.basename(__file__) + ', ' + __version__,
-        'IP address, -ip:          ' + brcdapi_util.mask_ip_addr(args_d['ip']) + login_credentials_d['ip']['m'],
-        'ID, -id:                  ' + str(args_d['id']) + login_credentials_d['id']['m'],
-        'Password, -pw:            ' + login_credentials_d['pw']['m'],
+        'IP address, -ip:          ' + brcdapi_util.mask_ip_addr(args_d['ip']) + args_help_d['ip'],
+        'ID, -id:                  ' + str(args_d['id']) + args_help_d['id'],
+        'Password, -pw:            ' + pw_buf + args_help_d['pw'],
         'HTTPS, -s:                ' + str(args_d['s']),
-        'Fabric ID (FID), -fid:    ' + str(args_d['fid']) + args_fid_help,
-        'Input file, -i:           ' + str(args_d['i']) + args_i_help,
-        'Fabric WWN, -wwn:         ' + str(args_d['wwn']) + args_wwn_help,
-        'Zone workbook:            ' + str(args_d['z']) + args_z_help,
-        'Zone worksheet, -sheet:   ' + str(args_d['sheet']) + args_sheet_help,
+        'Fabric ID (FID), -fid:    ' + str(args_d['fid']) + args_help_d['fid'],
+        'Input file, -i:           ' + str(args_d['i']) + args_help_d['i'],
+        'Fabric WWN, -wwn:         ' + str(args_d['wwn']) + args_help_d['wwn'],
+        'Zone workbook:            ' + str(args_d['z']) + args_help_d['z'],
+        'Zone worksheet, -sheet:   ' + str(args_d['sheet']) + args_help_d['sheet'],
         'Activate, -a:             ' + str(args_d['a']),
         'Save, -save:              ' + str(args_d['save']),
         'CLI file, -cli:           ' + str(args_d['cli']),
