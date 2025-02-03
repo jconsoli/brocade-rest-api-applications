@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -35,6 +35,74 @@ then applied to the switch all at once. Specifically:
     3.  A zone configuration activation (equivalent to cfgenable) or save (equivalent to cfgsave) then write the revised
         zone database to the switch.
 
+**Common Data Structures**
+
+*input_d*
+
+input_d is passed to all action functions. It is used for tracking and control as defined below.
+
+Note: My apologies for the like named data structures _input_d and input_d. _input_d is used for command line input.
+input_d is used for input from the worksheet and some control information.
+
++-----------+-----------+-------------------------------------------------------------------------------------------+
+| Key       | Type      | Description                                                                               |
++===========+===========+===========================================================================================+
+| fab_obj   | FabricObj | Fabric object                                                                             |
++-----------+-----------+-------------------------------------------------------------------------------------------+
+| zone_d    | dict      | Entry in the list returned from _parse_zone_workbook                                      |
++-----------+-----------+-------------------------------------------------------------------------------------------+
+| search_d  | dict      | Search terms. See search_d in pseudo_main() for details.                                  |
++-----------+-----------+-------------------------------------------------------------------------------------------+
+| el        | list      | Running list of error messages.                                                           |
++-----------+-----------+-------------------------------------------------------------------------------------------+
+| wl        | list      | Running list of warning messages.                                                         |
++-----------+-----------+-------------------------------------------------------------------------------------------+
+| cli_in    | bool      | True if the command line option -cli is used.                                             |
++-----------+-----------+-------------------------------------------------------------------------------------------+
+| no_cli    | bool,     | If True, no CLI is generated. This is useful because there isn't a one for one mapping of |
+|           |           | CLI commands to API requests. With expunge commands for example, there is one CLI command |
+|           |           | to remove the zone object from all zone objects it is a member of and then delete the     |
+|           |           | object. There is no need to do that in the API, so there isn't and equivalent API request.|
++-----------+-----------+-------------------------------------------------------------------------------------------+
+| purge     | bool      | If True, after completing all actions, delete the zone object if the membership count is  |
+|           |           | 0. At the time this was written, it applied to zone (not alias or zone configurations)    |
+|           |           | objects only.                                                                             |
++-----------+-----------+-------------------------------------------------------------------------------------------+
+
+*_tracking_d*
+
+_tracking_d: Used for error reporting as follows:
+
+    +---- _tracking_d
+         +---- alias
+              +---- {alias name}
+                   +---- error_l    list    List of error messages (str)
+                   +---- purge      bool    Not used
+                   +---- purge_l    list    Not used
+                   +---- row_l      list    List of relevant Worksheet row numbers
+                   +---- warning_l  list    List of warning messages (str)
+         +---- zone
+              +---- {zone name}
+                   +---- error_l    list    List of error messages (str)
+                   +---- purge      bool    If True, this zone was effected by a full_purge action and should be
+                                            deleted if the remaining membership count is 0
+                   +---- purge_l    list    Filled in by _finish_purges(). List of remaining zone members that prevented
+                                            the zone from being deleted as part of a purge action.
+                   +---- row_l      list    List of relevant Worksheet row numbers
+                   +---- warning_l  list    List of warning messages (str)
+         +---- zone_cfg
+              +---- {zone_cfg name}
+                   +---- error_l    list    List of error messages (str)
+                   +---- purge      bool    If True, this zone was effected by a full_purge action and should be
+                                            deleted if the remaining membership count is 0
+                   +---- purge_l    list    Not used
+                   +---- row_l      list    List of relevant Worksheet row numbers
+                   +---- warning_l  list    List of warning messages (str)
+         +---- general
+              +---- {area name}
+                   +---- error_l    list    List of error messages (str)
+                   +---- warning_l  list    List of warning messages (str)
+
 **Version Control**
 
 +-----------+---------------+---------------------------------------------------------------------------------------+
@@ -58,21 +126,24 @@ then applied to the switch all at once. Specifically:
 | 4.0.7     | 04 Jan 2025   | Removed requirement for login credentials or input file. This way, just a test of the |
 |           |               | zone configuration workbook is done and, optionally, a CLI file generated.            |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.8     | xx xxx 2025   | Added copy, rename, replace, and ability to do a full_purge on zone configurations.   |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '04 Jan 2025'
+__date__ = 'xx xxx 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Released'
-__version__ = '4.0.7'
+__status__ = 'Development'
+__version__ = '4.0.8'
 
 import collections
 import sys
 import os
 import pprint
 import datetime
+import copy
 import brcdapi.gen_util as gen_util
 import brcdapi.brcdapi_rest as brcdapi_rest
 import brcdapi.fos_auth as fos_auth
@@ -84,7 +155,8 @@ import brcdapi.zone as brcdapi_zone
 import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_fabric as brcddb_fabric
-import brcddb.brcddb_switch as brcddb_switch
+import brcddb.brcddb_port as brcddb_port
+import brcddb.brcddb_login as brcddb_login
 import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
 import brcddb.util.obj_convert as obj_convert
@@ -109,7 +181,7 @@ _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only us
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # Typically True. See note above
-_debug = False  # Set True to force local debug. Also gets set to True if -d is specified on the command line
+_debug = False  # Adds run-time debug information. Gets set when -d is specified on the command line
 
 _input_d = gen_util.parseargs_login_nr_d
 _input_d['fid'] = dict(
@@ -137,8 +209,12 @@ _input_d['cli'] = dict(
       'name. CLI commands are generated whether -save is specified or not.')
 _input_d['strict'] = dict(r=False, d=False, t='bool',
                           h='Optional. When set, warnings are treated as errors. Warnings are for inconsequential '
-                            'errors, such as deleting a zone that doesn\'t exist.')
+                            'errors, such as deleting a zone that doesn\'t exist. The determination of a warning vs. '
+                            'an error is done on a row-by-row basis. Not all errors that are inconsequential will be '
+                            'treated as warnings. For example, when creating a zone that already exists, other rows '
+                            'are not examined to see if has the same members, so it will always be an error.')
 _input_d.update(gen_util.parseargs_scan_d.copy())
+_input_d.update(gen_util.parseargs_eh_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
 
@@ -151,29 +227,144 @@ _zone_kpis = ('running/brocade-fibrechannel-switch/fibrechannel-switch',
               'running/brocade-fibrechannel-configuration/zone-configuration',
               'running/brocade-fibrechannel-configuration/fabric')
 _pending_flag = False  # Updates were made to the brcddb zone database that have not been written to the switch yet.
-# _tracking_d: They key in each sub-dictionary is the zone object name. The value is the list of rows in the workbook.
-# This is used for error reporting only.
-_tracking_d = dict(alias=dict(), zone=dict(), zone_cfg=dict(), eff_zonecfg_del=False)
-# _modified_d keeps track of all zone objects that were modified (members removed or added). Each sub-dictionary
-# key is the zone object name. The value is True except purge_d. The value for purge_d is a list of aliases which have
-# been purged from that zone. purge_d is used in _purge() to report errors when a zone can't be deleted.
-_modified_d = dict(alias=dict(), zone=dict(), zone_cfg=dict(), purge_d=dict())
+# See _tracking_d in Common Data Structures
+_tracking_d = dict(alias=dict(), zone=dict(), zone_cfg=dict(), general=dict())
+for _key in ('purge', 'process'):
+    _tracking_d['general'][_key] = dict(error_l=list(), warning_l=list())
+_tracking_hdr_d = collections.OrderedDict(alias='Alias', zone='Zone', zone_cfg='Zone Configuration')
+_default_zone_d = dict(row_l=list(), error_l=list(), warning_l=list(), purge=False, purge_l=list())
+
 # _ignore_mem_d: Remaining zone members of a zone effected by a purge action to ignore when determining if it should be
-# # deleted. Value is True
-_ignore_mem_d = dict()  # see note above
-# _purge_d: Used for tracking ports affected by purge actions. Key is the switch WWN. The value is a dictionary of
-# ports whose value is a list of aliases. Keep in mind that with NPIV, there can be multiple aliases associated with a
-# port. Although not the best practice, someone could have multiple aliases for the same WWN.
-_purge_d = dict()  # See note above
-# CLI commands
-_cli_d = dict(
-    alias=dict(create=list(), delete=list(), add=list(), remove=list()),
-    zone=dict(create=list(), delete=list(), add=list(), add_peer=list(), remove=list(), remove_peer=list()),
-    zonecfg=dict(create=list(), delete=list(), add=list(), remove=list()),
-    enable=None,
-    save=False,
-)
+# # deleted. The key is the alias, WWN, or d,i. Value is True. Currently, only alias is used.
+_ignore_mem_d = dict(alias=dict(), zone=dict(), zone_cfg=dict())  # see note above
+_cli_l = list()  # CLI commands
 _MAX_ROWS = 20
+
+_eh_l = [
+    dict(p1_max=80),
+    dict(p1=''),
+    dict(p1='**Overview**'),
+    dict(p1=''),
+    dict(p1='Performs and validates zoning operations defined in an Excel Workbook. Although all zoning operations are '
+            'supported, the primary purpose of this script is to support decommissioning or upgrading servers and '
+            'storage. Since it has a test mode which can operate on offline data, it is also useful for validating '
+            'zoning changes in advance of a zone change control window'),
+    dict(p1=''),
+    dict(p1='In addition to the standard create, delete, add member, and remove member zoning operations, it has the '
+            'following features:'),
+    dict(p1='', b1_char='a'),
+    dict(b1='Rename zone objects'),
+    dict(b1='Copy zone objects'),
+    dict(b1='Use wild cards, ReGex matching, and ReGex searching on alias and zone names'),
+    dict(b1='Purge zone objects. The report includes a purge fault summary, which is typically used to determine what '
+            'zones and zone configurations are affected by a purge action.'),
+    dict(b1='Generate CLI output for service personnel without script access'),
+    dict(p1=''),
+    dict(p1='**Supported Actions**'),
+    dict(p1='', b1_prefix='', b1_char='add_mem    '),
+    dict(b1='Adds a member to an alias, zone, or zone configuration membership list.'),
+    dict(p1='', b1_prefix='', b1_char='copy       '),
+    dict(b1='Copies an alias, zone, or zone configuration.'),
+    dict(p1='', b1_prefix='', b1_char='create     '),
+    dict(b1='Creates an alias, zone, or zone configuration.'),
+    dict(p1='', b1_prefix='', b1_char='delete     '),
+    dict(b1='Deletes an alias, zone, or zone configuration.'),
+    dict(p1='', b1_prefix='', b1_char='purge      '),
+    dict(b1='Supported for alias and zone actions only. The value in the "Member" cell is used to define the alias or '
+            'zone for the purge action to act on. This is the equivalent to the CLI zoneobjectexpunge command.'),
+    dict(p1='', b2_prefix='            ', b2_char='alias   '),
+    dict(b2='Removes the alias, d,i, or WWN in the "Member" cell from any zone it is used in. Typically, a full_purge '
+            'action is used to remove no longer needed aliases to avoid runt zones.'),
+    dict(p1='', b2_prefix='            ', b2_char='zone    '),
+    dict(b2='Removes the zone in the "Member" cell from any zone configuration it is used in.'),
+    dict(p1='', b1_prefix='', b1_char='full_purge '),
+    dict(b1='The value in the "Member" cell is used to define the alias, zone, or zone configuration for the '
+            'full_purge action to act on.'),
+    dict(p1='', b2_prefix='            ', b2_char='alias   '),
+    dict(b2='Executes a purge action on the alias. A full_purge is then executed on any zone affected by the alias '
+            'purge that has no remaining members. See “Ignore” for additional details.'),
+    dict(p1='', b2_prefix='            ', b2_char='zone    '),
+    dict(b2='After executing a purge action on the zone, any affected zone configuration with no remaining members is '
+            'deleted. Any alias not used in any other zone is also deleted.'),
+    dict(p1='', b2_prefix='            ', b2_char='zone_cfg'),
+    dict(b2='Deletes the zone configuration. A full_purge action is executed on any affected zone that is not used in '
+            'any other zone configuration.'),
+    dict(p1='', b1_prefix='', b1_char='ignore     '),
+    dict(b1='Typically not used. Effects the alias full_purge action only. Unless all aliases used in a zone are '
+            'purged or deleted, the zone will have other members. Often, the desired result is to delete the zone even '
+            'though members remain. Typically, the summary report is used to identify these zones and the members. The '
+            'zone configuration worksheet is then updated manually to explicitly delete the zones. This forces you to '
+            'look at the affected zones rather than automatically delete them.'),
+    dict(p1='', b1_prefix='', b1_char='           '),
+    dict(b1='The ignore action allows you to instruct the script to ignore certain zone members when counting zone '
+            'membership so that they will be automatically deleted.'),
+    dict(p1=''),
+    dict(b1='Typical use cases are:'),
+    dict(p1='', b2_prefix='            ', b2_char='*'),
+    dict(b2='A server is being decommissioned and all that remains in the zone is the storage.'),
+    dict(p1=''),
+    dict(b2='A storage array is being decommissioned. The server member (alias, d,i, or WWN) is being used in other '
+            'zones, but the applications using the storage in this zone have been decommissioned.'),
+    dict(p1='', b1_prefix='', b1_char='remove_mem '),
+    dict(b1='Deletes a member from an alias, zone, or zone configuration membership list.'),
+    dict(p1='', b1_prefix='', b1_char='rename    '),
+    dict(b1='Renames the zone object specified in the "Member" cell with the name specified in the "Principal Member" '
+            'cell.'),
+    dict(p1='', b1_prefix='', b1_char='replace    '),
+    dict(b1='For alias, replaces all instances of the alias, WWN, or d,i specified in the "Member" cell with what is '
+            'specified in the "Principal Member" cell in every zone where used. Similarly, zones are replaced in every '
+            'zone configuration where used.'),
+    dict(p1=''),
+    dict(p1='**Tips & Notes**'),
+    dict(p1=''),
+    dict(p1='*Effective Zone*'),
+    dict(p1=''),
+    dict(p1='To avoid conflicts with the effective zone configuration, create and activate a new zone configuration.'),
+    dict(p1=''),
+    dict(p1='*Use*'),
+    dict(p1=''),
+    dict(p1='Typically, the initial evaluation is done from previously collected data using the -i option. This is '
+            'especially so when using the purge actions to decommission storage arrays and server clusters. Since an '
+            'error is generated anytime you attempt to delete a zone object used in another zone object, the error '
+            'report in the summary is useful for determining zones and zone configurations effected by decommissioning '
+            'storage and servers. You can also copy and paste the error list into the zone configuration workbook for '
+            'an ignore action.'),
+    dict(p1=''),
+    dict(p1='*Removing Unused Aliases & Zones*'),
+    dict(p1=''),
+    dict(p1='The “Unused Aliases and Zones” worksheets in the output of report.py were created such that they can '
+            'easily be copied to a zone configuration workbook. Remember to delete any rows in that workbook for zones '
+            'or aliases you want to keep for later use.'),
+    dict(p1=''),
+    dict(p1='*Input Is Not Required*'),
+    dict(p1=''),
+    dict(p1='Specifying login credentials or an input file are only required for validating the zone changes against '
+            'an existing zone database. If there is no input, the zone database is only validated against what is in '
+            'the workbook. The intended purpose of allowing this script to be run without any input is to generate CLI '
+            'only for what was specified in the workbook.'),
+    dict(p1=''),
+    dict(p1='*Order of Actions, Ignore, and Purging Zones*'),
+    dict(p1=''),
+    dict(p1='All actions are taken in the order they appear in the worksheet, beginning with row 2, except deleting '
+            'zones and zone configurations as a result of a full_purge. Upon completion of all actions defined in the '
+            'worksheet, any zone configuration that had at least one member deleted as a result of a purge will be '
+            'deleted if is is not the effective zone configuration and there are no remaining members. A full_purge '
+            'action will be taken on zones that had at least one member deleted as a result of a full purge and there '
+            'are no remaining members that are not in the ignore list.'),
+    dict(p1=''),
+    dict(p1='*Full Purge*'),
+    dict(p1=''),
+    dict(p1='The purge action is equivalent to the CLI command "zoneobjectexpunge". A full purge is different in '
+            'that:'),
+    dict(p1=''),
+    dict(p1='', b1_char='a'),
+    dict(b1='The zone an alias was purged from is also deleted and purged from any zone configuration it was used and '
+            'if the zone has no members after the full purge is completed.'),
+    dict(b1='All aliases not used in other zones are deleted as a result of a zone full purge.'),
+    dict(b1='The full_purge action acts on zone configurations. The "zoneobjectexpunge" command does not act on zone '
+            'configurations'),
+    dict(p1=''),
+]
 
 
 class Found(Exception):
@@ -184,37 +375,82 @@ class FOSError(Exception):
     pass
 
 
-def _reference_rows(row_l):
+def _reference_rows(object_type, object_name):
     """Formats the reference rows for error reporting.
 
-    :param row_l: Row references
-    :type row_l: list
-    :return: Formatted CSV of row numbers
+    :param object_type: Object type, first key in _tracking_d
+    :type object_type: str, key, None
+    :param object_name: Name of zone object, second key into _tracking_d
+    :type object_name: str, key, None
+    :return: Empty string or CSV of row numbers if row numbers were found
     :rtype: str
-    """
-    return ', '.join(gen_util.remove_duplicates([str(row) for row in row_l])) if len(row_l) == 0 else 'none'
-
-
-def _add_to_tracking(key, zone_d, eff_zonecfg_del=False):
-    """Adds an item to the tracking dictionary
-
-    :param key: 'alias', 'zone', or 'zone-cfg'
-    :type key: str
-    :param zone_d: Entry in the list returned from _parse_zone_workbook
-    :type zone_d: dict
-    :param eff_zonecfg_del: If True, the tracked item has been deleted from the effective zone configuration
-    :type eff_zonecfg_del: bool
-    :rtype: None
     """
     global _tracking_d
 
+    try:
+        row_l = gen_util.remove_duplicates(_tracking_d[object_type][object_name]['row_l'])
+        row_l.sort()
+    except KeyError:
+        row_l = list()
+
+    return ' Rows: None' if len(row_l) == 0 else ' Rows: ' + ', '.join([str(i) for i in row_l])
+
+
+def _add_to_tracking(key, input_d, error, warning, cli=None):
+    """Adds an item to the tracking dictionary, _tracking_d
+
+    :param key: 'alias', 'zone', or 'zone_cfg'
+    :type key: str
+    :param input_d: See function header in _invalid_action()
+    :type input_d: dict
+    :param error: Error message(s) for this event
+    :type error: str, list, None
+    :param warning: Warning message(s) for this event
+    :type warning: None, str, list
+    :rtype: None
+    """
+    global _tracking_d, _default_zone_d, _cli_l
+
+    zone_d = input_d['zone_d']
+
+    # Add to tracking
     d = _tracking_d[key].get(zone_d['Name'])
     if d is None:
-        d = list()
+        d = copy.deepcopy(_default_zone_d)
         _tracking_d[key].update({zone_d['Name']: d})
-    d.append(zone_d['row'])
-    if eff_zonecfg_del:
-        _tracking_d['eff_zonecfg_del'] = True
+    if isinstance(zone_d.get('row'), int):
+        d['row_l'].extend(gen_util.convert_to_list(zone_d['row']))
+    d['error_l'].extend(gen_util.convert_to_list(error))
+    d['warning_l'].extend(gen_util.convert_to_list(warning))
+
+    # Add CLI
+    if isinstance(cli, str) and not input_d.get('no_cli', False):
+        buf, add_blank_line = '', False
+        for e_buf in d['error_l']:
+            buf, add_blank_line = '# ', True
+            _cli_l.extend(['', '# Error: ' + e_buf])
+        for e_buf in d['warning_l']:
+            add_blank_line = True
+            _cli_l.extend(['', '# Warning: ' + e_buf])
+        _cli_l.extend(gen_util.convert_to_list(cli))
+        if add_blank_line:
+            _cli_l.append('')
+
+
+def _set_purge(obj_type, obj_name):
+    """Sets the purge attribute in _tracking_d.
+
+    :param obj_type: This is the first key into _tracking_d
+    :type obj_type: key, str
+    :param obj_name: The name of the zone object, second key into _tracking_d
+    """
+    global _tracking_d, _default_zone_d
+
+    zone_d = _tracking_d[obj_type].get(obj_name)
+    if zone_d is None:
+        zone_d = copy.deepcopy(_default_zone_d)
+        _tracking_d[obj_type][obj_name] = zone_d
+    zone_d['purge'] = True
 
 
 def _build_cli_file(cli_file, fid):
@@ -227,51 +463,58 @@ def _build_cli_file(cli_file, fid):
     :return: Error messages
     :rtype: list
     """
-    global _cli_d, _MAX_ROWS
+    global _cli_l, _MAX_ROWS
 
     if not isinstance(cli_file, str):
         return list()
-
-    # Initial file setup
     cli_l = list()
+
+    # Insert setcontext if necessary
     if isinstance(fid, (str, int)):
         cli_l.extend(['setcontext ' + str(fid), ''])
 
-    # Add zoning commands
-    for d in (
-            dict(o='zonecfg', a='delete', c='# Delete Zone Configurations'),
-            dict(o='zonecfg', a='remove', c='# Remove Zone Configuration Members'),
-            dict(o='zone', a='delete', c='# Delete Zones'),
-            dict(o='zone', a='remove', c='# Remove Zone Members'),
-            dict(o='alias', a='delete', c='# Delete Aliases'),
-            dict(o='alias', a='remove', c='# Remove Alias Members'),
-            dict(o='alias', a='create', c='# Create Aliases'),
-            dict(o='alias', a='add', c='# Add Alias Members'),
-            dict(o='zone', a='create', c='# Create Zone'),
-            dict(o='zone', a='add', c='# Add Zone Members'),
-            dict(o='zonecfg', a='create', c='# Create Zone Configurations'),
-            dict(o='zonecfg', a='add', c='# Add Zone Configuration Members'),
-    ):
-        temp_l = _cli_d[d['o']][d['a']]
-        if len(temp_l) > 0:
-            cli_l.extend(['', d['c']])
+    # Insert a blank line periodically
+    i = 0
+    for buf in _cli_l:
+        cli_l.append(buf)
+        i = 0 if len(buf) == 0 else i + 1
+        if i >= _MAX_ROWS:
+            cli_l.append('')
             i = 0
-            for buf in temp_l:
-                if i >= _MAX_ROWS:
-                    cli_l.append('')
-                    i = 0
-                else:
-                    i += 1
-                cli_l.append(buf)
-
-    # Save or enable
-    if isinstance(_cli_d['enable'], str):
-        cli_l.append('cfgenable "' + str(_cli_d['enable']) + '" -f')
-    elif _cli_d['save']:
-        cli_l.append('cfgsave -f')
-    cli_l.append('')
 
     return brcdapi_file.write_file(cli_file, cli_l)
+
+
+def _finish_purges(fab_obj):
+    """Validates the zone database
+
+    :param fab_obj: Fabric object
+    :type fab_obj: brcddb.classes.fabric.FabricObj
+    :rtype: None
+    """
+    global _tracking_d, _ignore_mem_d
+
+    if fab_obj is None:
+        _tracking_d['general']['purge']['warning_l'].append('No fabric object. Unable to complete purges.')
+
+    # Check for zone configuration purges
+    for name, track_d in _tracking_d['zone_cfg'].items():
+        zonecfg_obj = fab_obj.r_zonecfg_obj(name)
+        if zonecfg_obj is not None:
+            if track_d.get('purge', False) and len(zonecfg_obj.r_members()) == 0:
+                _zonecfg_delete(dict(zone_d=dict(Name=name), fab_obj=fab_obj))
+
+    # Check for zone purges
+    for name, track_d in _tracking_d['zone'].items():
+        zone_obj = fab_obj.r_zone_obj(name)
+        if zone_obj is not None:
+            if track_d.get('purge', False):
+                mem_l = zone_obj.r_members() + zone_obj.r_pmembers()
+                temp_l = [m for m in mem_l if not _ignore_mem_d['alias'].get(m, False)]
+                if len(temp_l) == 0:
+                    _zone_delete(dict(zone_d=dict(Name=name), fab_obj=fab_obj))
+                else:
+                    track_d['purge_l'].extend(temp_l)
 
 
 def _validation_check(args_d, fab_obj):
@@ -281,67 +524,78 @@ def _validation_check(args_d, fab_obj):
     :type args_d: dict
     :param fab_obj: Fabric object
     :type fab_obj: brcddb.classes.fabric.FabricObj
-    :return el: Error messages
-    :rtype el: list
+    :rtype: None
     """
     global _tracking_d
 
-    el = list()
-
     if fab_obj is None:
-        return el
+        return
 
     # Make sure all the zones and aliases used in each configuration still exist
-    zone_done_d, alias_done_d = dict(), dict()  # Avoid duplicate messages. Zones may be used in multiple configurations
-    for zonecfg_obj in fab_obj.r_zonecfg_objects():
+    for zonecfg_obj in [obj for obj in fab_obj.r_zonecfg_objects() if obj.r_obj_key() != '_effective_zone_cfg']:
         zonecfg = zonecfg_obj.r_obj_key()
+        zone_obj_l = zonecfg_obj.r_zone_objects()
+        if zonecfg in _tracking_d['zone_cfg'] and len(zone_obj_l) == 0:
+            _add_to_tracking('zone_cfg',
+                             dict(zone_d=dict(Name=zonecfg), fab_obj=fab_obj),
+                             None,
+                             'Does not contain any members.')
         for zone_obj in zonecfg_obj.r_zone_objects():
             zone = zone_obj.r_obj_key()
-            if zone_done_d.get(zone, False):
-                continue
-            zone_done_d[zone] = True
             if fab_obj.r_zone_obj(zone) is None:
-                row_buf = _reference_rows(_tracking_d['zone'].get(zone, list()))
-                el.append('Zone ' + zone + ', used in ' + zonecfg + ' does not exist. Rows: ' + row_buf)
+                if zone in _tracking_d['zone']:
+                    row_l = _tracking_d['zone_cfg'].get(zonecfg, dict(row_l=list())).get('row_l', list())
+                    row_l.extend(_tracking_d['zone'].get(zone, dict(row_l=list())).get('row_l', list()))
+                    _add_to_tracking('zone_cfg',
+                                     dict(zone_d=dict(Name=zonecfg, row=row_l), fab_obj=fab_obj),
+                                     'Zone member does not exist.',
+                                     None)
             else:
                 # Make sure all the aliases exist
                 for alias in zone_obj.r_members() + zone_obj.r_pmembers():
-                    if alias_done_d.get(alias, False):
-                        continue
-                    alias_done_d[alias] = True
-                    if gen_util.is_valid_zone_name(alias) and fab_obj.r_alias_obj(alias) is None:
-                        buf = 'Alias ' + alias + ', used in ' + zone + ' does not exist. Rows: '
-                        buf += _reference_rows(_tracking_d['alias'].get(alias, list()))
-                        el.append(buf)
+                    if alias in _tracking_d['alias']:
+                        if gen_util.is_valid_zone_name(alias) and fab_obj.r_alias_obj(alias) is None:
+                            row_l = _tracking_d['zone_cfg'].get(zonecfg, dict(row_l=list())).get('row_l', list())
+                            row_l.extend(_tracking_d['alias'].get(alias, dict(row_l=list())).get('row_l', list()))
+                            buf = 'Alias ' + alias + ', used in ' + zone + ' does not exist.'
+                            _add_to_tracking('zone_cfg',
+                                             dict(zone_d=dict(Name=zonecfg, row=row_l), fab_obj=fab_obj),
+                                             buf,
+                                             None)
+                # Are there any devices that can communicate with each other?
+                if zone in _tracking_d['zone']:
+                    if len(zone_obj.r_members()) + len(zone_obj.r_pmembers()) if zone_obj.r_is_peer() else 1 < 2:
+                        buf = 'Does not contain any members that can talk to each other.'
+                        _add_to_tracking('zone', dict(zone_d=dict(Name=zone), fab_obj=fab_obj), None, buf)
 
-    # Make sure zones and aliases in the effective zone configuration weren't deleted or modified
-    eff_zonecfg_name = fab_obj.r_defined_eff_zonecfg_key()
+    # Is a new zone configuration being activated and if so, does it exist?
     if isinstance(args_d['a'], str):
-        if fab_obj.r_zonecfg_obj(args_d['a']) is None:
-            buf = 'Zone configuration, ' + args_d['a'] + ', specified with -a parameter doesn\'t exist. Rows: '
-            buf += _reference_rows(_tracking_d['zone_cfg'].get(args_d['a'], list()))
-            el.append(buf)
-    if isinstance(eff_zonecfg_name, str) and not args_d['save'] and not isinstance(args_d['a'], str):
-        row_buf = _reference_rows(_tracking_d['zone_cfg'].get(eff_zonecfg_name, list()))
-        e_buf = 'Zone members or aliases in the zone members of the effective zone configuration, ' + \
-                eff_zonecfg_name + ', were deleted. Either a new zone configuration or the same effective zone ' + \
-                'configuration must be activated using the -a option. Rows: ' + row_buf
-        w_buf = 'Zone members or aliases in the zone members of the effective zone configuration, ' + \
-                eff_zonecfg_name + ', were modified. To avoid a mismatch between the effective zone configuration, ' + \
-                'either a new zone configuration or the same effective zone configuration must be activated using ' + \
-                'the -a option. Rows: ' + row_buf
-        buf = e_buf if _tracking_d['eff_zonecfg_del'] else w_buf
-        new_eff_zone_l, new_eff_mem_l = list(), list()
-        for zone_obj in fab_obj.r_eff_zone_objects():
-            new_eff_zone_l.append(zone_obj.r_obj_key())
-            new_eff_mem_l.extend(zone_obj.r_members() + zone_obj.r_pmembers())
-        if gen_util.compare_lists(_eff_zone_l, new_eff_zone_l):
-            if gen_util.compare_lists(_eff_mem_l, new_eff_mem_l):
-                el.append(buf)
-        else:
-            el.append(buf)
-
-    return el
+        cli = 'cfgenable "' + args_d['a'] + '" -f'
+        buf = 'Specified with -a. Does not exist.' if fab_obj.r_zonecfg_obj(args_d['a']) is None else None
+        _add_to_tracking('zone_cfg', dict(zone_d=dict(Name=args_d['a'])), buf, None, cli=cli)
+    else:
+        # Does the effective zone configuration match the defined zone configuration?
+        eff_zone_cfg_obj = fab_obj.r_defined_eff_zonecfg_obj()
+        if eff_zone_cfg_obj is not None:
+            eff_zonecfg_name = fab_obj.r_defined_eff_zonecfg_key()
+            zonecfg_obj = fab_obj.r_zonecfg_obj(eff_zonecfg_name)
+            if zonecfg_obj is None:
+                buf = 'Effective zone configuration. Defined zone configuration no longer exists.'
+                _add_to_tracking('zone_cfg', dict(zone_d=dict(Name=eff_zonecfg_name)), buf, None)
+            else:
+                compare_zone_cfg = fab_obj.s_add_zonecfg('_compare_zone_cfg')
+                print('Left off here')
+            for zone_obj in eff_zone_cfg_obj.r_zone_objects():
+                zone = zone_obj.r_obj_key()
+                if fab_obj.r_zone_obj(zone) is None:
+                    e_buf = 'Effective zone configuration. Zone ' + zone + ' no longer exists.'
+                    _add_to_tracking('zone_cfg', dict(zone_d=dict(Name=zone)), e_buf, None)
+                else:  # Make sure all the aliases still exist
+                    alias_l = [m for m in zone_obj.r_members()+zone_obj.r_pmembers() if gen_util.is_valid_zone_name(m)]
+                    for alias in [m for m in alias_l if fab_obj.r_alias_obj(m) is None]:
+                        e_buf = 'Effective zone configuration. Alias ' + alias + ' used in zone ' + zone
+                        e_buf += ' does not exist.'
+                        _add_to_tracking('zone_cfg', dict(zone_d=dict(Name=eff_zonecfg_name)), e_buf, None)
 
 
 #################################################
@@ -349,755 +603,839 @@ def _validation_check(args_d, fab_obj):
 #         Actions for _zone_action_d            #
 #                                               #
 #################################################
-def _invalid_action(fab_obj, zone_d, search_d):
+def _invalid_action(input_d):
     """Error handler for "Actions" not supported by the "Zone_Object"
     
-    :param fab_obj: Fabric object
-    :type fab_obj: brcddb.classes.fabric.FabricObj
-    :param zone_d: Entry in the list returned from _parse_zone_workbook
-    :type zone_d: dict
-    :param search_d: Search terms. See search_d in pseudo_main() for details.
-    :type search_d: dict
-    :return el: Error messages
-    :rtype el: list
-    :return wl: Warning messages
-    :rtype wl: list
+    :param input_d: See **Common Data Structures**, *input_d*, in the module header
+    :type input_d: dict
     """
-    stype = 'exact' if zone_d['Match'] is None else zone_d['Match']
-    el = ['"' + zone_d['Action'] + '" is not a valid Action for Zone_Object "' + zone_d['Zone_Object'] +
-          '" for match type "' + stype + '" at row ' + str(zone_d['row'])]
-    return el, list()
+    stype = 'exact' if input_d['zone_d']['Match'] is None else input_d['zone_d']['Match']
+    action, zone_obj = input_d['zone_d']['Action'], input_d['zone_d']['Zone_Object']
+    buf = '"' + action + '" is not a valid Action for Zone_Object "' + zone_obj + '" for match type "' + stype + '"'
+    _add_to_tracking(zone_obj, input_d, buf, None)
 
 
-def _alias_create(fab_obj, zone_d, search_d):
+def _alias_create(input_d):
     """Create an alias. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
+    global _pending_flag
+
+    # If it's a previous action, members are being added
+    if input_d['zone_d']['name_c']:
+        return _alias_add_mem(input_d)
+
+    el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
 
     # Make sure it's a valid alias definition
-    el, wl = list(), list()
-
-    # If it's a previous action, members are being added
-    if zone_d['name_c']:
-        return _alias_add_mem(fab_obj, zone_d, search_d)
-
-    if isinstance(zone_d['Principal Member'], str):  # Principal members are not supported in an alias
-        el.append('Principal members not supported in alias create at row ' + str(zone_d['row']))
-    elif not gen_util.is_valid_zone_name(zone_d['Name']):  # Is it a valid alias name?
-        el.append('Invalid alias name, ' + zone_d['Name'] + ', at row ' + str(zone_d['row']))
-    elif not gen_util.is_wwn(zone_d['Member'], full_check=True) and not gen_util.is_di(zone_d['Member']):  # Valid WWN?
-        el.append('Invalid alias member, ' + zone_d['Member'] + ', at row ' + str(zone_d['row']))
+    if isinstance(input_d['zone_d']['Principal Member'], str):  # Principal members are not supported in an alias
+        el.append('Principal members not supported in alias.')
+    elif not gen_util.is_valid_zone_name(name):  # Is it a valid alias name?
+        el.append('Invalid name, ' + name + '.')
+    elif not gen_util.is_wwn(member, full_check=True) and not gen_util.is_di(member):  # Valid WWN?
+        el.append('Invalid member, ' + member + '.')
     elif fab_obj is not None:
-        alias_obj = fab_obj.r_alias_obj(zone_d['Name'])
+        alias_obj = fab_obj.r_alias_obj(name)
         if alias_obj is None:
-            fab_obj.s_add_alias(zone_d['Name'], zone_d['Member'])
+            fab_obj.s_add_alias(name, member)
             _pending_flag = True
         else:
-            el.append('Alias ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' already exists.')
+            el.append('Already exists.')
 
-    _cli_d['alias']['create'].append('alicreate "' + zone_d['Name'] + '", "' + zone_d['Member'] + '"')
-    _add_to_tracking('alias', zone_d)
-
-    return el, wl
+    _add_to_tracking('alias', input_d, el, None, cli='alicreate "' + name + '", "' + member + '"')
 
 
-def _alias_delete(fab_obj, zone_d, search_d):
+def _alias_copy(input_d):
+    """Copy an alias. See _invalid_action() for parameter descriptions"""
+    global _pending_flag
+
+    el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+    pmember = input_d['zone_d']['Principal Member']
+
+    # Make sure it's a valid alias definition
+    if pmember is not None:  # Principal members are not supported with alias copy
+        el.append('Principal members not supported in alias.')
+    elif not gen_util.is_valid_zone_name(member):  # Is it a valid alias name?
+        el.append('Invalid alias name, ' + member + '.')
+    elif fab_obj is not None:
+        alias_obj = fab_obj.r_alias_obj(name)
+        if alias_obj is None:
+            el.append('Alias ' + name + ' does not exists.')
+        else:
+            copy_alias_obj = fab_obj.r_alias_obj(member)
+            if copy_alias_obj is not None:
+                el.append('Alias ' + member + ' already exists.')
+            else:  # Create the alias and add the members
+                fab_obj.s_add_alias(member, alias_obj.r_members())
+                _pending_flag = True
+
+    _add_to_tracking('alias', input_d, el, wl, cli='zoneobjectcopy "' + name + '", "' + member + '"')
+
+
+def _alias_delete(input_d):
     """Delete an alias. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
+    global _pending_flag
 
     el, wl = list(), list()
+    name, fab_obj = input_d['zone_d']['Name'], input_d['fab_obj']
+
     if fab_obj is not None:
-        alias_obj = fab_obj.r_alias_obj(zone_d['Name'])
+        alias_obj = fab_obj.r_alias_obj(name)
         if alias_obj is None:
-            buf = 'Alias ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' does not exist.'
-            if not gen_util.is_valid_zone_name(zone_d['Name']):
-                buf += ' Did you intend to set a match type in the "Match" column?'
-            el.append(buf)
-        else:
-            fab_obj.s_del_alias(zone_d['Name'])
-            _pending_flag = True
-            _cli_d['alias']['delete'].append('alidelete "' + zone_d['Name'] + '"')
-            if search_d['eff_alias_d'].get(zone_d['Name']) is not None:
-                copy_zone_d = zone_d.copy()
-                copy_zone_d['Name'] = search_d['eff_zonecfg_obj'].r_obj_key()
-                _add_to_tracking('zone_cfg', copy_zone_d, eff_zonecfg_del=True)
-    else:
-        _cli_d['alias']['delete'].append('alidelete "' + zone_d['Name'] + '"')
-    _add_to_tracking('alias', zone_d)
-
-    return el, wl
-
-
-def _alias_delete_m(fab_obj, zone_d, search_d):
-    """Delete aliases based on a regex or wild card match. See _invalid_action() for parameter descriptions"""
-    el, wl = list(), list()
-    copy_zone_d = zone_d.copy()
-
-    for alias in gen_util.match_str(search_d['alias_l'], zone_d['Name'], stype=zone_d['Match']):
-        copy_zone_d['Name'] = alias
-        temp_el, temp_wl = _alias_delete(fab_obj, copy_zone_d, search_d)
-        el.extend(temp_el)
-        wl.extend(temp_wl)
-
-    return el, wl
-
-
-def _alias_add_mem(fab_obj, zone_d, search_d):
-    """Add alias members. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
-
-    el, wl = list(), list()
-
-    # Validate the members
-    if zone_d['Principal Member'] is not None:
-        el.append('Principal members not supported in alias create at row ' + str(zone_d['row']))
-    elif not gen_util.is_wwn(zone_d['Member'], full_check=True) and not gen_util.is_di(zone_d['Member']):
-        el.append('Invalid alias member, ' + zone_d['Member'] + ', at row ' + str(zone_d['row']))
-    elif fab_obj is not None:
-        alias_obj = fab_obj.r_alias_obj(zone_d['Name'])
-        if alias_obj is None:
-            buf = 'Alias ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' does not exist.'
-            if not gen_util.is_valid_zone_name(zone_d['Name']):
-                buf += ' Did you intend to set a match type in the "Match" column?'
-            el.append(buf)
-        elif zone_d['Member'] in alias_obj.r_members():
-            wl.append('Member ' + zone_d['Member'] + ' is already in ' + zone_d['Name'] + ' in row ' +
-                      str(zone_d['row']))
-            return el, wl  # The member is already in the alias so there is nothing to do.
-        else:
-            alias_obj.s_add_member(zone_d['Member'])
-            _pending_flag = True
-            if search_d['eff_alias_d'].get(zone_d['Name']) is not None:
-                copy_zone_d = zone_d.copy()
-                copy_zone_d['Name'] = search_d['eff_zonecfg_obj'].r_obj_key()
-                _add_to_tracking('zone_cfg', copy_zone_d)
-
-    # Add to CLI
-    if len(el) == 0:
-        _cli_d['alias']['add'].append('aliadd "' + zone_d['Name'] + '", "' + zone_d['Member'] + '"')
-    _add_to_tracking('alias', zone_d)
-
-    return el, wl
-
-
-def _alias_remove_mem(fab_obj, zone_d, search_d):
-    """Remove alias members. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
-
-    el, wl = list(), list()
-    if fab_obj is not None:
-        alias_obj = fab_obj.r_alias_obj(zone_d['Name'])
-        if alias_obj is None:
-            buf = 'Alias ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' does not exist.'
-            if not gen_util.is_valid_zone_name(zone_d['Name']):
-                buf += ' Did you intend to set a match type in the "Match" column?'
-            el.append(buf)
-        else:
-            alias_obj.s_del_member(zone_d['Name'], zone_d['Member'])
-            _pending_flag = True
-            if search_d['eff_alias_d'].get(zone_d['Name']) is not None:
-                copy_zone_d = zone_d.copy()
-                copy_zone_d['Name'] = search_d['eff_zonecfg_obj'].r_obj_key()
-                _add_to_tracking('zone_cfg', copy_zone_d)
-    _cli_d['alias']['remove'].append('aliremove "' + zone_d['Name'] + '", "' + zone_d['Member'] + '"')
-    _add_to_tracking('alias', zone_d)
-
-    return el, wl
-
-
-def _alias_purge(fab_obj, zone_d, search_d):
-    """Purges an alias. See _invalid_action() for parameters"""
-    global _modified_d, _purge_d
-
-    el, wl = list(), list()
-    if fab_obj is not None:
-        alias_obj = fab_obj.r_alias_obj(zone_d['Name'])
-        if alias_obj is not None:
-            alias = alias_obj.r_obj_key()
-
-            # Update _purge_d
-            for port_obj in obj_convert.obj_extract(alias_obj, 'PortObj'):
-                port = port_obj.r_obj_key()
-                switch = port_obj.r_switch_obj().r_obj_key()
-                port_d = _purge_d.get(switch)
-                if port_d is None:
-                    port_d = dict()
-                    _purge_d[switch] = port_d
-                alias_l = port_d.get(port)
-                if alias_l is None:
-                    alias_l = list()
-                    port_d[port] = alias_l
-                alias_l.append(alias)
-
-            # Delete the alias in every zone where it is used.
-            for zone_obj in obj_convert.obj_extract(alias_obj, 'ZoneObj'):
-                zone_obj.s_del_member(alias)
-                zone_obj.s_del_pmember(alias)
-                zone = zone_obj.r_obj_key()
-                alias_l = _modified_d['purge_d'].get(zone)
-                if alias_l is None:
-                    alias_l = list()
-                    _modified_d['purge_d'].update({zone: alias_l})
-                alias_l.append(alias)
-
-            temp_el, temp_wl = _alias_delete(fab_obj, zone_d, search_d)
-            el.extend(temp_el)
-            wl.extend(temp_wl)
-
-    return el, wl
-
-
-def _alias_purge_m(fab_obj, zone_d, search_d):
-    """Purges aliases based on a regex or wild card match. See _invalid_action() for parameters"""
-    el, wl = list(), list()
-    copy_zone_d = zone_d.copy()
-    for alias in gen_util.match_str(search_d['alias_l'], zone_d['Name'], stype=zone_d['Match']):
-        copy_zone_d['Name'] = alias
-        temp_el, temp_wl = _alias_purge(fab_obj, copy_zone_d, search_d)
-        el.extend(temp_el)
-        wl.extend(temp_wl)
-
-    return el, wl
-
-
-def _alias_ignore(fab_obj, zone_d, search_d):
-    """Set alias to ignore. See _invalid_action() for parameters"""
-    global _ignore_mem_d
-
-    _ignore_mem_d.update({zone_d['Member']: True})
-
-    return list(), list()
-
-
-def _alias_ignore_m(fab_obj, zone_d, search_d):
-    """Set aliases to ignore based on a regex or wild card match. See _invalid_action() for parameters"""
-    for alias in gen_util.match_str(search_d['alias_l'], zone_d['Name'], stype=zone_d['Match']):
-        _ignore_mem_d.update({alias: True})
-
-    return list(), list()
-
-
-def _peer_zone_create(fab_obj, zone_d, search_d):
-    """Create a peer zone. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
-
-    el, wl = list(), list()
-
-    # If it's a previous action, members are being added
-    if zone_d['name_c']:
-        return _zone_add_mem(fab_obj, zone_d, search_d)
-
-    # Make sure it's a valid zone definition
-    if not gen_util.is_valid_zone_name(zone_d['Name']):
-        el.append('Invalid zone name, ' + zone_d['Name'] + ', at row ' + str(zone_d['row']))
-        return el, wl
-    m = zone_d['Member']
-    if isinstance(m, str) and \
-            not gen_util.is_wwn(m, full_check=True) and \
-            not gen_util.is_di(m) and \
-            not gen_util.is_valid_zone_name(m):
-        el.append('Invalid zone member, ' + m + ', at row ' + str(zone_d['row']))
-        return el, wl
-    zone_obj = fab_obj.r_zone_obj(zone_d['Name'])
-    if zone_obj is not None:
-        el.append('Zone ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' already exists.')
-        return el, wl
-
-    # Create the peer zone
-    if fab_obj is not None:
-        fab_obj.s_add_zone(zone_d['Name'], brcddb_common.ZONE_USER_PEER, zone_d['Member'], zone_d['Principal Member'])
-        _pending_flag = True
-    buf = 'zonecreate --peerzone "' + zone_d['Name'] + '"'
-    if isinstance(zone_d['Principal Member'], str):
-        buf += ' -principal "' + zone_d['Principal Member'] + '"'
-    if isinstance(zone_d['Member'], str):
-        buf += ' -members "' + zone_d['Member'] + '"'
-    _cli_d['zone']['create'].append(buf)
-    _add_to_tracking('zone', zone_d)
-
-    return el, wl
-
-
-def _zone_create(fab_obj, zone_d, search_d):
-    """Create a zone. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
-
-    el, wl = list(), list()
-
-    # If it's a previous action, members are being added
-    if zone_d['name_c']:
-        return _zone_add_mem(fab_obj, zone_d, search_d)
-
-    # Make sure it's a valid zone definition
-    if zone_d['Principal Member'] is not None:  # Principal members are only supported in peer zones
-        el.append('Principal members only supported in peer zones at row ' + str(zone_d['row']))
-    if not gen_util.is_valid_zone_name(zone_d['Name']):  # Is the zone name valid?
-        el.append('Invalid zone name, ' + zone_d['Name'] + ', at row ' + str(zone_d['row']))
-    m = zone_d['Member']
-    if not gen_util.is_wwn(m, full_check=True) and not gen_util.is_di(m) and not gen_util.is_valid_zone_name(m):
-        el.append('Invalid zone member, ' + m + ', at row ' + str(zone_d['row']))
-    zone_obj = fab_obj.r_zone_obj(zone_d['Name'])
-    if zone_obj is not None:  # If the zone already exists, do they have the same members?
-        el.append('Zone ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' already exists.')
-
-    # Create the zone
-    if len(el) == 0 and fab_obj is not None:
-        fab_obj.s_add_zone(zone_d['Name'],
-                           brcddb_common.ZONE_STANDARD_ZONE,
-                           zone_d['Member'],
-                           zone_d['Principal Member'])
-        _pending_flag = True
-    _cli_d['zone']['create'].append('zonecreate "' + zone_d['Name'] + '", "' + zone_d['Member'] + '"')
-    _add_to_tracking('zone', zone_d)
-
-    return el, wl
-
-
-def _zone_delete(fab_obj, zone_d, search_d):
-    """Delete a zone. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
-
-    el, wl = list(), list()
-    if fab_obj is not None:
-        if fab_obj.r_zone_obj(zone_d['Name']) is None:
-            buf = 'Zone ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' does not exist.'
-            if not gen_util.is_valid_zone_name(zone_d['Name']):
+            buf = 'Alias ' + name + ' does not exist.'
+            if not gen_util.is_valid_zone_name(name):
                 buf += ' Did you intend to set a match type in the "Match" column?'
             wl.append(buf)
         else:
-            fab_obj.s_del_zone(zone_d['Name'])
+            fab_obj.s_del_alias(name)
             _pending_flag = True
-            if search_d['eff_zone_d'].get(zone_d['Name']) is not None:
-                copy_zone_d = zone_d.copy()
-                copy_zone_d['Name'] = search_d['eff_zonecfg_obj'].r_obj_key()
-                _add_to_tracking('zone_cfg', copy_zone_d, eff_zonecfg_del=True)
-    _cli_d['zone']['delete'].append('zonedelete ' + zone_d['Name'])
-    _add_to_tracking('zone', zone_d)
 
-    return el, wl
+    _add_to_tracking('alias', input_d, el, wl, cli='alidelete "' + name + '"')
 
 
-def _zone_delete_m(fab_obj, zone_d, search_d):
+def _alias_delete_m(input_d):
+    """Delete aliases based on a regex or wild card match. See _invalid_action() for parameter descriptions"""
+    name = input_d['zone_d']['Name']
+
+    for alias in gen_util.match_str(input_d['search_d']['alias_l'], name, stype=input_d['zone_d']['Match']):
+        input_d['zone_d']['Name'] = alias
+        _alias_delete(input_d)
+    input_d['zone_d']['Name'] = name
+
+
+def _alias_add_mem(input_d):
+    """Add alias members. See _invalid_action() for parameter descriptions"""
+    global _pending_flag
+
+    el, wl = list(), list()
+    name, member = input_d['zone_d']['Name'], input_d['zone_d']['Member']
+    pmember, fab_obj = input_d['zone_d']['Principal Member'], input_d['fab_obj']
+
+    # Validate the members and add if OK
+    if pmember is not None:
+        el.append('Principal members not supported in alias.')
+    elif not gen_util.is_wwn(member, full_check=True) and not gen_util.is_di(member):
+        el.append('Invalid alias member, ' + member + '.')
+    elif fab_obj is not None:
+        alias_obj = fab_obj.r_alias_obj(name)
+        if alias_obj is None:
+            buf = 'Alias ' + name + ' does not exist.'
+            if not gen_util.is_valid_zone_name(name):
+                buf += ' Did you intend to set a match type in the "Match" column?'
+            el.append(buf)
+        elif member in alias_obj.r_members():
+            wl.append('Member ' + member + ' is already in ' + name + '.')
+        else:
+            alias_obj.s_add_member(member)
+            _pending_flag = True
+
+    _add_to_tracking('alias', input_d, el, wl, cli='aliadd "' + name + '", "' + member + '"')
+
+
+def _alias_remove_mem(input_d):
+    """Remove alias members. See _invalid_action() for parameter descriptions"""
+    global _pending_flag
+
+    el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+    if fab_obj is not None:
+        alias_obj = fab_obj.r_alias_obj(name)
+        if alias_obj is None:
+            buf = 'Alias ' + name + ' does not exist.'
+            if not gen_util.is_valid_zone_name(name):
+                buf += ' Did you intend to set a match type in the "Match" column?'
+            el.append(buf)
+        else:
+            alias_obj.s_del_member(name, member)
+            _pending_flag = True
+
+    _add_to_tracking('alias', input_d, el, wl, cli='aliremove "' + name + '", "' + member + '"')
+
+
+def _alias_purge(input_d):
+    """Purges an alias. See _invalid_action() for parameters"""
+    name, fab_obj = input_d['zone_d']['Name'], input_d['fab_obj']
+    if fab_obj is not None:
+        alias_obj = fab_obj.r_alias_obj(name)
+        if alias_obj is not None:
+            alias = alias_obj.r_obj_key()
+
+            # Delete the alias member in every zone where it is used.
+            for zone_obj in obj_convert.obj_extract(alias_obj, 'ZoneObj'):
+                zone = zone_obj.r_obj_key()
+                temp_input_d = dict(
+                    zone_d={
+                        'Name': zone,
+                        'row': input_d['zone_d']['row'],
+                        'Member': alias if alias in zone_obj.r_members() else None,
+                        'Principal Member': alias if alias in zone_obj.r_pmembers() else None,
+                    },
+                    fab_obj=fab_obj,
+                    no_cli=True
+                )
+                _zone_remove_mem(temp_input_d)
+
+            # Delete the alias
+            no_cli = input_d.get('no_cli', False)
+            input_d['no_cli'] = True
+            _alias_delete(input_d)
+            input_d['no_cli'] = no_cli
+
+    _add_to_tracking('alias', input_d, None, None, cli='zoneobjectexpunge "' + name + '" -f')
+
+
+def _alias_full_purge(input_d):
+    """Purges an alias and then a full purge on any resulting empty zones. See _invalid_action() for parameters"""
+    name, fab_obj = input_d['zone_d']['Name'], input_d['fab_obj']
+    alias_obj = None if fab_obj is None else fab_obj.r_alias_obj(name)
+    if alias_obj is not None:
+        for zone_obj in obj_convert.obj_extract(alias_obj, 'ZoneObj'):
+            _set_purge('zone', zone_obj.r_obj_key())
+        _alias_purge(input_d)
+
+
+def _alias_purge_m(input_d):
+    """Purges aliases based on a regex or wild card match. See _invalid_action() for parameters"""
+    name = input_d['zone_d']['Name']
+    for alias in gen_util.match_str(input_d['search_d']['alias_l'], name, stype=input_d['zone_d']['Match']):
+        input_d['zone_d']['Name'] = alias
+        _alias_purge(input_d)
+    input_d['zone_d']['Name'] = name
+
+
+def _alias_full_purge_m(input_d):
+    """Performs an alias full purge based on a regex or wild card match. See _invalid_action() for parameters"""
+    name = input_d['zone_d']['Name']
+    for alias in gen_util.match_str(input_d['search_d']['alias_l'], name, stype=input_d['zone_d']['Match']):
+        input_d['zone_d']['Name'] = alias
+        _alias_full_purge(input_d)
+    input_d['zone_d']['Name'] = name
+
+
+def _alias_ignore(input_d):
+    """Set alias to ignore. See _invalid_action() for parameters"""
+    global _ignore_mem_d
+
+    _ignore_mem_d['alias'][input_d['zone_d']['Name']] = True
+
+
+def _alias_ignore_m(input_d):
+    """Set aliases to ignore based on a regex or wild card match. See _invalid_action() for parameters"""
+    name = input_d['zone_d']['Name']
+    for alias in gen_util.match_str(input_d['search_d']['alias_l'], name, stype=input_d['zone_d']['Match']):
+        _ignore_mem_d['alias'][alias] = True
+
+
+def _peer_zone_create(input_d):
+    """Create a peer zone. See _invalid_action() for parameter descriptions"""
+    global _pending_flag, _cli_l
+
+    el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+    pmember = input_d['zone_d']['Principal Member']
+
+    # If it's a previous action, members are being added
+    if input_d['zone_d']['name_c']:
+        return _zone_add_mem(input_d)
+
+    # Make sure it's a valid zone definition
+    if not gen_util.is_valid_zone_name(name):
+        el.append('Invalid zone name, ' + name + '.')
+    elif isinstance(member, str) and \
+            not gen_util.is_wwn(member, full_check=True) and \
+            not gen_util.is_di(member) and \
+            not gen_util.is_valid_zone_name(member):
+        el.append('Invalid zone member, ' + member + '.')
+    else:  # Create the peer zone
+        zone_obj = fab_obj.r_zone_obj(name)
+        if zone_obj is not None:
+            el.append('Zone ' + name + ' already exists.')
+        elif fab_obj is not None:
+            fab_obj.s_add_zone(name, brcddb_common.ZONE_USER_PEER, member, pmember)
+            _pending_flag = True
+
+    buf = 'zonecreate --peerzone "' + name + '"'
+    if isinstance(pmember, str):
+        buf += ' -principal "' + pmember + '"'
+    if isinstance(member, str):
+        buf += ' -members "' + member + '"'
+    _add_to_tracking('zone', input_d, el, wl, cli=buf)
+
+
+def _zone_create(input_d):
+    """Create a zone. See _invalid_action() for parameter descriptions"""
+    global _pending_flag, _cli_l
+
+    el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+    pmember = input_d['zone_d']['Principal Member']
+
+    # If it's a previous action, members are being added
+    if input_d['zone_d']['name_c']:
+        return _zone_add_mem(input_d)
+
+    # Make sure it's a valid zone definition
+    if pmember is not None:  # Principal members are only supported in peer zones
+        el.append('Principal members only supported in peer zones.')
+    elif not gen_util.is_valid_zone_name(name):  # Is the zone name valid?
+        el.append('Invalid zone name, ' + name + '.')
+    elif not gen_util.is_wwn(member, full_check=True) and not gen_util.is_di(member) and \
+            not gen_util.is_valid_zone_name(member):
+        el.append('Invalid zone member, ' + member + '.')
+    elif fab_obj is not None:
+        zone_obj = fab_obj.r_zone_obj(name)
+        if zone_obj is not None:
+            el.append('Zone ' + name + ' already exists.')
+        else:
+            fab_obj.s_add_zone(name, brcddb_common.ZONE_STANDARD_ZONE, member, pmember)
+            _pending_flag = True
+
+    _add_to_tracking('zone', input_d, el, wl, cli='zonecreate "' + name + '", "' + input_d['zone_d']['Member'] + '"')
+
+
+def _zone_copy(input_d):
+    """Copy a zone. See _invalid_action() for parameter descriptions"""
+    global _pending_flag
+
+    el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+    pmember = input_d['zone_d']['Principal Member']
+
+    # Make sure it's a valid zone definition
+    if pmember is not None:  # Principal members are not supported with zone copy
+        el.append('Use "Member", not "Principal Member" for zone copy.')
+    elif not gen_util.is_valid_zone_name(member):  # Is it a valid zone name?
+        el.append('Invalid zone name, ' + member + '.')
+    elif fab_obj is not None:
+        zone_obj = fab_obj.r_zone_obj(name)
+        if zone_obj is None:
+            el.append('Zone ' + name + ' does not exists.')
+        else:
+            copy_zone_obj = fab_obj.r_zone_obj(member)
+            if copy_zone_obj is not None:
+                el.append('Zone ' + member + ' already exists.')
+            else:  # Create the zone and add the members
+                fab_obj.s_add_zone(member, zone_obj.r_type(), zone_obj.r_members(), zone_obj.r_pmembers())
+                _pending_flag = True
+
+    _add_to_tracking('zone', input_d, el, wl, cli='zoneobjectcopy "' + name + '", "' + member + '"')
+
+
+def _zone_delete(input_d):
+    """Delete a zone. See _invalid_action() for parameter descriptions"""
+    global _pending_flag
+
+    el, wl = list(), list()
+    name, fab_obj = input_d['zone_d']['Name'], input_d['fab_obj']
+
+    if fab_obj is not None:
+        if fab_obj.r_zone_obj(name) is None:
+            buf = 'Zone ' + name + ' does not exist.'
+            if not gen_util.is_valid_zone_name(name):
+                buf += ' Did you intend to set a match type in the "Match" column?'
+            wl.append(buf)
+        else:
+            fab_obj.s_del_zone(name)
+            _pending_flag = True
+
+    _add_to_tracking('zone', input_d, el, wl, cli='zonedelete ' + name)
+
+
+def _zone_delete_m(input_d):
     """Delete zones based on a regex or wild card match. See _invalid_action() for parameters"""
-    el, wl = list(), list()
-
-    copy_zone_d = zone_d.copy()
-    for zone in gen_util.match_str(search_d['zone_l'], zone_d['Name'], stype=zone_d['Match']):
-        copy_zone_d['Name'] = zone
-        temp_el, temp_wl = _zone_delete(fab_obj, copy_zone_d, search_d)
-        el.extend(temp_el)
-        wl.extend(temp_wl)
-
-    return el, wl
+    name = input_d['zone_d']['Name']
+    for zone in gen_util.match_str(input_d['search_d']['zone_l'], name, stype=input_d['zone_d']['Match']):
+        input_d['zone_d']['Name'] = zone
+        _zone_delete(input_d)
+    input_d['zone_d']['Name'] = name  # I don't think I need to do this, but just in case I'm overlooking something
 
 
-def _zone_add_mem(fab_obj, zone_d, search_d):
+def _zone_add_mem(input_d):
     """Add zone members. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
+    global _pending_flag
 
     el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+    pmember = input_d['zone_d']['Principal Member']
 
     if fab_obj is not None:
         # Validate the parameters
-        zone_obj = fab_obj.r_zone_obj(zone_d['Name'])
+        zone_obj = fab_obj.r_zone_obj(name)
         if zone_obj is None:
-            buf = 'Zone ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' does not exist.'
-            if not gen_util.is_valid_zone_name(zone_d['Name']):
+            buf = 'Zone ' + name + ' does not exist.'
+            if not gen_util.is_valid_zone_name(name):
                 buf += ' Did you intend to set a match type in the "Match" column?'
             el.append(buf)
-            return el, wl
-        buf = 'zoneadd --peerzone "' + zone_d['Name'] + '"' if zone_obj.r_is_peer() else \
-            'zoneadd "' + zone_d['Name'] + '"'
-        m = zone_d['Principal Member']
-        if isinstance(m, str):
+        mem = pmember
+        if isinstance(mem, str):
             if not zone_obj.r_is_peer():
-                el.append('Principal members are not supported in ' + zone_d['Name'] +
-                          ' because is not a peer zone at row ' + str(zone_d['row']))
-                return el, wl
-            if not gen_util.is_wwn(m, full_check=True) and not gen_util.is_di(m) and not gen_util.is_valid_zone_name(m):
-                el.append('Invalid zone member, ' + m + ', at row ' + str(zone_d['row']))
-                return el, wl
-        for m in [mem for mem in [zone_d['Member'], zone_d['Principal Member']] if isinstance(mem, str)]:
-            if not gen_util.is_wwn(m, full_check=True) and not gen_util.is_di(m) and not gen_util.is_valid_zone_name(m):
-                el.append('Invalid zone member, ' + m + ', at row ' + str(zone_d['row']))
-                return el, wl
+                el.append('Principal members only supported in peer zones.')
+            if not gen_util.is_wwn(mem, full_check=True) and \
+                    not gen_util.is_di(mem) and not gen_util.is_valid_zone_name(mem):
+                el.append('Invalid zone member, ' + mem + '.')
+        for mem in [m for m in [member, pmember] if isinstance(m, str)]:
+            if not gen_util.is_wwn(mem, full_check=True) and not gen_util.is_di(mem) and \
+                    not gen_util.is_valid_zone_name(mem):
+                el.append('Invalid zone member, ' + mem + '.')
 
         # Add the zone members
-        zone_obj.s_add_member(zone_d['Member'])
-        zone_obj.s_add_pmember(zone_d['Principal Member'])
+        zone_obj.s_add_member(member)
+        zone_obj.s_add_pmember(pmember)
         _pending_flag = True
-        if search_d['eff_zone_d'].get(zone_d['Name']) is not None:
-            copy_zone_d = zone_d.copy()
-            copy_zone_d['Name'] = search_d['eff_zonecfg_obj'].r_obj_key()
-            _add_to_tracking('zone_cfg', copy_zone_d)
-    else:
-        buf = 'zoneadd --peerzone "' + zone_d['Name'] + '"' if zone_d['Zone_Object'] == 'peer_zone' else \
-            'zoneadd "' + zone_d['Name'] + '"'
-    if isinstance(zone_d['Principal Member'], str):
-        buf += ' -principal "' + zone_d['Principal Member'] + '"'
-    if isinstance(zone_d['Member'], str):
-        buf += ' -members "' + zone_d['Member'] + '"'
-    _cli_d['zone']['add'].append(buf)
-    _add_to_tracking('zone', zone_d)
 
-    return el, wl
+    buf = 'zoneadd '
+    if input_d['zone_d']['Zone_Object'] == 'peer_zone':
+        buf += '--peerzone '
+    buf += '"' + name + '"'
+    if isinstance(pmember, str):
+        buf += ' -principal "' + pmember + '"'
+    if isinstance(member, str):
+        buf += ' -members "' + member + '"'
+    _cli_l.append(buf)
+    _add_to_tracking('zone', input_d, el, wl, cli=buf)
 
 
-def _peer_zone_remove_mem(fab_obj, zone_d, search_d):
+def _peer_zone_remove_mem(input_d):
     """Remove zone members. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
+    global _pending_flag
 
     el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+    pmember = input_d['zone_d']['Principal Member']
+
     if fab_obj is not None:
         # Validate the input
-        zone_obj = fab_obj.r_zone_obj(zone_d['Name'])
+        zone_obj = fab_obj.r_zone_obj(name)
         if zone_obj is None:
-            buf = 'Zone ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' does not exist.'
-            if not gen_util.is_valid_zone_name(zone_d['Name']):
+            buf = 'Zone ' + name + ' does not exist.'
+            if not gen_util.is_valid_zone_name(name):
                 buf += ' Did you intend to set a match type in the "Match" column?'
             el.append(buf)
-        elif not zone_obj.r_is_peer():
-            el.append('Zone type mismatch. ' + zone_d['Name'] + ' is not a peer zone at row ' + str(zone_d['row']))
+        elif zone_obj.r_is_peer():
+            if isinstance(member, str) and member not in zone_obj.r_member():
+                if member in zone_obj.r_pmembers():
+                    el.append('The "Member" is a "Principal Member".')
+                else:
+                    wl.append(member + ' is not a member of ' + name + '.')
+            if isinstance(pmember, str) and pmember not in zone_obj.r_pmember():
+                if pmember in zone_obj.r_members():
+                    el.append('The "Principal Member" is a "Member".')
+                else:
+                    wl.append(pmember + ' is not a principal member of ' + name)
         else:
-            member, pmember = zone_d['Member'], zone_d['Principal Member']
-            if isinstance(member, str):
-                if member not in zone_obj.r_member():
-                    if isinstance(pmember, str) and pmember not in zone_obj.r_pmembers():
-                        el.append('The "Member" in row ' + str(zone_d['row']) + ' is a "Principal Member".')
-                    else:
-                        wl.append(member + ' in row ' + str(zone_d['row']) + ' is not a member of ' + zone_d['Name'])
-                elif member in zone_obj.r_pmembers():
-                    el.append('The "Member" in row ' + str(zone_d['row']) + ' is a "Principal Member".')
-            if isinstance(pmember, str):
-                if pmember not in zone_obj.r_pmember():
-                    if isinstance(member, str) and member not in zone_obj.r_members():
-                        el.append('The "Principal Member" in row ' + str(zone_d['row']) + ' is a "Member".')
-                    else:
-                        wl.append(pmember + ' in row ' + str(zone_d['row']) + ' is not a principal member of ' +
-                                  zone_d['Name'])
-                elif pmember in zone_obj.r_members():
-                    el.append('The "Principal Member" in row ' + str(zone_d['row']) + ' is a " Member".')
+            el.append('Zone type mismatch. ' + name + ' is not a peer zone.')
 
+        # Make the zoning changes
         if len(el) == 0:
-            # Make the zoning changes
-            zone_obj.s_del_member(zone_d['Member'])
-            zone_obj.s_del_pmember(zone_d['Principal Member'])
+            zone_obj.s_del_member(member)
+            zone_obj.s_del_pmember(pmember)
             _pending_flag = True
-            if search_d['eff_zone_d'].get(zone_d['Name']) is not None:
-                copy_zone_d = zone_d.copy()
-                copy_zone_d['Name'] = search_d['eff_zonecfg_obj'].r_obj_key()
-                _add_to_tracking('zone_cfg', copy_zone_d)
 
-    # Update CLI
-    buf = 'zoneremove --peerzone "' + zone_d['Name'] + '"'
-    if isinstance(zone_d['Principal Member'], str):
-        buf += ' -principal "' + zone_d['Principal Member'] + '"'
-    if isinstance(zone_d['Member'], str):
-        buf += ' -members "' + zone_d['Member'] + '"'
-    _cli_d['zone']['remove'].append(buf)
-
-    _add_to_tracking('zone', zone_d)
-
-    return el, wl
+    buf = 'zoneremove --peerzone "' + name + '"'
+    if isinstance(pmember, str):
+        buf += ' -principal "' + pmember + '"'
+    if isinstance(member, str):
+        buf += ' -members "' + member + '"'
+    _add_to_tracking('zone', input_d, el, wl, cli=buf)
 
 
-def _zone_remove_mem(fab_obj, zone_d, search_d):
+def _zone_remove_mem(input_d):
     """Remove zone members. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
+    global _pending_flag
 
-    el, wl, zone_obj, member = list(), list(), None, zone_d['Member']
+    el, wl = list(), list()
+    name, member, fab_obj, zone_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj'], None
+    pmember = input_d['zone_d']['Principal Member']
 
     # Validate the parameters
-    if zone_d['Principal Member'] is not None:
-        el.append('Principal members not supported in zone member remove at row ' + str(zone_d['row']))
+    if pmember is not None:
+        el.append('Principal members not supported in standard zone.')
     elif fab_obj is not None:
-        zone_obj = fab_obj.r_zone_obj(zone_d['Name'])
+        zone_obj = fab_obj.r_zone_obj(name)
         if zone_obj is not None:
             if zone_obj.r_is_peer():
-                el.append('Zone type mismatch. ' + zone_d['Name'] + ' is a peer zone at row ' + str(zone_d['row']))
+                el.append('Zone type mismatch. ' + name + ' is a peer zone.')
             elif member not in zone_obj.r_members():
-                wl.append(member + ' in row ' + str(zone_d['row']) + ' is not a member of ' + zone_d['Name'])
+                wl.append(member + ' is not a member of ' + name + '.')
 
     # Remove the members
     if len(el) == 0 and zone_obj is not None:
         zone_obj.s_del_member(member)
         _pending_flag = True
-        if search_d['eff_zone_d'].get(zone_d['Name']) is not None:
-            copy_zone_d = zone_d.copy()
-            copy_zone_d['Name'] = search_d['eff_zonecfg_obj'].r_obj_key()
-            _add_to_tracking('zone_cfg', copy_zone_d)
-    _cli_d['zone']['remove'].append('zoneremove "' + zone_d['Name'] + '", ' + member)
-    _add_to_tracking('zone', zone_d)
 
-    return el, wl
+    _add_to_tracking('zone', input_d, el, wl, cli='zoneremove "' + name + '", ' + member)
 
 
-def _zone_purge(fab_obj, zone_d, search_d):
+def _zone_purge(input_d):
     """Purges a zone. See _invalid_action() for parameters"""
-    global _modified_d
-
     el, wl = list(), list()
+    name, fab_obj = input_d['zone_d']['Name'], input_d['fab_obj']
+
     if fab_obj is not None:
-        zone_obj = fab_obj.r_zone_obj(zone_d['Name'])
-        if zone_obj is not None:
+        zone_obj = fab_obj.r_zone_obj(name)
+        if zone_obj is None:
+            wl.append('Zone ' + name + ' does not exist.')
+            _add_to_tracking('zone', input_d, el, wl)
+        else:
             zone = zone_obj.r_obj_key()
+            # Remove the zone from every zone configuration that it's a member of
             for zonecfg_obj in obj_convert.obj_extract(zone_obj, 'ZoneCfgObj'):
                 zonecfg_obj.s_del_member(zone)
-                _modified_d['zone'].update({zone: True})
-            temp_el, temp_wl = _zone_delete(fab_obj, zone_d, search_d)
-            el.extend(temp_el)
-            wl.extend(temp_wl)
-
-    return el, wl
+            _zone_delete(input_d)
 
 
-def _zone_purge_m(fab_obj, zone_d, search_d):
+def _zone_purge_m(input_d):
     """Purges zones based on a regex or wild card match. See _invalid_action() for parameters"""
-    el, wl, copy_zone_d = list(), list(), zone_d.copy()
-    for zone in gen_util.match_str(search_d['zone_l'], zone_d['Name'], stype=zone_d['Match']):
-        copy_zone_d['Name'] = zone
-        temp_el, temp_wl = _zone_purge(fab_obj, copy_zone_d, search_d)
-        el.extend(temp_el)
-        wl.extend(temp_wl)
-
-    return el, wl
+    name = input_d['zone_d']['Name']
+    for zone in gen_util.match_str(input_d['search_d']['zone_l'], name, stype=input_d['zone_d']['Match']):
+        input_d['zone_d']['Name'] = zone
+        _zone_purge(input_d)
+    input_d['zone_d']['Name'] = name
 
 
-def _zone_full_purge(fab_obj, zone_d, search_d):
+def _zone_full_purge(input_d):
     """Full purge of a zone. See _invalid_action() for parameters"""
-    el, wl, copy_zone_d = list(), list(), zone_d.copy()
+    el, wl = list(), list()
+    name, fab_obj = input_d['zone_d']['Name'], input_d['fab_obj']
     if fab_obj is not None:
-        zone_obj = fab_obj.r_zone_obj(zone_d['Name'])
+
+        # Make sure the zone exists
+        zone_obj = fab_obj.r_zone_obj(name)
         if zone_obj is None:
-            buf = 'Zone ' + zone_d['Name'] + ' in row ' + str(zone_d['row']) + ' does not exist.'
-            if not gen_util.is_valid_zone_name(zone_d['Name']):
+            buf = 'Zone ' + name + ' does not exist.'
+            if not gen_util.is_valid_zone_name(name):
                 buf += ' Did you intend to set a match type in the "Match" column?'
-            el.append(buf)
-        else:
-            for mem in zone_obj.r_members() + zone_obj.r_pmembers():
-                copy_zone_d['Name'] = mem
-                temp_el, temp_wl = _alias_purge(fab_obj, copy_zone_d, search_d)
-                el.extend(temp_el)
-                wl.extend(temp_wl)
-            temp_el, temp_wl = _zone_purge(fab_obj, zone_d, search_d)
-            el.extend(temp_el)
-            wl.extend(temp_wl)
+            wl.append(buf)
+            _add_to_tracking('zone', input_d, el, wl)
 
-    return el, wl
+        else:  # The zone exists
+            zonecfg_l = obj_convert.obj_extract(zone_obj, 'ZoneCfgObj')
+            mem_l = zone_obj.r_members() + zone_obj.r_pmembers()
+            _zone_purge(input_d)
+
+            # Delete all aliases not used in other zones
+            for mem in mem_l:
+                alias_obj = fab_obj.r_alias_obj(mem)
+                if alias_obj is not None:  # The member could be a d,i or WWN
+                    if len(obj_convert.obj_extract(alias_obj, 'ZoneObj')) == 0:  # If it's not used elsewhere
+                        input_d['zone_d']['Name'] = mem
+                        _alias_delete(input_d)
+
+            # Delete all zone configurations that are empty as a result of purging this zone
+            for zonecfg_obj in [obj for obj in zonecfg_l if len(obj.r_members()) == 0]:
+                input_d['zone_d']['Name'] = zonecfg_obj.r_obj_key()
+                _zonecfg_delete(input_d)
+
+    input_d['zone_d']['Name'] = name
 
 
-def _zone_full_purge_m(fab_obj, zone_d, search_d):
+def _zone_full_purge_m(input_d):
     """Full purge zones based on a regex or wild card match. See _invalid_action() for parameters"""
-    el, wl, copy_zone_d = list(), list(), zone_d.copy()
-    for zone in gen_util.match_str(search_d['zone_l'], zone_d['Name'], stype=zone_d['Match']):
-        copy_zone_d['Name'] = zone
-        temp_el, temp_wl = _zone_full_purge(fab_obj, copy_zone_d, search_d)
-        el.extend(temp_el)
-        wl.extend(temp_wl)
-
-    return el, wl
+    name = input_d['zone_d']['Name']
+    for zone in gen_util.match_str(input_d['search_d']['zone_l'], name, stype=input_d['zone_d']['Match']):
+        input_d['zone_d']['Name'] = zone
+        _zone_full_purge(input_d)
+    input_d['zone_d']['Name'] = name
 
 
-def _zonecfg_create(fab_obj, zone_d, search_d):
+def _zonecfg_create(input_d):
     """Create a zone configuration. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
+    global _pending_flag, _cli_l
 
     el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+    pmember = input_d['zone_d']['Principal Member']
 
     # If it's a previous action, members are being added
-    if zone_d['name_c']:
-        return _zonecfg_add_mem(fab_obj, zone_d, search_d)
+    if input_d['zone_d']['name_c']:
+        return _zonecfg_add_mem(input_d)
 
     # Validate the input
-    if zone_d['Principal Member'] is not None:
-        el.append('Principal members not supported in zone configuration at row ' + str(zone_d['row']))
-    else:
-        zonecfg_obj = fab_obj.r_zone_obj(zone_d['Name'])
+    if pmember is not None:
+        el.append('Principal members not supported in zone configuration.')
+    if fab_obj is not None:
+        zonecfg_obj = fab_obj.r_zone_obj(name)
         if zonecfg_obj is not None:
-            el.append('Zone configuration in row ' + str(zone_d['row']) + ' already exists.')
+            el.append('Zone configuration already exists.')
+    if member is None:
+        if input_d['cli_in']:
+            buf = 'When generating CLI, there must be at least one member in the row where the zone configuration is '\
+                  'created.'
+            el.append(buf)
+    elif fab_obj is not None and fab_obj.r_zone_obj(member) is None:
+        el.append(str(member) + ' does not exist.')
     
     if len(el) == 0 and fab_obj is not None:
-        fab_obj.s_add_zonecfg(zone_d['Name'], zone_d['Member'])
+        fab_obj.s_add_zonecfg(name, member)
         _pending_flag = True
-    buf = 'cfgcreate "' + zone_d['Name'] + '"'
-    if isinstance(zone_d['Member'], str):
-        buf += ' "' + zone_d['Member'] + '"'
-    _cli_d['zonecfg']['create'].append('cfgcreate "' + zone_d['Name'] + '", "' + zone_d['Member'] + '"')
-    _add_to_tracking('zone_cfg', zone_d)
 
-    return el, wl
+    # Add the CLI and tracking
+    buf = 'cfgcreate "' + name + '"'
+    if isinstance(member, str):
+        buf += ' "' + member + '"'
+    _add_to_tracking('zone_cfg', input_d, el, wl, cli='cfgcreate "' + name + '", "' + member + '"')
 
 
-def _zonecfg_delete(fab_obj, zone_d, search_d):
+def _zonecfg_copy(input_d):
+    """Copy a zone configuration. See _invalid_action() for parameter descriptions"""
+    el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+    pmember = input_d['zone_d']['Principal Member']
+
+    # Make sure it's a valid zone configuration definition
+    if pmember is not None:  # Principal members are not supported with zone_cfg copy
+        el.append('Principal members not supported in zone_cfg copy.')
+    elif not gen_util.is_valid_zone_name(member):  # Is it a valid zone configuration name?
+        el.append('Invalid zone configuration name, ' + member + '.')
+    elif fab_obj is not None:
+        zonecfg_obj = fab_obj.r_zonecfg_obj(name)
+        if zonecfg_obj is None:
+            el.append('Zone configuration ' + name + ' does not exists.')
+        else:
+            copy_zonecfg_obj = fab_obj.r_zonecfg_obj(member)
+            if copy_zonecfg_obj is not None:
+                el.append('Zone configuration ' + member + ' already exists.')
+            else:  # Create the zone and add the members
+                no_cli = input_d.get('no_cli', False)
+                input_d['no_cli'] = True
+                input_d['zone_d']['Name'] = member
+                mem_l = zonecfg_obj.r_members()
+                input_d['zone_d']['Member'] = None if len(mem_l) == 0 else mem_l.pop(0)
+                _zonecfg_create(input_d)
+                input_d['zone_d']['Name'] = name
+                for mem in mem_l:
+                    input_d['zone_d']['Member'] = mem
+                    _zonecfg_add_mem(input_d)
+
+                # Set input_d back to the original state
+                input_d['no_cli'] = no_cli
+                input_d['zone_d']['Member'] = member
+                input_d['zone_d']['Name'] = name
+
+    _add_to_tracking('zone', input_d, el, wl, cli='zoneobjectcopy "' + name + '", "' + member + '"')
+
+
+def _zonecfg_delete(input_d):
     """Delete a zone config. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
+    global _pending_flag
 
     el, wl = list(), list()
+    name, fab_obj = input_d['zone_d']['Name'], input_d['fab_obj']
 
     # Validate - Make sure the zone configuration exists and that it's not the effective zone.
     if fab_obj is not None:
-        zonecfg_obj = fab_obj.r_zonecfg_obj(zone_d['Name'])
+        zonecfg_obj = fab_obj.r_zonecfg_obj(name)
         if zonecfg_obj is None:
-            wl.append(zone_d['Name'] + ' does not exist. Row: ' + str(zone_d['row']))
+            wl.append(name + ' does not exist.')
         else:
-            fab_obj.s_del_zonecfg(zone_d['Name'])
+            fab_obj.s_del_zonecfg(name)
             _pending_flag = True
-    _cli_d['zonecfg']['delete'].append('cfgdelete "' + zone_d['Name'] + '"')
-    _add_to_tracking('zone_cfg', zone_d)
 
-    return el, wl
+    _add_to_tracking('zone_cfg', input_d, el, wl, cli='cfgdelete "' + name + '"')
 
 
-def _zonecfg_add_mem(fab_obj, zone_d, search_d):
+def _zonecfg_add_mem(input_d):
     """Add zone config members. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
+    global _pending_flag
 
     el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+
     if fab_obj is not None:
-        zonecfg_obj = fab_obj.r_zonecfg_obj(zone_d['Name'])
+        zonecfg_obj = fab_obj.r_zonecfg_obj(name)
         if zonecfg_obj is None:
-            el.append('Zone configuration ' + zone_d['Name'] + ' does not exist at row ' + str(zone_d['row']))
+            el.append('Zone configuration ' + name + ' does not exist.')
         else:
-            zonecfg_obj.s_add_member(zone_d['Member'])
+            zonecfg_obj.s_add_member(member)
             _pending_flag = True
 
-    _cli_d['zonecfg']['add'].append('cfgadd "' + zone_d['Name'] + '", "' + zone_d['Member'] + '"')
-    _add_to_tracking('zone_cfg', zone_d)
-
-    return el, wl
+    _add_to_tracking('zone_cfg', input_d, el, wl, cli='cfgadd "' + name + '", "' + member + '"')
 
 
-def _zonecfg_remove_mem(fab_obj, zone_d, search_d):
+def _zonecfg_remove_mem(input_d):
     """Remove zone config members. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_d
+    global _pending_flag, _cli_l
 
     el, wl = list(), list()
+    name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
+
     if fab_obj is not None:
-        zonecfg_obj = fab_obj.r_zonecfg_obj(zone_d['Name'])
+        zonecfg_obj = fab_obj.r_zonecfg_obj(name)
         if zonecfg_obj is None:
-            el.append('The zone configuration, ' + zone_d['Name'] + ' does not exist.')
-        elif zone_d['Member'] in zonecfg_obj.r_members():
-            zonecfg_obj.s_del_member(zone_d['Member'])
+            el.append('The zone configuration, ' + name + ' does not exist.')
+        elif member in zonecfg_obj.r_members():
+            zonecfg_obj.s_del_member(member)
             _pending_flag = True
         else:
-            wl.append(zone_d['Member'] + ' is not a member of ' + zone_d['Name'] + ' at row ' + str(zone_d['Row']))
-    _cli_d['zonecfg']['remove'].append('cfgremove "' + zone_d['Name'] + '", "' + ';'.join(zone_d['Member']) + '"')
-    _add_to_tracking('zone_cfg', zone_d)
+            wl.append(input_d['zone_d']['Member'] + ' is not a member of ' + name + '.')
 
-    return el, wl
+    _add_to_tracking('zone_cfg', input_d, el, wl, cli='cfgremove "' + name + '", "' + member + '"')
 
 
-"""_zone_action_d: I could have just had one dictionary with a pointer to the method and handled the activate list
-separately but I was thinking of maybe doing some more complex checking and error messaging so the dictionary of
-dictionaries was done to simplify future script enhancements.
-+-------+-----------+-----------------------------------------------------------------------------------------------+
-| Key   | Type      | Description                                                                                   |
-+=======+===========+===============================================================================================+
-| a     | method    | Pointer to method to handle this action                                                       |
-+-------+-----------+-----------------------------------------------------------------------------------------------+
-| as_l  | list      | Action specific list. When this was written, it was only applicable for the Action "activate" |
-|       |           | for Zone_Object "zone_cfg"                                                                    |
-+-------+-----------+-----------------------------------------------------------------------------------------------+
+def _zonecfg_full_purge(input_d):
+    """Purges a zone configuration. See _invalid_action() for parameters"""
+    global _pending_flag
+
+    el, name, fab_obj = list(), input_d['zone_d']['Name'], input_d['fab_obj']
+
+    if fab_obj is not None:
+        zone_cfg_obj = fab_obj.r_zonecfg_obj(name)
+        if zone_cfg_obj is None:
+            el.append('Zone configuration ' + str(name) + ' does not exist.')
+        else:
+            mem_l = zone_cfg_obj.r_members()
+            _zonecfg_delete(input_d)
+            _set_purge('zone_cfg', name)
+            for mem in [m for m in mem_l if len(obj_convert.obj_extract(fab_obj.r_zone_obj(m), 'ZoneCfgObj')) == 0]:
+                input_d['zone_d']['Name'] = mem
+                _zone_full_purge(input_d)
+
+    input_d['zone_d']['Name'] = name
+    _add_to_tracking('zone_cfg', input_d, el, None)
+
+
+def _zonecfg_full_purge_m(input_d):
+    """Performs a full purge of zone configurations based on a regex or wild card match. See _invalid_action()"""
+    name = input_d['zone_d']['Name']
+    for zonecfg in gen_util.match_str(input_d['search_d']['zonecfg_l'], name, stype=input_d['zone_d']['Match']):
+        input_d['zone_d']['Name'] = zonecfg
+        _zonecfg_full_purge(input_d)
+    input_d['zone_d']['Name'] = name
+
+
+"""_zone_action_d:
+
+Zone_Object (dict):
+    Action (dict):
+        Match (dict):
+            a (key): Pointer to the function to call to process this action.
+            ? (key): I made "Match" a dictionary so that I can add other keys in the future. At this time, "a" is the
+                     only key in this dictionary. 
 """
 _zone_action_d = dict(
     alias=dict(
         create=dict(
-            exact=dict(a=_alias_create, as_l=list()),
+            exact=dict(a=_alias_create),
         ),
         add_mem=dict(
-            exact=dict(a=_alias_add_mem, as_l=list()),
+            exact=dict(a=_alias_add_mem),
+        ),
+        copy=dict(
+            exact=dict(a=_alias_copy),
         ),
         delete=dict(
-            exact=dict(a=_alias_delete, as_l=list()),
-            wild=dict(a=_alias_delete_m, as_l=list()),
-            regex_m=dict(a=_alias_delete_m, as_l=list()),
-            regex_s=dict(a=_alias_delete_m, as_l=list()),
+            exact=dict(a=_alias_delete),
+            wild=dict(a=_alias_delete_m),
+            regex_m=dict(a=_alias_delete_m),
+            regex_s=dict(a=_alias_delete_m),
         ),
         remove_mem=dict(
-            exact=dict(a=_alias_remove_mem, as_l=list()),
+            exact=dict(a=_alias_remove_mem),
         ),
         purge=dict(
-            exact=dict(a=_alias_purge, as_l=list()),
-            wild=dict(a=_alias_purge_m, as_l=list()),
-            regex_m=dict(a=_alias_purge_m, as_l=list()),
-            regex_s=dict(a=_alias_purge_m, as_l=list()),
+            exact=dict(a=_alias_purge),
+            wild=dict(a=_alias_purge_m),
+            regex_m=dict(a=_alias_purge_m),
+            regex_s=dict(a=_alias_purge_m),
+        ),
+        full_purge=dict(
+            exact=dict(a=_alias_full_purge),
+            wild=dict(a=_alias_full_purge_m),
+            regex_m=dict(a=_alias_full_purge_m),
+            regex_s=dict(a=_alias_full_purge_m),
         ),
         ignore=dict(
-            exact=dict(a=_alias_ignore, as_l=list()),
-            wild=dict(a=_alias_ignore_m, as_l=list()),
-            regex_m=dict(a=_alias_ignore_m, as_l=list()),
-            regex_s=dict(a=_alias_ignore_m, as_l=list()),
+            exact=dict(a=_alias_ignore),
+            wild=dict(a=_alias_ignore_m),
+            regex_m=dict(a=_alias_ignore_m),
+            regex_s=dict(a=_alias_ignore_m),
         ),
     ),
     peer_zone=dict(
         create=dict(
-            exact=dict(a=_peer_zone_create, as_l=list()),
+            exact=dict(a=_peer_zone_create),
+        ),
+        copy=dict(
+            exact=dict(a=_zone_copy),
         ),
         add_mem=dict(
-            exact=dict(a=_zone_add_mem, as_l=list()),
+            exact=dict(a=_zone_add_mem),
         ),
         delete=dict(
-            exact=dict(a=_zone_delete, as_l=list()),
-            wild=dict(a=_zone_delete_m, as_l=list()),
-            regex_m=dict(a=_zone_delete_m, as_l=list()),
-            regex_s=dict(a=_zone_delete_m, as_l=list()),
+            exact=dict(a=_zone_delete),
+            wild=dict(a=_zone_delete_m),
+            regex_m=dict(a=_zone_delete_m),
+            regex_s=dict(a=_zone_delete_m),
         ),
         remove_mem=dict(
-            exact=dict(a=_peer_zone_remove_mem, as_l=list()),
+            exact=dict(a=_peer_zone_remove_mem),
         ),
         purge=dict(
-            exact=dict(a=_zone_purge, as_l=list()),
-            wild=dict(a=_zone_purge_m, as_l=list()),
-            regex_m=dict(a=_zone_purge_m, as_l=list()),
-            regex_s=dict(a=_zone_purge_m, as_l=list()),
+            exact=dict(a=_zone_purge),
+            wild=dict(a=_zone_purge_m),
+            regex_m=dict(a=_zone_purge_m),
+            regex_s=dict(a=_zone_purge_m),
         ),
         full_purge=dict(
-            exact=dict(a=_zone_full_purge, as_l=list()),
-            wild=dict(a=_zone_full_purge_m, as_l=list()),
-            regex_m=dict(a=_zone_full_purge_m, as_l=list()),
-            regex_s=dict(a=_zone_full_purge_m, as_l=list()),
+            exact=dict(a=_zone_full_purge),
+            wild=dict(a=_zone_full_purge_m),
+            regex_m=dict(a=_zone_full_purge_m),
+            regex_s=dict(a=_zone_full_purge_m),
         ),
     ),
     zone=dict(
         create=dict(
-            exact=dict(a=_zone_create, as_l=list()),
+            exact=dict(a=_zone_create),
+        ),
+        copy=dict(
+            exact=dict(a=_zone_copy),
         ),
         add_mem=dict(
-            exact=dict(a=_zone_add_mem, as_l=list()),
+            exact=dict(a=_zone_add_mem),
         ),
         delete=dict(
-            exact=dict(a=_zone_delete, as_l=list()),
-            wild=dict(a=_zone_delete_m, as_l=list()),
-            regex_m=dict(a=_zone_delete_m, as_l=list()),
-            regex_s=dict(a=_zone_delete_m, as_l=list()),
+            exact=dict(a=_zone_delete),
+            wild=dict(a=_zone_delete_m),
+            regex_m=dict(a=_zone_delete_m),
+            regex_s=dict(a=_zone_delete_m),
         ),
         remove_mem=dict(
-            exact=dict(a=_zone_remove_mem, as_l=list()),
+            exact=dict(a=_zone_remove_mem),
         ),
         purge=dict(
-            exact=dict(a=_zone_purge, as_l=list()),
-            wild=dict(a=_zone_purge_m, as_l=list()),
-            regex_m=dict(a=_zone_purge_m, as_l=list()),
-            regex_s=dict(a=_zone_purge_m, as_l=list()),
+            exact=dict(a=_zone_purge),
+            wild=dict(a=_zone_purge_m),
+            regex_m=dict(a=_zone_purge_m),
+            regex_s=dict(a=_zone_purge_m),
         ),
         full_purge=dict(
-            exact=dict(a=_zone_full_purge, as_l=list()),
-            wild=dict(a=_zone_full_purge_m, as_l=list()),
-            regex_m=dict(a=_zone_full_purge_m, as_l=list()),
-            regex_s=dict(a=_zone_full_purge_m, as_l=list()),
+            exact=dict(a=_zone_full_purge),
+            wild=dict(a=_zone_full_purge_m),
+            regex_m=dict(a=_zone_full_purge_m),
+            regex_s=dict(a=_zone_full_purge_m),
         ),
     ),
     zone_cfg=dict(
         create=dict(
-            exact=dict(a=_zonecfg_create, as_l=list()),
+            exact=dict(a=_zonecfg_create),
+        ),
+        copy=dict(
+            exact=dict(a=_zonecfg_copy),
         ),
         add_mem=dict(
-            exact=dict(a=_zonecfg_add_mem, as_l=list()),
+            exact=dict(a=_zonecfg_add_mem),
         ),
         delete=dict(
-            exact=dict(a=_zonecfg_delete, as_l=list()),
+            exact=dict(a=_zonecfg_delete),
+        ),
+        full_purge=dict(
+            exact=dict(a=_zonecfg_full_purge),
+            wild=dict(a=_zonecfg_full_purge_m),
+            regex_m=dict(a=_zonecfg_full_purge_m),
+            regex_s=dict(a=_zonecfg_full_purge_m),
         ),
         remove_mem=dict(
-            exact=dict(a=_zonecfg_remove_mem, as_l=list()),
+            exact=dict(a=_zonecfg_remove_mem),
         ),
     ),
 )
@@ -1199,6 +1537,8 @@ def _get_fabric(args_d):
     :return fab_obj: Fabric object as read from the input file, -i, or from reading the fabric information from the API
     :rtype fab_obj: brcddb.classes.fabric.FabricObj, None
     """
+    global _zone_kpis
+
     # Create a project
     proj_obj = brcddb_project.new('zone_config', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
     proj_obj.s_python_version(sys.version)
@@ -1230,55 +1570,32 @@ def _get_fabric(args_d):
     return None, None
 
 
-def _remove_duplicates():
-    """Remove duplicates in global tracking lists. This is probably excessive as some lists can't have duplicates
-    :rtype: None
+def _item_desc(fab_obj, key, item_name):
+    """Returns a description for members in the _tracking_d table for alias. Used in _summary_report()
+
+    :param key: The key into _tracking_d
+    :type key: string, key
+    :param item_name: Zone configuration name, zone name, alias name, WWN, or d,i
+    :type item_name: str
+    :return: If key == 'alias': Description of alias, wwn, or d,i. Otherwise, just the item_name
+    :rtype: str
     """
-    global _tracking_d, _modified_d, _purge_d
+    r_buf = item_name
+    if key == 'alias':
+        if gen_util.is_di(item_name):
+            r_buf += ' (' + brcddb_port.port_best_desc(fab_obj.r_port_object_for_di(item_name)) + ') '
+        elif gen_util.is_wwn(item_name, full_check=True):
+            r_buf += ' (' + brcddb_login.login_best_port_desc(fab_obj.r_login_obj(item_name)) + ') '
+        # It must be an alias
+        else:
+            alias_obj = fab_obj.r_alias_obj(item_name)
+            if alias_obj is not None:
+                r_buf += ' (' + '; '.join([brcddb_login.login_best_port_desc(m) for m in alias_obj.r_members()]) + ') '
 
-    # _tracking_d
-    for key in ('alias', 'zone', 'zone_cfg'):
-        for key_1 in _tracking_d.keys():
-            _tracking_d[key][key_1] = gen_util.remove_duplicates(_tracking_d[key])
-
-    # _modified_d
-    for zone in _modified_d['purge_d'].keys():
-        _modified_d['purge_d'][zone] = gen_util.remove_duplicates(_modified_d['purge_d'][zone])
-
-    # _purge_d
-    for port_d in _purge_d.values():
-        for key in port_d.keys():
-            port_d[key] = gen_util.remove_duplicates(port_d[key])
+    return r_buf
 
 
-def _purge(fab_obj):
-    """When possible, delete all zones with purged members
-
-    :param fab_obj: Fabric object
-    :type fab_obj: brcddb.classes.fabric.FabricObj
-    """
-    global _modified_d, _ignore_mem_d, _cli_d
-
-    el, zone_purge_d = list(), dict()
-    zone_purge_d = dict()
-    for zone, alias_l in _modified_d['purge_d'].items():
-        zone_obj = fab_obj.r_zone_obj(zone)
-        if zone_obj is not None:
-            mem_l = [mem for mem in zone_obj.r_members() + zone_obj.r_pmembers() if not _ignore_mem_d.get(mem, False)]
-            if len(mem_l) == 0:
-                zone = zone_obj.r_obj_key()
-                for zonecfg_obj in obj_convert.obj_extract(zone_obj, 'ZoneCfgObj'):
-                    zonecfg_obj.s_del_member(zone)
-                    _cli_d['zonecfg']['remove'].append('cfgremove "' + zonecfg_obj.r_obj_key() + '", "' + zone + '"')
-                fab_obj.s_del_zone(zone)
-                _cli_d['zone']['delete'].append('zonedelete ' + zone)
-            else:
-                zone_purge_d[zone] = mem_l.copy()
-
-    return zone_purge_d
-
-
-def _summary_report(fab_obj, args_d, saved, cli_el, purge_fault_d, el, wl):
+def _summary_report(fab_obj, args_d, saved, cli_el):
     """ Print any wrap up messages to the console and log
 
     :param fab_obj: Fabric object
@@ -1287,67 +1604,69 @@ def _summary_report(fab_obj, args_d, saved, cli_el, purge_fault_d, el, wl):
     :type args_d: dict
     :param saved: If True, the zoning database was saved to the switch.
     :type saved: bool
-    :param cli_el: Error messages from _build_cli_file
+    :param cli_el: Error messages from _build_cli_file (which are from brcdapi_file.write_file)
     :type cli_el: list
-    :param purge_fault_d: Failed zone purges. Key is the zone name. Value is a list of remaining members
-    :type purge_fault_d: dict()
-    :param el: Error messages from processing workbook actions
-    :type el: list
-    :param wl: Warning messages from processing workbook actions
-    :type wl: list
     """
-    global _purge_d
+    global _tracking_d, _tracking_hdr_d
 
-    summary_l = ['', 'CLI File Update Errors', '______________________']
+    error_count = warn_count = 0
+
+    # CLI
+    summary_l = ['', '**CLI File Update Errors**']
     if len(cli_el) == 0:
-        cli_el.append('None')
-    summary_l.extend(cli_el)
-
-    summary_l.extend(['',
-                      'Purge Faults (zone name followed by remaining members)',
-                      '______________________________________________________'])
-    if len(purge_fault_d) == 0:
         summary_l.append('None')
     else:
-        for zone, mem_l in purge_fault_d.items():
-            summary_l.append(zone)
-            summary_l.extend(['  ' + mem for mem in mem_l])
-        summary_l.extend(['',
-                          'Purge Faults (members only)',
-                          '___________________________'])
-        for zone, mem_l in purge_fault_d.items():
-            summary_l.extend(mem_l)
+        summary_l.extend(cli_el)
 
-    summary_l.extend(['', 'Error Detail', '____________'])
-    summary_l.extend(el)
-    if len(el) == 0:
+    summary_l.extend(['', '**Error & Warning Detail**'])
+    for key, hdr in _tracking_hdr_d.items():
+        found = False
+        summary_l.extend(['', '*' + hdr + '*'])
+        for name, d in _tracking_d[key].items():
+            for subkey, buf_l in collections.OrderedDict(ERROR=d['error_l'], WARNING=d['warning_l']).items():
+                for buf in buf_l:
+                    desc = _item_desc(fab_obj, key, name)
+                    summary_l.append(subkey + ': ' + desc + ': ' + buf + _reference_rows(key, name))
+                    found = True
+                    if subkey == 'ERROR':
+                        error_count += 1
+                    elif subkey == 'WARNING':
+                        warn_count += 1
+        if not found:
+            summary_l.append('None')
+
+    # Zone Purges
+    summary_l.extend(gen_util.format_text([dict(p1_max=80), dict(p1=''), dict(p1='**Purge Faults**'),]))
+    purge_msg_l = [
+        dict(p1=''),
+        dict(
+            p1='This is a list of zone members that remained in zones that were affected by an alias full purge but '
+               'the zone was not purged because there were remaining members that were not in the ignore list. The '
+               'zone is followed by those members. It was done this way for easy copy and paste into an ignore action '
+               'in a zone configuration worksheet. Details are in the "Error & Warning Detail" section.'),
+        dict(p1=''),
+        dict(
+            p1='The intent of the "ignore" action is to simplify purging zones when large or multiple storage arrays '
+               'are being decommissioned. For a small number of zones, it may be easier to explicitly purge the '
+               'zones.'),
+    ]
+    temp_l = list()  # Messages to add to purge_msg_l
+    for zone, track_d in _tracking_d['zone'].items():
+        if track_d.get('purge', False) and len(track_d['purge_l']) != 0:
+            temp_l.extend([dict(p1=''), dict(p1='*' + zone + '*')] + [dict(p1=m) for m in track_d['purge_l']])
+    temp_l.extend(_tracking_d['general']['purge']['error_l'] + _tracking_d['general']['purge']['warning_l'])
+    if len(temp_l) > 0:
+        summary_l.extend(gen_util.format_text(purge_msg_l + temp_l))
+    else:
         summary_l.append('None')
-    summary_l.extend(['', 'Warning Detail', '______________'])
-    summary_l.extend(wl)
-    if len(wl) == 0:
-        summary_l.append('None')
 
-    summary_l.extend(['',
-                      'Ports Effected By Purge (switch name followed by ports)',
-                      '_______________________________________________________'])
-    temp_l = list()
-    for wwn, port_d in _purge_d.items():
-        switch_obj = None if fab_obj is None else fab_obj.r_switch_obj(wwn)
-        switch_name = brcddb_switch.best_switch_name(switch_obj, wwn=True, did=True, fid=True)
-        if switch_name == 'Unknown':
-            switch_name += ' (' + wwn + ')'
-        temp_l.extend(['', switch_name])
-        for port, alias_l in port_d.items():
-            temp_l.append(gen_util.pad_string(port, 7, ' ') + ': ' + ', '.join(alias_l))
-    if len(temp_l) == 0:
-        temp_l.append('None')
-    summary_l.extend(temp_l)
-
-    summary_l.extend(['', 'Summary:', ''])
-    summary_l.append(gen_util.pad_string(str(len(el)), 5, ' ') + ' Errors')
-    summary_l.append(gen_util.pad_string(str(len(wl)), 5, ' ') + ' Warnings')
+    # Add a summary with error count, warning count, and fabric name
+    summary_l.extend(['', '**Summary**', '', 'Errors:   ' + str(error_count), 'Warnings: ' + str(warn_count), ''])
     if args_d['i']:
-        summary_l.append('Working from a project file ' + args_d['i'])
+        summary_l.append('Working from project file: ' + args_d['i'])
+    summary_l.append('Fabric: ' + brcddb_fabric.best_fab_name(fab_obj, wwn=True, fid=True))
+
+    # Add the disposition of the zone configuration to the summary
     if saved:
         summary_l.append('Zone changes saved.')
     elif _pending_flag:
@@ -1360,6 +1679,15 @@ def _summary_report(fab_obj, args_d, saved, cli_el, purge_fault_d, el, wl):
         if not args_d['save'] and not isinstance(args_d['a'], str):
             buf += ' Use -a or -save to save changes.'
         summary_l.append(buf)
+
+    for subkey, d in _tracking_d['general'].items():
+        if subkey == 'purge':  # purge is already processed in the Purge subsection
+            continue
+        if len(d['error_l']) + len(d['warning_l']) > 0:
+            summary_l.extend(['', '*' + subkey + '*'])
+            for e_key, buf_l in collections.OrderedDict(ERROR=d['error_l'], WARNING=d['warning_l']).items():
+                e_buf = e_key + ': '
+                summary_l.extend(e_buf + e_buf.join(buf_l))
 
     brcdapi_log.log(summary_l, echo=True)
 
@@ -1376,9 +1704,10 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
     :return: Exit code
     :rtype: int
     """
-    global _zone_action_d, _pending_flag, _debug, _eff_zone_l, _eff_mem_l
+    global _zone_action_d, _pending_flag, _debug, _eff_zone_l, _eff_mem_l, _tracking_d, _tracking_hdr_d
 
-    debug_i, saved, purge_fail_d, el, wl = 0, False, dict(), list(), list()
+    ec, debug_i, saved, error_flag, purge_fail_d = brcddb_common.EXIT_STATUS_OK, 0, False, False, dict()
+    el = _tracking_d['general']['process']['error_l']
     session, zone_d, action, proj_obj, eff_zonecfg = None, None, None, None, None
 
     # Get the project object
@@ -1397,10 +1726,14 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
         proj_obj.s_python_version(sys.version)
         proj_obj.s_description('Created by zone_config.py')
 
-    # Fill in search_d (lists of all items to use where Match is supported).
+    # Fill in search_d (lists of all items to use where Match is supported). Since its obvious which list to act on in
+    # each function that operates on a match, I could have just used fab_obj.r_xxx_keys(). I doubt I will ever apply
+    # search terms to anything other than the full list, but doing this way gives me the option to make a global change
+    # in what to search for.
     search_d = dict(wwn_l=list(),
                     alias_l=list(),
                     zone_l=list(),
+                    zonecfg_l=list(),
                     eff_alias_d=dict(),
                     eff_zone_d=dict(),
                     eff_zonecfg_obj=None)
@@ -1409,6 +1742,7 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
         search_d['wwn_l'] = fab_obj.r_login_keys()
         search_d['alias_l'] = fab_obj.r_alias_keys()
         search_d['zone_l'] = fab_obj.r_zone_keys()
+        search_d['zonecfg_l'] = fab_obj.r_zonecfg_keys()
         search_d['eff_zonecfg_obj'] = eff_zonecfg_obj
         if eff_zonecfg_obj is not None:
             for zone_obj in eff_zonecfg_obj.r_zone_objects():
@@ -1421,46 +1755,43 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
         for zone_d in zone_wb_l:
             if _debug:
                 brcdapi_log.log(['debug_i: ' + str(debug_i), pprint.pformat(zone_d)], echo=True)
-                if debug_i == 1:
-                    brcdapi_log.log('TP_100', echo=True)
+                # if debug_i == 1:
+                #     brcdapi_log.log('TP_100', echo=True)
                 debug_i += 1
             try:
                 action = _zone_action_d[zone_d['Zone_Object']][zone_d['Action']][zone_d['Match']]['a']
             except KeyError:
                 action = _invalid_action
-            temp_el, temp_wl = action(fab_obj, zone_d, search_d)
-            if len(temp_el) > 0:
-                if _debug:  # Leave this on a separate line so a break point could be set when _debug is not True.
-                    brcdapi_log.log(temp_el + temp_wl, echo=True)
-            el.extend(temp_el)
-            wl.extend(temp_wl)
+            action(dict(fab_obj=fab_obj,
+                        zone_d=zone_d,
+                        search_d=search_d,
+                        cli_in=False if args_d['cli'] is None else True))
 
-        # Some lists can end up with duplicates.
-        _remove_duplicates()
-
-        # Complete the purges
-        purge_fail_d = _purge(fab_obj)
-        if len(purge_fail_d) > 0:
-            el.append('Could not complete purges. See "Purge Faults" for details.')
+        # Finish purges
+        _finish_purges(fab_obj)
 
         # Validate the zone database
-        el.extend(_validation_check(args_d, fab_obj))
+        _validation_check(args_d, fab_obj)
 
-        # If strict, treat all warnings as errors
-        if args_d['strict']:
-            el.extend(wl)
-            wl = list()
+        # Do we have any errors? If strict, treat all warnings as errors
+        second_key = 'warning_l' if args_d.get('strict', False) else 'error_l'
+        for name_d in [_tracking_d[k] for k in _tracking_hdr_d.keys()]:
+            for item_d in name_d.values():
+                if len(item_d.get('error_l', list())) + len(item_d.get(second_key, list())) > 0:
+                    error_flag = True
+                    break
 
         # Save the zone changes
-        if len(el) == 0 and session is not None:
+        if not error_flag and session is not None:
             if _pending_flag:
                 if args_d['save'] or isinstance(args_d['a'], str):
                     obj = api_zone.replace_zoning(session, fab_obj, args_d['fid'], args_d['a'])
                     if fos_auth.is_error(obj):
                         el.extend(['Failed to replace zoning:', fos_auth.formatted_error_msg(obj)])
+                        ec = brcddb_common.EXIT_STATUS_ERROR
                     else:
                         _pending_flag, saved = False, True
-                    _cli_d['save'] = True
+                    _cli_l.extend(['', 'cfgsave -f'])
             elif isinstance(args_d['a'], str):
                 obj = api_zone.enable_zonecfg(session, args_d['fid'], args_d['a'])
                 if fos_auth.is_error(obj):
@@ -1468,15 +1799,19 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
                     el.extend(['Failed to enable zone config: ' + args_d['a'],
                                'FOS error is:',
                                fos_auth.formatted_error_msg(obj)])
+                    ec = brcddb_common.EXIT_STATUS_ERROR
                 else:
                     saved = True
-                _cli_d['enable'] = args_d['a']
+                _cli_l.extend(['', 'cfgenable "' + args_d['a'] + '" -f'])
 
-    # Debug
-    # except BaseException as e:
-    #     el.extend(['Software error.', str(type(e)) + ': ' + str(e), 'zone_d:', pprint.pformat(zone_d)])
-    except FloatingPointError:
-        print('TP_101')
+    except BaseException as e:
+        el.extend(['Software error.', str(type(e)) + ': ' + str(e), 'zone_d:', pprint.pformat(zone_d)])
+        ec = brcddb_common.EXIT_STATUS_ERROR
+        try:
+            brcdapi_zone.abort(session, args_d['fid'])
+        except BaseException as e:
+            el.append('Software error aborting zone DB updates while processing a previous software error.')
+            el.extend([str(type(e)) + ': ' + str(e), 'zone_d:', pprint.pformat(zone_d)])
 
     # Log out
     if session is not None:
@@ -1484,14 +1819,12 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
         obj = brcdapi_rest.logout(session)
         if fos_auth.is_error(obj):
             el.extend(['Logout failed', fos_auth.formatted_error_msg(obj)])
+            ec = brcddb_common.EXIT_STATUS_ERROR
 
-    # Write out the CLI file
-    cli_el = _build_cli_file(args_d['cli'], args_d['fid'])
+    # Write out the CLI file and summaries
+    _summary_report(fab_obj, args_d, saved, _build_cli_file(args_d['cli'], args_d['fid']))
 
-    # Write out the summaries
-    _summary_report(fab_obj, args_d, saved, cli_el, purge_fail_d, el, wl)
-
-    return brcddb_common.EXIT_STATUS_OK if len(el) == 0 else brcddb_common.EXIT_STATUS_INPUT_ERROR
+    return ec
 
 
 def _get_input():
@@ -1500,18 +1833,17 @@ def _get_input():
     :return ec: Error code. See brcddb_common.EXIT_* for details
     :rtype ec: int
     """
-    global __version__, _input_d, _version_d, _debug
+    global __version__, _input_d, _version_d, _debug, _eh_l
 
     ec, error_l, zone_wb_l, proj_obj, fab_obj = brcddb_common.EXIT_STATUS_OK, list(), list(), None, None
     e_buf = ' **ERROR**: Missing required input parameter'
-    w_buf = ' Ignored because -i was specified.'
+    w_buf = 'Ignored because -i was specified.'
     args_help_d = dict(ip='', id='', pw='', s='', fid='', i='', wwn='', z='', sheet='')
 
     # Get command line input
     buf = 'Creates, deletes, and modifies zone objects from a workbook. See zone_sample.xlsx for details and ' \
-          'examples. Also used for migrating or decommissioning storage arrays and servers. You can work on a live ' \
-          'switch or from previously collected data. When working on a live switch, enter -ip, -id, -pw, and -fid. ' \
-          'For offline planning purposes, specify the previously collected data with -i and -wwn instead.'
+          'examples. The purge and full purge options simplify migrating or decommissioning storage arrays and ' \
+          'servers or simple zone cleanup.'
     try:
         args_d = gen_util.get_input(buf, _input_d)
     except TypeError:
@@ -1526,6 +1858,11 @@ def _get_input():
         _debug = True
         brcdapi_rest.verbose_debug(True)
     brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+
+    # Extended help
+    if args_d['eh']:
+        brcdapi_log.log(gen_util.format_text(_eh_l), echo=True)
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # If a file name was specified, read the project object from the file.
     if isinstance(args_d['i'], str):
@@ -1564,7 +1901,8 @@ def _get_input():
                     key_l.append(key)
                     i += 1
             else:
-                args_help_d[key] = w_buf
+                if args_d[key] is not None:
+                    args_help_d[key] = w_buf
         if 0 < i < 3:
             login_e_buf = ' **ERROR** Required when -' + ', -'.join(key_l) + ' is specified'
             for key in ['ip', 'id', 'pw']:
@@ -1604,16 +1942,18 @@ def _get_input():
 
     # Command line feedback
     pw_buf = 'None' if args_d['pw'] is None else '****'
+    ip_buf = 'None' if args_d['ip'] is None else brcdapi_util.mask_ip_addr(args_d['ip']) + args_help_d['ip']
     ml = [
-        os.path.basename(__file__) + ', ' + __version__,
-        'IP address, -ip:          ' + brcdapi_util.mask_ip_addr(args_d['ip']) + args_help_d['ip'],
+        '',
+        'Script:                   ' + os.path.basename(__file__) + ', ' + __version__,
+        'IP address, -ip:          ' + ip_buf,
         'ID, -id:                  ' + str(args_d['id']) + args_help_d['id'],
         'Password, -pw:            ' + pw_buf + args_help_d['pw'],
         'HTTPS, -s:                ' + str(args_d['s']),
         'Fabric ID (FID), -fid:    ' + str(args_d['fid']) + args_help_d['fid'],
         'Input file, -i:           ' + str(args_d['i']) + args_help_d['i'],
         'Fabric WWN, -wwn:         ' + str(args_d['wwn']) + args_help_d['wwn'],
-        'Zone workbook:            ' + str(args_d['z']) + args_help_d['z'],
+        'Zone workbook, -z:        ' + str(args_d['z']) + args_help_d['z'],
         'Zone worksheet, -sheet:   ' + str(args_d['sheet']) + args_help_d['sheet'],
         'Activate, -a:             ' + str(args_d['a']),
         'Save, -save:              ' + str(args_d['save']),

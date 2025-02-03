@@ -28,19 +28,17 @@ For a generic but more detailed library validation report, use lib_validate.py
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | Version   | Last Edit     | Description                                                                           |
 +===========+===============+=======================================================================================+
-| 4.0.0     | 04 Aug 2023   | Re-Launch                                                                             |
-+-----------+---------------+---------------------------------------------------------------------------------------+
-| 4.1.1     | 04 Jan 2025   | Updated versions references.                                                          |
+| 4.1.2     | 03 Feb 2025   | Updated versions references.                                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
-__date__ = '04 Jan 2025'
+__date__ = '03 Feb 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.1'
+__version__ = '4.1.2'
 
 import sys
 import os
@@ -99,7 +97,7 @@ _imports = (
     {'l': 'brcdapi.excel_fonts', 'd': 'Required by modules that read or write Excel workbooks', 'r': '4.0.2'},
     {'l': 'brcdapi.file', 'd': 'Required by modules that perform file I/O.', 'r': '4.0.6'},
     {'l': 'brcdapi.fos_cli', 'd': 'Required by modules that need CLI access.', 'r': '4.0.2'},
-    {'l': 'brcdapi.gen_util', 'd': 'Required by most scripts.', 'r': '4.0.7'},
+    {'l': 'brcdapi.gen_util', 'd': 'Required by most scripts.', 'r': '4.0.8'},
     {'l': 'brcdapi.log', 'd': 'Required by all scripts.', 'r': '4.0.3'},
     {'l': 'brcdapi.port', 'd': 'Required for reading and configuring ports.', 'r': '4.0.4'},
     {'l': 'brcdapi.switch', 'd': 'Required for reading and configuring switches.', 'r': '4.0.3'},
@@ -130,7 +128,7 @@ _imports = (
     {'l': 'brcddb.classes.project', 'd': 'Required for all brcddb libraries', 'r': '4.0.2'},
     {'l': 'brcddb.classes.switch', 'd': 'Required for all brcddb libraries', 'r': '4.0.4'},
     {'l': 'brcddb.classes.util', 'd': 'Required for all brcddb libraries', 'r': '4.0.2'},
-    {'l': 'brcddb.classes.zone', 'd': 'Required for all brcddb libraries', 'r': '4.0.3'},
+    {'l': 'brcddb.classes.zone', 'd': 'Required for all brcddb libraries', 'r': '4.0.4'},
     {'l': 'brcddb.util.copy', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.util.compare', 'd': 'Required for most brcddb libraries', 'r': '4.0.1'},
     {'l': 'brcddb.util.iocp', 'd': 'Required for most brcddb libraries', 'r': '4.0.3'},
@@ -144,11 +142,11 @@ _imports = (
     {'l': 'brcddb.report.fabric', 'd': 'Required for generating Excel reports', 'r': '4.0.2'},
     {'l': 'brcddb.report.graph', 'd': 'Required for generating Excel reports', 'r': '4.0.1'},
     {'l': 'brcddb.report.iocp', 'd': 'Required for generating Excel reports', 'r': '4.0.3'},
-    {'l': 'brcddb.report.login', 'd': 'Required for generating Excel reports', 'r': '4.0.1'},
+    {'l': 'brcddb.report.login', 'd': 'Required for generating Excel reports', 'r': '4.0.2'},
     {'l': 'brcddb.report.port', 'd': 'Required for generating Excel reports', 'r': '4.0.3'},
     {'l': 'brcddb.report.switch', 'd': 'Required for generating Excel reports', 'r': '4.0.3'},
     {'l': 'brcddb.report.utils', 'd': 'Required for generating Excel reports', 'r': '4.0.5'},
-    {'l': 'brcddb.report.zone', 'd': 'Required for generating Excel reports', 'r': '4.0.4'},
+    {'l': 'brcddb.report.zone', 'd': 'Required for generating Excel reports', 'r': '4.0.5'},
     {'l': 'brcddb.app_data.alert_tables', 'd': 'Alert format tables. Required for best practice analysis.',
      'r': '4.0.3'},
     {'l': 'brcddb.app_data.report_tables', 'd': 'Required for controlling the formats when generating Excel reports',
