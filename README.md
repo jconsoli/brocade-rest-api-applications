@@ -3,6 +3,9 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
+**3 Feb 2025**
+* Added "full purge" option for zone_config.py.
+
 **28 Dec 2024 & 4 Jan 2025**
 * Added fixed port switches and 4 slot directors to create_swconfig.py
 * Add mainframe zoning, mf_zone.py
