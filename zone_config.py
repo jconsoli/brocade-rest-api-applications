@@ -126,16 +126,16 @@ _tracking_d: Used for error reporting as follows:
 | 4.0.7     | 04 Jan 2025   | Removed requirement for login credentials or input file. This way, just a test of the |
 |           |               | zone configuration workbook is done and, optionally, a CLI file generated.            |
 +-----------+---------------+---------------------------------------------------------------------------------------+
-| 4.0.8     | xx xxx 2025   | Added copy, rename, replace, and ability to do a full_purge on zone configurations.   |
+| 4.0.8     | 04 Feb 2025   | Added copy, rename, replace, and ability to do a full_purge on zone configurations.   |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = 'xx xxx 2025'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '04 Feb 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Development'
+__status__ = 'Released'
 __version__ = '4.0.8'
 
 import collections
@@ -358,8 +358,8 @@ _eh_l = [
             'that:'),
     dict(p1=''),
     dict(p1='', b1_char='a'),
-    dict(b1='The zone an alias was purged from is also deleted and purged from any zone configuration it was used and '
-            'if the zone has no members after the full purge is completed.'),
+    dict(b1='The zone an alias was purged from is also deleted and purged from any zone configuration it was used in '
+            'and if the zone has no members after the full purge is completed.'),
     dict(b1='All aliases not used in other zones are deleted as a result of a zone full purge.'),
     dict(b1='The full_purge action acts on zone configurations. The "zoneobjectexpunge" command does not act on zone '
             'configurations'),
@@ -583,8 +583,9 @@ def _validation_check(args_d, fab_obj):
                 buf = 'Effective zone configuration. Defined zone configuration no longer exists.'
                 _add_to_tracking('zone_cfg', dict(zone_d=dict(Name=eff_zonecfg_name)), buf, None)
             else:
-                compare_zone_cfg = fab_obj.s_add_zonecfg('_compare_zone_cfg')
-                print('Left off here')
+                # ToDo - Add warnings for mismatches between the effective and defined zone configurations
+                # All I'm checking for right now are errors that would prevent FOS from accepting the changes.
+                pass
             for zone_obj in eff_zone_cfg_obj.r_zone_objects():
                 zone = zone_obj.r_obj_key()
                 if fab_obj.r_zone_obj(zone) is None:
