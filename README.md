@@ -3,6 +3,10 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
+**01 Mar 2025**
+* Added zone cleanup worksheets
+* Misc bug fixes
+
 **3 Feb 2025**
 * Added "full purge" option for zone_config.py.
 
