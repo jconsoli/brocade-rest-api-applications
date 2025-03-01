@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -31,15 +31,17 @@ Creates a MAPS report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.2     | 06 Dec 2024   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.3     | 01 Mar 2025   | Error message enhancements.                                                           |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '01 Mar 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -151,15 +153,33 @@ def _get_input():
     """
     global __version__, _input_d, _version_d
 
+    ec = brcddb_common.EXIT_STATUS_OK
+
     # Get command line input
     args_d = gen_util.get_input('Create a MAPS report in Excel', _input_d)
 
     # Set up logging
     brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
 
+    # Get the project object
+    e_buf_l, proj_obj, inf = list(), None, brcdapi_file.full_file_name(args_d['i'], '.json')
+    args_i_help = args_d['i']
+    input_file = brcdapi_file.full_file_name(args_d['i'], '.json')
+    output_file = brcdapi_file.full_file_name(args_d['o'], '.xlsx')
+    try:
+        proj_obj = brcddb_project.read_from(input_file)
+    except FileNotFoundError:
+        args_i_help += ' ERROR: Not found.'
+        ec = brcddb_common.EXIT_STATUS_ERROR
+    except FileExistsError:
+        args_i_help += ' ERROR: Folder in file name does not exist.'
+        ec = brcddb_common.EXIT_STATUS_ERROR
+    except PermissionError:
+        args_i_help += ' ERROR: You do not have access rights to read this file or folder.'
+        ec = brcddb_common.EXIT_STATUS_ERROR
     # User feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,
-          'In file, -i:         ' + args_d['i'],
+          'In file, -i:         ' + args_i_help,
           'Out file, -o:        ' + args_d['o'],
           'Log, -log:           ' + str(args_d['log']),
           'No log, -nl:         ' + str(args_d['nl']),
@@ -167,20 +187,7 @@ def _get_input():
           '',]
     brcdapi_log.log(ml, echo=True)
 
-    # Get the project object
-    inf = brcdapi_file.full_file_name(args_d['i'], '.json')
-    try:
-        proj_obj = brcddb_project.read_from(inf)
-    except FileNotFoundError:
-        brcdapi_log.log('Input file, ' + args_d['i'] + ', not found', echo=True)
-        return brcddb_common.EXIT_STATUS_ERROR
-    except FileExistsError:
-        brcdapi_log.log('Folder in ' + args_d['i'] + ' does not exist', echo=True)
-        return brcddb_common.EXIT_STATUS_ERROR
-    if proj_obj is None:
-        return brcddb_common.EXIT_STATUS_ERROR
-
-    return pseudo_main(proj_obj, brcdapi_file.full_file_name(args_d['o'], '.xlsx'))
+    return pseudo_main(proj_obj, output_file) if ec == brcddb_common.EXIT_STATUS_OK else ec
 
 
 ##################################################################

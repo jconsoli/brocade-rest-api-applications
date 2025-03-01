@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -33,15 +33,17 @@ Parses IOCP files and generates planning workbooks
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 06 Dec 2024   | Fixed options for port naming conventions.                                            |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 01 Mar 2025   | Error message enhancements.                                                           |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '01 Mar 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '1.0.4'
 
 import datetime
 import sys
@@ -1320,6 +1322,8 @@ def _get_input():
         error_l.append('A folder in template file does not exist: ' + temp_file)
     except FileNotFoundError:
         error_l.append('Template file not found: ' + temp_file)
+    except PermissionError:
+        error_l.append('You do not have access rights to read ' + temp_file + '.')
 
     # Get a project object run the script if there were no errors
     if len(error_l) == 0:

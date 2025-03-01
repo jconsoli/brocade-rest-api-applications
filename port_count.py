@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -33,15 +33,17 @@ Creates a port count & type report in Excel Workbook format from a brcddb projec
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 06 Dec 2024   | Use string port type.                                                                 |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 01 Mar 2025   | Error message enhancements.                                                           |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '01 Mar 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import os
 import copy
@@ -518,7 +520,7 @@ def _create_report(proj_obj, file_name):
         buf = 'Write access permission for ' + file_name + ' denied. This typically occurs when the file is open'
         brcdapi_log.log(['', buf], echo=True)
         ec = brcddb_common.EXIT_STATUS_USER_ERROR
-    except FileExistsError:
+    except (FileExistsError, FileNotFoundError):
         brcdapi_log.log(['', 'The folder in the path for ' + file_name + ' does not exist.'], echo=True)
 
     return ec

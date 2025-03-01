@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -33,15 +33,17 @@ Creates a report in Excel Workbook format with all differences between two conte
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 06 Dec 2024   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 01 Mar 2025   | Error message enhancements.                                                           |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '01 Mar 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -149,24 +151,12 @@ _control_tables = dict(  # Keys are the objects defined in brcddb.classes
         # so 4000,000 = 1 sec. The maximum I/O latency is fabric dependent. 20 msec is somewhat arbitrary
         '/brocade-traffic-optimizer/performance-group/max-io-latency': dict(lt=80000, gt=80000),
     },
-    ZoneCfgObj={
-        '/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True),
-    },
-    LoginObj={
-        '/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True),
-    },
-    FdmiNodeObj={
-        '/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True),
-    },
-    FdmiPortObj={
-        '/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True),
-    },
-    ZoneObj={
-        '/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True),
-    },
-    AliasObj={
-        '/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True),
-    },
+    ZoneCfgObj={'/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True)},
+    LoginObj={'/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True)},
+    FdmiNodeObj={'/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True)},
+    FdmiPortObj={'/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True)},
+    ZoneObj={'/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True)},
+    AliasObj={'/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True)},
     SwitchObj={
         '/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True),
         'brocade-fibrechannel-logical-switch/fibrechannel-logical-switch/(port|ge-port)-member-list/port-member':
@@ -200,6 +190,8 @@ _control_tables = dict(  # Keys are the objects defined in brcddb.classes
         'fos_cli/portcfgshow_raw': dict(skip=True),
         'fos_cli/portbuffershow': dict(skip=True),
         'fos_cli/portcfgshow': dict(skip=True),
+        'brocade-fibrechannel-logical-switch/fibrechannel-logical-switch/port-index-members/port-index':
+            dict(skip=True),
     },
     PortObj={
         '/_(obj_key|project_obj|alerts|sfp_thresholds|maps_fc_port_group|flags|switch|reserved_keys)': dict(skip=True),
@@ -228,9 +220,7 @@ _control_tables = dict(  # Keys are the objects defined in brcddb.classes
             dict(skip=True),  # These remote media values aren't always valid
         'media-rdp/last-poll-time': dict(skip=True),  # Poll time?
     },
-    AlertObj={
-        '/msg_tbl': dict(skip=True),
-    },
+    AlertObj={'/msg_tbl': dict(skip=True)},
 )
 
 _column_names = dict(
@@ -828,7 +818,7 @@ def pseudo_main(bf, cf, rf):
     brcdapi_log.log('Writing report: ' + rf, echo=True)
     try:
         _new_report(c, input_file_d['b']['obj'], input_file_d['c']['obj'], _project_scrub(compare_obj), rf)
-    except FileExistsError:
+    except (FileExistsError, FileNotFoundError):
         brcdapi_log.log('The path, folder, does not exist: ' + rf, echo=True)
     except PermissionError:
         brcdapi_log.log('Permission error writing ' + rf + '. This usually happens when the file is open.', echo=True)

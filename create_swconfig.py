@@ -29,15 +29,18 @@ Creates switch configuration workbooks for each chassis from a project for use w
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.1     | 04 Jan 2025   | Added core-4 blade sheets, fixed port switches, and column for CLI                    |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.2     | 01 Mar 2025   | Error message enhancements.                                                           |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '04 Jan 2025'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '01 Mar 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.1'
+__version__ = '1.0.2'
+
 
 import os
 import collections
@@ -1164,7 +1167,7 @@ def _get_input():
     except FileNotFoundError:
         brcdapi_log.log('Input file, ' + in_file + ', not found', echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except FileExistsError:
+    except (FileExistsError, FileNotFoundError):
         brcdapi_log.log('Folder in ' + in_file + ' does not exist', echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     proj_obj.s_description('\n'.join(ml))
@@ -1209,7 +1212,7 @@ def _get_input():
         try:
             os.mkdir(folder)
             folder += '/'
-        except FileExistsError:
+        except (FileExistsError, FileNotFoundError):
             folder += '/'
         except FileNotFoundError:
             brcdapi_log.log('A sub-folder in ' + folder + ' does not exist. Only the last folder can be created.',

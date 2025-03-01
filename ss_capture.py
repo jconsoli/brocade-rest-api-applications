@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -58,15 +58,17 @@ $ToDo Spin through all port objects and add stuff in fos_cli to the associated A
 +===========+===============+=======================================================================================+
 | 1.0.0     | 06 Dec 2024   | Initial launch.                                                                       |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.1     | 01 Mar 2025   | Set project date to date in first supportshow file.                                   |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '01 Mar 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 import datetime
 import sys
@@ -539,12 +541,6 @@ def pseudo_main(ss_folder, out_file, sd_folder):
     global _DEBUG, _content, _parse_actions, _working_proj_obj, _working_chassis_obj
     global _cmd_chassisshow, _sdcmd_sw_chassisshow, _sdcmd_sw_chassisshow
 
-    # Create a project object
-    # ToDo date below should be date of supportshow, not the date processed.
-    _working_proj_obj = brcddb_project.new("Captured_data", datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
-    _working_proj_obj.s_python_version(sys.version)
-    _working_proj_obj.s_description('' if ss_folder is None else ss_folder + '' if sd_folder is None else sd_folder)
-
     # Get the files to parse from ss_folder
     file_l = list() if ss_folder is None else [ss_folder + '/' + f for f in brcdapi_file.read_directory(ss_folder)]
 
@@ -579,6 +575,22 @@ def pseudo_main(ss_folder, out_file, sd_folder):
         # Read the supportshow file
         brcdapi_log.log('Processing: ' + file, echo=True)
         _content = brcdapi_file.read_file(file, False, False)
+
+        # Create a project object
+        # ToDo date below should be date of supportshow, not the date processed.
+        buf = None
+        if _working_proj_obj is None:
+            for i in range(0, len(_content)):
+                if _content[i].strip() == 'Date:':
+                    temp_l = gen_util.remove_duplicate_char(_content[i+1], ' ').split(' ')
+                    buf = temp_l[2] + ' ' + temp_l[1] + ' ' + temp_l[5] + ' ' + temp_l[3] + ' ' + temp_l[4]
+                    break
+            if buf is None:
+                buf = datetime.datetime.now().strftime('%d %b %Y %H:%M:%S')
+            _working_proj_obj = brcddb_project.new("Captured_data", buf)
+            _working_proj_obj.s_python_version(sys.version)
+            buf = '' if ss_folder is None else ss_folder + '' if sd_folder is None else sd_folder
+            _working_proj_obj.s_description(buf)
 
         # Get the chassis object.
         x, fos, _working_chassis_obj = 0, None, None

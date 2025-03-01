@@ -128,15 +128,18 @@ _tracking_d: Used for error reporting as follows:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.8     | 04 Feb 2025   | Added copy, rename, replace, and ability to do a full_purge on zone configurations.   |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 01 Mar 2025   | Added support for "comment" Zone_Object. Fixed warning for members that cannot talk   |
+|           |               | to other members. Removed redundant zoneadd in cli.                                   |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
-__date__ = '04 Feb 2025'
+__date__ = '01 Mar 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack@consoli-solutions.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.8'
+__version__ = '4.0.9'
 
 import collections
 import sys
@@ -200,32 +203,35 @@ _input_d['sheet'] = dict(
     r=False, d=None,
     h='Required unless using -scan. Sheet name in workbook, -z, to use for zoning definitions.')
 _input_d['a'] = dict(r=False, d=None, h='Optional. Name of zone configuration to activate (enable).')
-_input_d['save'] = dict(r=False, d=False, t='bool',
-                        h='Optional. Save changes to the switch. By default, this module is in test mode only. '
-                          'Activating a zone configuration, -a, automatically saves changes.')
+_input_d['save'] = dict(
+    r=False, d=False, t='bool',
+    h='Optional. Save changes to the switch. By default, this module is in test mode only. Activating a zone '
+      'configuration, -a, automatically saves changes.')
 _input_d['cli'] = dict(
     r=False, d=None,
     h='Optional. Name of the file for CLI commands. ".txt" is automatically appended if a "." is not found in the file '
       'name. CLI commands are generated whether -save is specified or not.')
-_input_d['strict'] = dict(r=False, d=False, t='bool',
-                          h='Optional. When set, warnings are treated as errors. Warnings are for inconsequential '
-                            'errors, such as deleting a zone that doesn\'t exist. The determination of a warning vs. '
-                            'an error is done on a row-by-row basis. Not all errors that are inconsequential will be '
-                            'treated as warnings. For example, when creating a zone that already exists, other rows '
-                            'are not examined to see if has the same members, so it will always be an error.')
+_input_d['strict'] = dict(
+    r=False, d=False, t='bool',
+    h='Optional. When set, warnings are treated as errors. Warnings are for inconsequential errors, such as deleting a '
+      'zone that doesn\'t exist. The determination of a warning vs. an error is done on a row-by-row basis. Not all '
+      'errors that are inconsequential will be treated as warnings. For example, when creating a zone that already '
+      'exists, other rows are not examined to see if has the same members, so it will always be an error.')
 _input_d.update(gen_util.parseargs_scan_d.copy())
 _input_d.update(gen_util.parseargs_eh_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
 
 _eff_zone_l, _eff_mem_l = list(), list()
-_pertinent_headers = ('Zone_Object', 'Action', 'Name', 'Match', 'Member', 'Principal Member')
-_zone_kpis = ('running/brocade-fibrechannel-switch/fibrechannel-switch',
-              'running/brocade-interface/fibrechannel',
-              'running/brocade-zone/defined-configuration',
-              'running/brocade-zone/effective-configuration',
-              'running/brocade-fibrechannel-configuration/zone-configuration',
-              'running/brocade-fibrechannel-configuration/fabric')
+_pertinent_headers = ('Zone_Object', 'Action', 'Name', 'Match', 'Member', 'Principal Member', 'Comments')
+_zone_kpis = (
+    'running/brocade-fibrechannel-switch/fibrechannel-switch',
+    'running/brocade-interface/fibrechannel',
+    'running/brocade-zone/defined-configuration',
+    'running/brocade-zone/effective-configuration',
+    'running/brocade-fibrechannel-configuration/zone-configuration',
+    'running/brocade-fibrechannel-configuration/fabric',
+)
 _pending_flag = False  # Updates were made to the brcddb zone database that have not been written to the switch yet.
 # See _tracking_d in Common Data Structures
 _tracking_d = dict(alias=dict(), zone=dict(), zone_cfg=dict(), general=dict())
@@ -239,9 +245,10 @@ _default_zone_d = dict(row_l=list(), error_l=list(), warning_l=list(), purge=Fal
 _ignore_mem_d = dict(alias=dict(), zone=dict(), zone_cfg=dict())  # see note above
 _cli_l = list()  # CLI commands
 _MAX_ROWS = 20
+_P1_MAX = 80  # Maximum character length for extended help.
 
 _eh_l = [
-    dict(p1_max=80),
+    dict(p1_max=_P1_MAX),
     dict(p1=''),
     dict(p1='**Overview**'),
     dict(p1=''),
@@ -399,7 +406,7 @@ def _reference_rows(object_type, object_name):
 def _add_to_tracking(key, input_d, error, warning, cli=None):
     """Adds an item to the tracking dictionary, _tracking_d
 
-    :param key: 'alias', 'zone', or 'zone_cfg'
+    :param key: 'comment', 'alias', 'zone', or 'zone_cfg'
     :type key: str
     :param input_d: See function header in _invalid_action()
     :type input_d: dict
@@ -411,30 +418,34 @@ def _add_to_tracking(key, input_d, error, warning, cli=None):
     """
     global _tracking_d, _default_zone_d, _cli_l
 
-    zone_d = input_d['zone_d']
+    d, zone_d = dict(error_l=list(), warning_l=list()), input_d['zone_d']
 
     # Add to tracking
-    d = _tracking_d[key].get(zone_d['Name'])
-    if d is None:
-        d = copy.deepcopy(_default_zone_d)
-        _tracking_d[key].update({zone_d['Name']: d})
-    if isinstance(zone_d.get('row'), int):
-        d['row_l'].extend(gen_util.convert_to_list(zone_d['row']))
-    d['error_l'].extend(gen_util.convert_to_list(error))
-    d['warning_l'].extend(gen_util.convert_to_list(warning))
+    if key != 'comment':
+        d = _tracking_d[key].get(zone_d['Name'])
+        if d is None:
+            d = copy.deepcopy(_default_zone_d)
+            _tracking_d[key].update({zone_d['Name']: d})
+        if isinstance(zone_d.get('row'), int):
+            d['row_l'].extend(gen_util.convert_to_list(zone_d['row']))
+        d['error_l'].extend(gen_util.convert_to_list(error))
+        d['warning_l'].extend(gen_util.convert_to_list(warning))
 
     # Add CLI
     if isinstance(cli, str) and not input_d.get('no_cli', False):
-        buf, add_blank_line = '', False
-        for e_buf in d['error_l']:
-            buf, add_blank_line = '# ', True
-            _cli_l.extend(['', '# Error: ' + e_buf])
-        for e_buf in d['warning_l']:
-            add_blank_line = True
-            _cli_l.extend(['', '# Warning: ' + e_buf])
-        _cli_l.extend(gen_util.convert_to_list(cli))
-        if add_blank_line:
-            _cli_l.append('')
+        if key == 'comment':
+            _cli_l.extend(['', '# ' + cli])
+        else:
+            buf, add_blank_line = '', False
+            for e_buf in d['error_l']:
+                buf, add_blank_line = '# ', True
+                _cli_l.extend(['', '# Error: ' + e_buf])
+            for e_buf in d['warning_l']:
+                add_blank_line = True
+                _cli_l.extend(['', '# Warning: ' + e_buf])
+            _cli_l.extend(gen_util.convert_to_list(cli))
+            if add_blank_line:
+                _cli_l.append('')
 
 
 def _set_purge(obj_type, obj_name):
@@ -562,11 +573,21 @@ def _validation_check(args_d, fab_obj):
                                              dict(zone_d=dict(Name=zonecfg, row=row_l), fab_obj=fab_obj),
                                              buf,
                                              None)
-                # Are there any devices that can communicate with each other?
+                # Are there any devices that cannot communicate with each other?
                 if zone in _tracking_d['zone']:
-                    if len(zone_obj.r_members()) + len(zone_obj.r_pmembers()) if zone_obj.r_is_peer() else 1 < 2:
-                        buf = 'Does not contain any members that can talk to each other.'
-                        _add_to_tracking('zone', dict(zone_d=dict(Name=zone), fab_obj=fab_obj), None, buf)
+                    try:
+                        if zone_obj.r_is_peer():
+                            if len(zone_obj.r_members()) == 0 and len(zone_obj.r_pmembers()) == 0:
+                                raise Found
+                        elif len(zone_obj.r_members()) < 0:
+                            raise Found
+                    except Found:
+                        _add_to_tracking(
+                            'zone',
+                            dict(zone_d=dict(Name=zone), fab_obj=fab_obj),
+                            None,
+                            'Does not contain any members that can talk to each other.'
+                        )
 
     # Is a new zone configuration being activated and if so, does it exist?
     if isinstance(args_d['a'], str):
@@ -610,10 +631,12 @@ def _invalid_action(input_d):
     :param input_d: See **Common Data Structures**, *input_d*, in the module header
     :type input_d: dict
     """
-    stype = 'exact' if input_d['zone_d']['Match'] is None else input_d['zone_d']['Match']
-    action, zone_obj = input_d['zone_d']['Action'], input_d['zone_d']['Zone_Object']
-    buf = '"' + action + '" is not a valid Action for Zone_Object "' + zone_obj + '" for match type "' + stype + '"'
-    _add_to_tracking(zone_obj, input_d, buf, None)
+    zone_d = input_d.get('zone_d', dict())
+    if 'Name' not in zone_d:
+        zone_d['Name'] = 'Unknown'
+    buf = '"' + str(zone_d.get('Action')) + '" is not a valid Action for Zone_Object "' + str(zone_d.get('Zone_Object'))
+    buf += '" for match type "' + str(zone_d.get('Match')) + '"'
+    _add_to_tracking(zone_d.get('Zone_Object', 'general'), input_d, buf, None)
 
 
 def _alias_create(input_d):
@@ -992,7 +1015,6 @@ def _zone_add_mem(input_d):
         buf += ' -principal "' + pmember + '"'
     if isinstance(member, str):
         buf += ' -members "' + member + '"'
-    _cli_l.append(buf)
     _add_to_tracking('zone', input_d, el, wl, cli=buf)
 
 
@@ -1141,7 +1163,7 @@ def _zone_full_purge_m(input_d):
 
 def _zonecfg_create(input_d):
     """Create a zone configuration. See _invalid_action() for parameter descriptions"""
-    global _pending_flag, _cli_l
+    global _pending_flag
 
     el, wl = list(), list()
     name, member, fab_obj = input_d['zone_d']['Name'], input_d['zone_d']['Member'], input_d['fab_obj']
@@ -1295,6 +1317,11 @@ def _zonecfg_full_purge(input_d):
     _add_to_tracking('zone_cfg', input_d, el, None)
 
 
+def _comment(input_d):
+    """Inserts comments only in CLI file"""
+    _add_to_tracking('comment', input_d, None, None, cli='')
+
+
 def _zonecfg_full_purge_m(input_d):
     """Performs a full purge of zone configurations based on a regex or wild card match. See _invalid_action()"""
     name = input_d['zone_d']['Name']
@@ -1314,6 +1341,7 @@ Zone_Object (dict):
                      only key in this dictionary. 
 """
 _zone_action_d = dict(
+    comment=dict(a=_comment),
     alias=dict(
         create=dict(
             exact=dict(a=_alias_create),
@@ -1491,6 +1519,9 @@ def _parse_zone_workbook(al):
 
     # Keeping track of the row is for error reporting purposes.
     for row in range(1, len(al)):  # Starting from the row past the header.
+        if isinstance(al[row][hdr_d['Zone_Object']], str) and al[row][hdr_d['Zone_Object']] == 'comment':
+            rl.append(dict(Zone_Object='comment', Comments=al[row][hdr_d['Comments']], row=row+1))
+            continue
         try:
             for col in hdr_d.values():  # It's a blank line if all cells are None
                 if al[row][col] is not None:
@@ -1581,17 +1612,26 @@ def _item_desc(fab_obj, key, item_name):
     :return: If key == 'alias': Description of alias, wwn, or d,i. Otherwise, just the item_name
     :rtype: str
     """
-    r_buf = item_name
+    r_buf, desc_l = item_name, list()
     if key == 'alias':
         if gen_util.is_di(item_name):
-            r_buf += ' (' + brcddb_port.port_best_desc(fab_obj.r_port_object_for_di(item_name)) + ') '
+            buf = brcddb_port.port_best_desc(fab_obj.r_port_object_for_di(item_name))
+            if len(buf) > 0:
+                desc_l.append(buf)
         elif gen_util.is_wwn(item_name, full_check=True):
-            r_buf += ' (' + brcddb_login.login_best_port_desc(fab_obj.r_login_obj(item_name)) + ') '
+            buf = brcddb_login.login_best_port_desc(fab_obj.r_login_obj(item_name))
+            if len(buf) > 0:
+                desc_l.append(buf)
         # It must be an alias
         else:
             alias_obj = fab_obj.r_alias_obj(item_name)
             if alias_obj is not None:
-                r_buf += ' (' + '; '.join([brcddb_login.login_best_port_desc(m) for m in alias_obj.r_members()]) + ') '
+                for mem in alias_obj.r_members():
+                    buf = brcddb_login.login_best_port_desc(fab_obj.r_login_obj(mem))
+                    if len(buf) > 0:
+                        desc_l.append(buf)
+        if len(desc_l) > 0:
+            r_buf += ' (' + '; '.join(desc_l) + ') '
 
     return r_buf
 
@@ -1608,7 +1648,7 @@ def _summary_report(fab_obj, args_d, saved, cli_el):
     :param cli_el: Error messages from _build_cli_file (which are from brcdapi_file.write_file)
     :type cli_el: list
     """
-    global _tracking_d, _tracking_hdr_d
+    global _tracking_d, _tracking_hdr_d, _P1_MAX
 
     error_count = warn_count = 0
 
@@ -1637,7 +1677,7 @@ def _summary_report(fab_obj, args_d, saved, cli_el):
             summary_l.append('None')
 
     # Zone Purges
-    summary_l.extend(gen_util.format_text([dict(p1_max=80), dict(p1=''), dict(p1='**Purge Faults**'),]))
+    summary_l.extend(gen_util.format_text([dict(p1_max=_P1_MAX), dict(p1=''), dict(p1='**Purge Faults**'),]))
     purge_msg_l = [
         dict(p1=''),
         dict(
@@ -1684,11 +1724,14 @@ def _summary_report(fab_obj, args_d, saved, cli_el):
     for subkey, d in _tracking_d['general'].items():
         if subkey == 'purge':  # purge is already processed in the Purge subsection
             continue
-        if len(d['error_l']) + len(d['warning_l']) > 0:
-            summary_l.extend(['', '*' + subkey + '*'])
-            for e_key, buf_l in collections.OrderedDict(ERROR=d['error_l'], WARNING=d['warning_l']).items():
-                e_buf = e_key + ': '
-                summary_l.extend(e_buf + e_buf.join(buf_l))
+        if len(d['error_l']) > 0:
+            summary_l.extend(['', '*' + subkey + ' Errors *'])
+            summary_l.extend(d['error_l'])
+            summary_l.append('')
+        if len(d['warning_l']) > 0:
+            summary_l.extend(['', '*' + subkey + ' Warnings *'])
+            summary_l.extend(d['warning_l'])
+            summary_l.append('')
 
     brcdapi_log.log(summary_l, echo=True)
 
@@ -1760,9 +1803,12 @@ def pseudo_main(args_d, fab_obj, zone_wb_l):
                 #     brcdapi_log.log('TP_100', echo=True)
                 debug_i += 1
             try:
-                action = _zone_action_d[zone_d['Zone_Object']][zone_d['Action']][zone_d['Match']]['a']
+                action = _zone_action_d[zone_d['Zone_Object']]['a']
             except KeyError:
-                action = _invalid_action
+                try:
+                    action = _zone_action_d[zone_d['Zone_Object']][zone_d['Action']][zone_d['Match']]['a']
+                except KeyError:
+                    action = _invalid_action
             action(dict(fab_obj=fab_obj,
                         zone_d=zone_d,
                         search_d=search_d,
