@@ -3,6 +3,11 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
+**12 April 2025**
+* Added support for additional leaves in FOS 9.2
+* Added ability to execute multiple CLI commands from configuration workbook
+* Improved switch configuration workbook instructions
+  
 **01 Mar 2025**
 * Added zone cleanup worksheets
 * Misc bug fixes
