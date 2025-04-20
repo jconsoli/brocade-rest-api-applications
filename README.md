@@ -3,151 +3,46 @@
 Consoli Solutions, LLC
 jack@consoli-solutions.com
 
-**12 April 2025**
-* Added support for additional leaves in FOS 9.2
-* Added ability to execute multiple CLI commands from configuration workbook
-* Improved switch configuration workbook instructions
-  
-**01 Mar 2025**
-* Added zone cleanup worksheets
-* Misc bug fixes
+**Applications**
 
-**3 Feb 2025**
-* Added "full purge" option for zone_config.py.
-
-**28 Dec 2024 & 4 Jan 2025**
-* Added fixed port switches and 4 slot directors to create_swconfig.py
-* Add mainframe zoning, mf_zone.py
-* Added column "CLI" column to switch configuration workbooks
-
-**Update 6 Dec 2024**
-* Automatically grouped mainframe devices in group section of report.py
-* Added Tx and Rx to several report pages
-* Miscellaneous bug fixes
-
-**Update 29 Oct 2024**
-
-* Fixed graphing capabilities in stats_g.py
-* Improved error messages in several modules.
-
-**Update 20 Oct 2024**
-
-Primary changes were to support the new chassis and report pages.
-
-**Updates 16 Jun 2024**
-
-* Fixed numerous spelling and grammar mistakes
-
-**Updates 15 May 2024**
-
-* Added ability to purge zones and aliases to zone_config.py
-* Added search by zone to nodefind.py
-* Miscellanious bug fixes
-
-**Updates 6 March 2024**
-
-* Added restore.py
-* Improved error messaging
-* Updated comments
-
-**Updates 4 Aug 2023**
-
-* Added SX6 & FCxx-64 board types to switch configuration workbooks
-* Re-launched under Consoli Solutions, LLC
-
-**Updates 01 Jan 2023**
-
-* Replaced hard-coded best practice table with ability to read best practices from a Workbook
-* Added ability to generate CLI commands in zone_restore.py
-* Additional summaries in port_count.py
-* Added POD reserve to switch_config.py
-
-**Updates: 17 July 2021**
-
-* Help message improvements
-
-**Updates: 7 Aug 2021**
-
-The primary purpose of these updates was to add functionality to the zone merge utility and add a zone restore utility.
-
-* compare_report.py - Fixed call to best_switch_name
-* zone_restore.py - New
-* zone_merge.py - Misc. fixes & removed fabric by name
-* zon_merge_sample.xlsx - Improved instructions & removed fabric by name.
-* lib_check.py - Updated with latest changes
-
-**14 Aug 2021 Updates**
-
-* zone_merge.py, added ability to activate the merged zone configuration.
-* report.py, added zone by target page
-
-**Updates: 21 Aug 2021**
-
-Added the ability to generate CLI zone commands in the zone merge utility.
-
-* zone_merge.py - Added -cli flag to generate CLI zoming commands
-* lib_check.py - Updated with latest changes
-
-**Updates 14 Nov 2021**
-
-* Deprecated pyfos_auth - previously only used in name only.
-* search - Greatly simplified search methods but it is now for programmers only as it accepts JSON as input.
-* Imporved several help and feedback messages.
-
-**Updated 31 Dec 2021**
-
-* Several comments and user messaging improved
-* Replaced all bare exception clauses with explicit exceptions
-* Improved search and added more examples
-
-**Updated 28 Apr 2022**
-
-* Added support for new URIs in FOS 9.1
-* Moved some generic libraries from brcddb to brcdapi
-
-**applications**
-
-Contains modules used primarily for SAN automations tasks:
+Contains Python scripts used primarily for SAN automations tasks with Brocade FOS Rest API:
 
 * Data capture scripts
 * Report generation scripts with extensive zone validation and analysis
 * Comparison reports.
 * Port statistical gathering scripts
 * Customer search and report scripts.
+* Zone from a workbook.
+* Automated zone cleanup workbooks.
+* Configure switches from a workbook. Since CLI commands are optionally supported, all configuration tasks are possible even when configuration tasks are not supported via the API.
+* Mainframe storage groups are automatically determined based on the RNID sequence number.
+* Supports import of IOCPs for end to end mainframe path reporting.
+* Define device groups using ReGex and wild card matching on aliases.
 
-For any applications, use -h for help
+For any applications, use -h for help. Some applications have extended help, -eh.
 
-The script shold be placed in a folder used where you run Python scripts from.
+The script should be placed in a folder used where you run Python scripts from.
 
 **shebang Line & Encoding**
 
-Typically, the first line should be:
+The first line should be the shebang line. The shebang line tells the Python interpreter what environment to work in. If you don’t understand this comment, the typical shebang line explained below likely is what you need. If your organization has a system administrator, check with your system administrator.
 
-#!/usr/bin/env python
+The second line should be the encoding line. By default, the encoding scheme is utf-8 (formerly known as ASCII). Windows (DOS actually) and Unix/Linux variant operating system use utf-8. Since those are the two most popular operating systems to execute Python scripts, the encoding line is typically omitted. Mainframes, run under z/OS, which uses EBCDIC. Since these scripts are supported in mainframe environments, the encoding line is explicit. I don’t know if Python is supported under TPF, but if it is, I would expect the encoding to be EBCDIC.
 
-Unfortunately, the above shebang line does not always work in Windows environments so all of the sample scripts from github/jconsoli use:
-
-#!/usr/bin/python
-
-The reasoning for doing so was that Unix/Linux users are typically more technically astute and can make the change themselves. There are means to get the standard Linux shebang line to work in Windows but that discussion is outside the scope of this document.
-
-Note that #!/usr/bin/env python is preferred because it ensures your script is running inside a virtual environment while #!/usr/bin/python runs outside the virtual environment
-
-Most Windows and Linux environments do not need the encoding line but some, such as z/OS version of Linux do need it. All of the aforementioned sample scripts have the following:
-
-# -*- coding: utf-8 -*-
-
-To net it out, the first two lines should be:
-
-Windows:
+# *Windows (default)*
 
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-Linux and z/OS:
+# *Unix/Linux*
 
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
+# *z/OS*
+
+#!/usr/bin/env python
+# -*- coding: ebcdic -*-
 
 **Applications**
 
@@ -160,7 +55,7 @@ The brcddb library is a hierarchical relational database with several commonly u
 
 The collected data is stored in class objects in the brcddb library and converted to standard Python data structures and converted to a JSON format when saving the data to a file. When read back in to a module, it is converted back to the brcddb class objects.
 
-**Common Options For All Modules**
+# *Common Options For All Modules*
 
 Help
 
@@ -180,13 +75,7 @@ Rather than use print statements, all of the modules in api_examples use the log
 
 -sup This option is available in the applications modules and some of the api_examples. When set, print to console is disabled. This is useful for batch processing.
 
-For programmers
-
-Each module has a _DEBUG variable. When set True, instead of obtaining module input from the command line, input is taken from _DEBUG_xxx variables where “xxx” is the option. This allows you to execute modules from a development environment such as PyCharm.
-
-**applications Module Specific**
-
-**capture**
+# *capture*
 
 The capture.py module is essential to all modules in the applications folder. As the name implies, it captures data from a chassis. It is capable of determining all logical switches in a chassis and capturing the data for all logical switches. It is capable of automatically determining all KPIs supported by the chassis and collecting all the data. Alternatively, a default list of KPIs can be captured or a file with a list of KPIs can be passed to the module. Data is automatically parsed and added to the brcddb library.
 
@@ -194,19 +83,19 @@ Example: Collect all data required for the report.py module. Note that the defau
 
 py capture.py –ip xxx.xxx.xxx.xxx –id admin –pw password –s self –f chassis_data.json
 
-**cli_zone**
+# *cli_zone*
 
 Prior to the API, automation was done using the CLI via an SSH connection. As a result, there were several lists of zoning scripts using the CLI so for testing purposes, it was convenient to build this module. This module was made available as a programming example for those new to the API but familiar with the CLI. Since many organizations no longer allow SSH, it provides a means to use existing zoning scripts that rely on the CLI but doing so should be a bridge to fully API scripting.
 
 py cli_zone.py –ip xxx.xxx.xxx.xxx –id admin –pw password –s self –cli zone_commands.txt
 
-**combine**
+# *combine*
 
 Merges the output from execution of capture.py on multiple chassis. This is how the fabric wide database is built for fabrics of more than one switch.
 
 py combine.py –i data_folder –o combined.json
 
-**compare_report**
+# *compare_report*
 
 Compares two databases and generates an Excel Workbook with all the differences. There is some intelligence in that there is a table that controls the comparisons. For example, Tx and Rx byte counters are ignored since these counters are always increasing so a report filled with Tx and Rx byte count changes would just be noise so these are skipped. Similarly, a 0.1 dBm change in output power level of an SFP is uninteresting so there is a tolerance range for statistical counters.
 
@@ -214,13 +103,13 @@ To edit the control table, search for _control_tables.
 
 py compare_report.py –b old_project.json –c new_project.json –r comparison_report
 
-**lib_check**
+# *lib_check*
 
 Used to validate proper installation of Python and the Python libraries required by these modules.
 
 py lib_check.py
 
-**multi_capture**
+# *multi_capture*
 
 Reads a list of login credentials from a file and does the following:
 
@@ -230,7 +119,7 @@ Reads a list of login credentials from a file and does the following:
 
 py multi_capture.py –i switches.csv
 
-**report**
+# *report*
 
 Generates an Excel report that includes:
 
@@ -243,29 +132,82 @@ Generates an Excel report that includes:
 
 py report.py –i combined.json –o report –sfp sfp_rules_r9
 
-**search**
+# *search*
 
 Primarily intended as a programmer’s example on how to use the
 search features of the brcddb libraries.
 
-**stats_c**
+# *stats_c*
 
 Collects port statistics to be fed to stats_g.py. Typically, the Kafka streams from SANnav are used for gathering port statistics. This module is useful when Kafka recipients have not been configured.
 
 py stats_c.py –ip xxx.xxx.xxx.xxx –id admin –pw password –s self –fid 128 –o stats.json
 
-**stats_g**
+# *stats_g*
 
 Reads the output of stats_c and formats into an Excel Workbook. Since all statistical counters are cumulative, the counter from the previous poll is subtracted so that incremental statistics are reported. There is an option to create graphs.
 
 py stats_g.py –i stats.json –r stats_report
 
-**zone_merge**
+# *zone_merge*
 
 Merges the zone databases from multiple fabrics. A test mode allows you to validate if the zone database could be merged without actually merging the zone database. Input is taken from an Excel file.
 
 py zone_merge.py –i zone_merge_sample
 
-**zone_restore**
+# *zone_restore*
 
 Sets the zone database to that of a previously captured zone database. Typically used for restoring a zone database.
+
+**Revision History**
+
+# *12 April 2025*
+* Added support for additional leaves in FOS 9.2
+* Added ability to execute multiple CLI commands from configuration workbook
+* Improved switch configuration workbook instructions
+  
+# *01 Mar 2025*
+* Added zone cleanup worksheets
+* Misc bug fixes
+
+# *3 Feb 2025*
+* Added "full purge" option for zone_config.py.
+
+# *28 Dec 2024 & 4 Jan 2025*
+* Added fixed port switches and 4 slot directors to create_swconfig.py
+* Add mainframe zoning, mf_zone.py
+* Added column "CLI" column to switch configuration workbooks
+
+# *Update 6 Dec 2024*
+* Automatically grouped mainframe devices in group section of report.py
+* Added Tx and Rx to several report pages
+* Miscellaneous bug fixes
+
+# *Update 29 Oct 2024*
+
+* Fixed graphing capabilities in stats_g.py
+* Improved error messages in several modules.
+
+# *Update 20 Oct 2024*
+* Primary changes were to support the new chassis and report pages.
+
+# *Updates 16 Jun 2024*
+
+* Fixed numerous spelling and grammar mistakes
+
+# *Updates 15 May 2024*
+
+* Added ability to purge zones and aliases to zone_config.py
+* Added search by zone to nodefind.py
+* Miscellanious bug fixes
+
+# *Updates 6 March 2024*
+
+* Added restore.py
+* Improved error messaging
+* Updated comments
+
+# *Updates 4 Aug 2023*
+
+*  Initial launch under Consoli Solutions, LLC
+
