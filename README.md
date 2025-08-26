@@ -161,6 +161,11 @@ Sets the zone database to that of a previously captured zone database. Typically
 
 **Revision History**
 
+# *25 August 2025*
+* Added library version to the log file
+* Added scc_policy.py
+* Added scan.py
+
 # *12 April 2025*
 * Added support for additional leaves in FOS 9.2
 * Added ability to execute multiple CLI commands from configuration workbook
