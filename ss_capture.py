@@ -60,15 +60,17 @@ $ToDo Spin through all port objects and add stuff in fos_cli to the associated A
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.1     | 01 Mar 2025   | Set project date to date in first supportshow file.                                   |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.2     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '01 Mar 2025'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 import datetime
 import sys
@@ -83,18 +85,6 @@ import brcddb.brcddb_chassis as brcddb_chassis
 import brcddb.util.copy as brcddb_copy
 import brcddb.util.util as brcddb_util
 import brcddb.util.parse_cli as parse_cli
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_util=brcddb_util.__version__,
-    brcddb_chassis=brcddb_chassis.__version__,
-    brcddb_copy=brcddb_copy.__version__,
-    parse_cli=parse_cli.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -657,7 +647,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     # Get command line input
     buf = 'Convert supportshow output files to the effective equivalent capture.py and combine.py. WARNING: Only a '\
@@ -665,7 +655,12 @@ def _get_input():
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     ml = [
         os.path.basename(__file__) + ', ' + __version__,

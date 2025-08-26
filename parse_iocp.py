@@ -35,15 +35,17 @@ Parses IOCP files and generates planning workbooks
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 01 Mar 2025   | Error message enhancements.                                                           |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
-__date__ = '01 Mar 2025'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.4'
+__version__ = '4.0.5'
 
 import datetime
 import sys
@@ -56,20 +58,11 @@ import brcdapi.log as brcdapi_log
 import brcdapi.excel_util as excel_util
 import brcdapi.excel_fonts as excel_fonts
 import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
 import brcddb.util.iocp as brcddb_iocp
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    excel_util=excel_util.__version__,
-    excel_fonts=excel_fonts.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_iocp=brcddb_iocp.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 
@@ -91,6 +84,9 @@ _input_d = dict(
              h='Optional. A map of Switch IDs to domain Both values must be in hex. Separate multiple pairs with a '
                '";". For example, to map Switch ID F0 to DID 32 (0x20) and Switch ID F1 to DID 33 (0x21): '
                '"F0,20;F1,21".'),
+    d=dict(r=False, d=False, t='bool',
+           h='Optional. No parameters. Instead of writing the workbooks, plain text files of the IOCP files filtered '
+             'for lines containing "CNTLUNIT" and "LINK=".')
 )
 _input_d.update(gen_util.parseargs_log_d.copy())
 
@@ -1131,7 +1127,7 @@ def _port_sheets(wb, sheet_index, switch_type, did, did_d):
         row_l = sheet_d['al']
         start_col = switch_d['col']['start']
         end_col = switch_d['col']['end']
-        col_keys_l = [int(i) for i in switch_d.keys() if str(i).isnumeric() and not bool(switch_d[i].get('skip'))]
+        col_keys_l = [int(i) for i in switch_d.keys() if str(i).isnumeric() and not switch_d[i].get('skip', False)]
 
         # Create a worksheet, set the column widths, and add the title
         sheet = wb.create_sheet(index=sheet_index, title='Slot ' + str(slot))
@@ -1150,7 +1146,7 @@ def _port_sheets(wb, sheet_index, switch_type, did, did_d):
         for row in reversed(range(switch_d['row']['start'], switch_d['row']['end'])):
             cu, col_l = None, row_l[row]
             for col in col_keys_l:
-                if bool(switch_d[col].get('port_addr')):
+                if switch_d[col].get('port_addr', False):
                     cu = link_d.get(local_did + gen_util.pad_string(str(col_l[col]), pad_len=2, pad_char='0'))
                 try:
                     val = _special_d[common_switch_type][generic_blade_type][slot][row][col]
@@ -1158,9 +1154,9 @@ def _port_sheets(wb, sheet_index, switch_type, did, did_d):
                     try:
                         val = switch_d[col]['val']
                     except KeyError:
-                        val = cu if bool(switch_d[col].get('ad')) else col_l[col]
+                        val = cu if switch_d[col].get('ad', False) else col_l[col]
                 if isinstance(val, str):  # +1 for $r and +2 for $nr because these are Excel rows, not zero based
-                    if bool(switch_d[col].get('did')):
+                    if switch_d[col].get('did', False):
                         if val == '$did':
                             local_did = did
                         elif val == '$tv':
@@ -1225,7 +1221,7 @@ def _write_report(summary_d, prefix, switch_type, sheet_l):
     return rl
 
 
-def psuedo_main(proj_obj, prefix, switch_type, iocp, switch_id_map, sheet_l):
+def psuedo_main(proj_obj, prefix, switch_type, iocp, switch_id_map, sheet_l, debug_flag):
     """Basically the main(). Did it this way so that it can easily be used as a standalone module or called from another
 
     :param proj_obj: Project object. If None, an error was encountered.
@@ -1240,6 +1236,7 @@ def psuedo_main(proj_obj, prefix, switch_type, iocp, switch_id_map, sheet_l):
     :type switch_id_map: dict
     :param sheet_l: Workbook template sheets read from excel_util.read_workbook()
     :type sheet_l: list
+    :param debug_flag: If True, write IOCP files with just CNTLUNIT and PATH=
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
@@ -1250,6 +1247,21 @@ def psuedo_main(proj_obj, prefix, switch_type, iocp, switch_id_map, sheet_l):
     if len(file_l) == 0:
         brcdapi_log.log(['', 'No IOCP files found in ' + iocp, ''], True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+    if debug_flag:
+        for file in file_l:
+            brcdapi_log.log('Parsing: ' + file, True)
+            iocp_l = brcdapi_file.read_file(iocp + '/' + file, False, False)
+            chpid_l, cntlunit_l = brcddb_iocp.condition_iocp(iocp_l)
+            try:
+                brcdapi_file.write_file(
+                    prefix + file.split('.')[0] + '.txt',
+                    [buf.strip() for buf in cntlunit_l if 'LINK=' in buf],
+                )
+            except (FileExistsError, FileNotFoundError, PermissionError):
+                brcdapi_log.log('Error writing file: ' + file, echo=True)
+            return brcddb_common.EXIT_STATUS_OK
+
     for file in file_l:
         brcdapi_log.log('Parsing: ' + file, True)
         brcddb_iocp.parse_iocp(proj_obj, iocp + '/' + file)
@@ -1269,7 +1281,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     proj_obj, error_l, switch_map_d, sheets_l, el = None, list(), dict(), list(), list()
 
@@ -1280,7 +1292,12 @@ def _get_input():
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # User feedback
     ml = [
@@ -1290,6 +1307,7 @@ def _get_input():
         'IOCP folder, -iocp:         ' + args_d['iocp'],
         'Switch ID to DID map, -map: ' + str(args_d['map']),
         'Template file, -t:          ' + str(_config_d.get(args_d['t'])),
+        'Debug, -d:                  ' + str(args_d['d']),
         'Log, -log:                  ' + str(args_d['log']),
         'No log, -nl:                ' + str(args_d['nl']),
         'Suppress, -sup:             ' + str(args_d['sup']),
@@ -1325,12 +1343,12 @@ def _get_input():
     except PermissionError:
         error_l.append('You do not have access rights to read ' + temp_file + '.')
 
-    # Get a project object run the script if there were no errors
+    # Get a project object and run the script if there were no errors
     if len(error_l) == 0:
         proj_obj = brcddb_project.new('parse_iocp.py', datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
         proj_obj.s_python_version(sys.version)
         proj_obj.s_description('Parsed IOCPs')
-        return psuedo_main(proj_obj, args_d['p'], args_d['t'], args_d['iocp'], switch_map_d, sheets_l)
+        return psuedo_main(proj_obj, args_d['p'], args_d['t'], args_d['iocp'], switch_map_d, sheets_l, args_d['d'])
 
     brcdapi_log.log(error_l, echo=True)
     return brcddb_common.EXIT_STATUS_INPUT_ERROR

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -37,15 +37,19 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.5     | 06 Dec 2024   | Remove extraneous white space from user input in Workbook                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | 26 Dec 2024   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.5'
+__version__ = '4.0.7'
 
 import os
 import collections
@@ -53,7 +57,9 @@ import brcdapi.log as brcdapi_log
 import brcdapi.file as brcdapi_file
 import brcdapi.excel_util as excel_util
 import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
 import brcdapi.port as brcdapi_port
+import brcddb.util.util as brcddb_util
 import brcddb.brcddb_project as brcddb_project
 import brcddb.apps.report as brcddb_report
 import brcddb.report.zone as zone_report
@@ -65,31 +71,10 @@ import brcddb.util.obj_convert as brcddb_conv
 import brcddb.brcddb_port as brcddb_port
 import brcddb.util.search as brcddb_search
 
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcddb_common=brcddb_common.__version__,
-    excel_util=excel_util.__version__,
-    brcdapi_port=brcdapi_port.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_report=brcddb_report.__version__,
-    zone_report=zone_report.__version__,
-    brcddb_bp=brcddb_bp.__version__,
-    al=al.__version__,
-    brcddb_iocp=brcddb_iocp.__version__,
-    brcddb_conv=brcddb_conv.__version__,
-    brcddb_port=brcddb_port.__version__,
-    brcddb_search=brcddb_search.__version__,
-)
-
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
-
-# debug input (for copy and paste into Run->Edit Configurations->script parameters):
-# -i test/test_output -bp bp -sfp sfp_rules_r12 -r -c * -nm -log _logs
 
 # Input parameter definitions
 _input_d = dict(
@@ -234,7 +219,7 @@ def _groups(proj_obj, group_l, file):
             group = group.strip()  # This is read from a user created Workbook, so remove any accidental white space
             operand = row_l[col_d['Operand']]
             if isinstance(operand, str):
-                operand = operand.strip()  # This is read from a user created Workbook, Remove accidental white space
+                operand = operand.strip()  # This is read from a user created Workbook. Remove accidental white space
             g_filter = row_l[col_d['Filter']]
             if not isinstance(g_filter, str) or g_filter not in _group_filter_list:
                 ml.append('Unknown Filter, ' + str(g_filter) + ', at row ' + str(row))
@@ -314,6 +299,7 @@ def _groups(proj_obj, group_l, file):
     group_d[zone_report.UNGROUPED_TARGET] = dict(port_obj_l=ungrouped_target_l)
     group_d[zone_report.UNGROUPED_INITIATOR] = dict(port_obj_l=ungrouped_initiator_l)
     group_d[zone_report.MISSING_CPU] = dict(port_obj_l=missing_cpu_l)
+
     return group_d
 
 
@@ -347,7 +333,6 @@ def pseudo_main(proj_obj, outf, bp_rules, sfp_rules, group_file, iocp, custom_pa
     brcdapi_log.log('Building mainframe device groups', echo=True)
     brcddb_iocp.build_rnid_table(proj_obj)
     brcdapi_log.log('Analyzing project for best practices', echo=True)
-    brcddb_bp.best_practice(bp_rules, sfp_rules, al.AlertTable.alertTbl, proj_obj)
 
     # Get the groups, -group.
     brcdapi_log.log('Building groups')
@@ -366,6 +351,10 @@ def pseudo_main(proj_obj, outf, bp_rules, sfp_rules, group_file, iocp, custom_pa
             brcdapi_log.log('"parameters" sheet not found in ' + group_file, echo=True)
             return brcddb_common.EXIT_STATUS_INPUT_ERROR
     group_d = _groups(proj_obj, group_l, group_file)
+    brcddb_util.add_to_obj(proj_obj, 'report_app/group_d', group_d)
+
+    # Add best practice alerts to the appropriate objects
+    brcddb_bp.best_practice(bp_rules, sfp_rules, al.AlertTable.alertTbl, proj_obj)
 
     # Generate the report
     brcddb_report.report(proj_obj, outf, group_d)
@@ -380,13 +369,18 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     # Get command line input
     args_d = gen_util.get_input('Creates a general report in Excel ', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Command line feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,

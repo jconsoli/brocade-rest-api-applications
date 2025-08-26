@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -42,15 +42,17 @@ use as an example with the following caveats and features:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 06 Dec 2024   | Improved help messages.                                                               |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -61,16 +63,6 @@ import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
 import brcddb.apps.zone as action_c
 import brcddb.util.util as brcddb_util
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcdapi_rest=brcdapi_rest.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcddb_common=brcddb_common.__version__,
-    action_c=action_c.__version__,
-    brcddb_util=brcddb_util.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 
@@ -86,7 +78,8 @@ _input_d.update(
     t=dict(r=False, d=False, t='bool',
            h='Optional. Test mode. No arguments. Validates the -cli file only. Zoning is not sent to the switch'),
     f=dict(r=False, d=False, t='bool',
-           h='Optional. Force. No arguments. Ignore warnings and, when creating objects, overwrite it them.'),
+           h='Optional. Force. No arguments. Ignore warnings and, when creating objects, overwrite the objects that '
+             'already exist.'),
 )
 _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
@@ -202,7 +195,7 @@ def _get_input():
     :return ec: Error code
     :rtype ec: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -214,9 +207,13 @@ def _get_input():
         return brcddb_common.EXIT_STATUS_INPUT_ERROR  # gen_util.get_input() already posted the error message.
 
     # Set up logging
-    if args_d['d']:
-        brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_rest.verbose_debug(args_d['d'])
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # If not in test mode, were the switch parameters entered?
     help_msg_d = dict(ip='', id='', pw='')

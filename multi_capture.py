@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -45,15 +45,17 @@ This is effectively an intelligent batch file that does the following:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.5     | 06 Dec 2024   | Fixed spelling mistake in message.                                                    |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | 25 Aug 2025   | Fixed missing -d parameter passing to capture.py                                      |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.5'
+__version__ = '4.0.6'
 
 import signal
 import datetime
@@ -66,15 +68,6 @@ import brcdapi.util as brcdapi_util
 import brcdapi.excel_util as excel_util
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcdapi_rest=brcdapi_rest.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcddb_common=brcddb_common.__version__,
-    excel_util=excel_util.__version__,
-)
 
 # debug input (for copy and paste into Run->Edit Configurations->script parameters):
 # -i multi_capture_gsh -bp bp -sfp sfp_rules_r12 -r -c * -nm -log _logs
@@ -267,7 +260,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     addl_parms_capture, addl_parms_report, addl_parms_all = list(), list(), list()
 
@@ -275,7 +268,12 @@ def _get_input():
     args_d = gen_util.get_input('Capture (GET) requests from a chassis', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
     if args_d['log'] is not None:
         addl_parms_all.extend(['-log', args_d['log']])
     for k in ('sup', 'nl'):
@@ -285,7 +283,7 @@ def _get_input():
     # Additional input for capture.py
     if isinstance(args_d['c'], str):
         addl_parms_capture.extend(['-c', args_d['c']])
-    for k, v in {'-clr': args_d['clr'], '-nm': args_d['nm']}.items():
+    for k, v in {'-clr': args_d['clr'], '-nm': args_d['nm'], '-d': args_d['d']}.items():
         if v:
             addl_parms_capture.append(k)
 

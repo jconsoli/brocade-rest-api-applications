@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
@@ -30,16 +30,18 @@ Combines the output of multiple capture or combine files into a single project o
 | 4.0.2     | 03 Apr 2024   | Added version numbers of imported libraries.                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 06 Dec 2024   | Updated comments only                                                                 |
-+-----------+---------------+--------------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 25 Aug 2025   | Improve error message when the files don't exist                                      |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import sys
 import os
@@ -47,17 +49,10 @@ import datetime
 import brcdapi.log as brcdapi_log
 import brcdapi.gen_util as gen_util
 import brcdapi.file as brcdapi_file
+import brcdapi.util as brcdapi_util
 import brcddb.brcddb_project as brcddb_project
 import brcddb.util.copy as brcddb_copy
 import brcddb.brcddb_common as brcddb_common
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_copy=brcddb_copy.__version__,
-    brcddb_common=brcddb_common.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -111,8 +106,12 @@ def pseudo_main(inf, outf):
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
         try:
             brcdapi_file.write_dump(plain_copy, inf + '/' + outf)
+        except FileNotFoundError:
+            el.append('Input file, ' + inf + '/' + outf + ', not found')
+        except FileExistsError:
+            el.append('Folder in ' + inf + '/' + outf + ' does not exist')
         except PermissionError:
-            el.extend(['', 'Permission error writing ' + outf, ''])
+            el.append('Permission error writing ' + inf + '/' + outf)
 
     # Wrap up
     if len(el) > 0:
@@ -128,7 +127,7 @@ def _get_input():
     :return ec: Error code
     :rtype ec: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -136,7 +135,12 @@ def _get_input():
     args_d = gen_util.get_input('Combine the output of multiple JSON files from capture.py or this utility.', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # User feedback
     ml = [

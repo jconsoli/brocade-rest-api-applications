@@ -131,15 +131,17 @@ _tracking_d: Used for error reporting as follows:
 | 4.0.9     | 01 Mar 2025   | Added support for "comment" Zone_Object. Fixed warning for members that cannot talk   |
 |           |               | to other members. Removed redundant zoneadd in cli.                                   |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.0     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
-__date__ = '01 Mar 2025'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.9'
+__version__ = '4.1.0'
 
 import collections
 import sys
@@ -163,22 +165,6 @@ import brcddb.brcddb_login as brcddb_login
 import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
 import brcddb.util.obj_convert as obj_convert
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_rest=brcdapi_rest.__version__,
-    fos_auth=fos_auth.__version__,
-    excel_util=excel_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcdapi_zone=brcdapi_zone.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_fabric=brcddb_fabric.__version__,
-    api_int=api_int.__version__,
-    api_zone=api_zone.__version__,
-    obj_convert=obj_convert.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -1880,7 +1866,7 @@ def _get_input():
     :return ec: Error code. See brcddb_common.EXIT_* for details
     :rtype ec: int
     """
-    global __version__, _input_d, _version_d, _debug, _eh_l
+    global __version__, _input_d, _debug, _eh_l
 
     ec, error_l, zone_wb_l, proj_obj, fab_obj = brcddb_common.EXIT_STATUS_OK, list(), list(), None, None
     e_buf = ' **ERROR**: Missing required input parameter'
@@ -1904,7 +1890,12 @@ def _get_input():
     if args_d['d']:
         _debug = True
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Extended help
     if args_d['eh']:

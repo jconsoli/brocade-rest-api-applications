@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -37,15 +37,17 @@ Reads in the output of stats_c (which collects port statistics) and creates an E
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 06 Dec 2024   | Fixed spelling mistake in message.                                                    |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.5'
 
 import sys
 import os
@@ -54,6 +56,7 @@ from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
 import openpyxl.utils.cell as xl
 import brcdapi.log as brcdapi_log
 import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
 import brcdapi.excel_util as excel_util
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_project as brcddb_project
@@ -67,23 +70,6 @@ import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.util.search as brcddb_search
 import brcddb.report.graph as report_graph
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    excel_util=excel_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_util=brcddb_util.__version__,
-    brcddb_common=brcddb_common.__version__,
-    report_utils=report_utils.__version__,
-    rt=rt.__version__,
-    report_port=report_port.__version__,
-    brcddb_copy=brcddb_copy.__version__,
-    brcddb_port=brcddb_port.__version__,
-    brcddb_fabric=brcddb_fabric.__version__,
-    brcddb_search=brcddb_search.__version__,
-    report_graph=report_graph.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -693,14 +679,19 @@ def _get_input():
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     # Get command line input
     buf = 'Create Excel Workbook from statistics gathered with stats_c.py with optional graphing capabilities.'
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Command line feedback
     ml = [

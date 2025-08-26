@@ -35,21 +35,24 @@ Creates a report in Excel Workbook format with all differences between two conte
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 01 Mar 2025   | Error message enhancements.                                                           |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
-__date__ = '01 Mar 2025'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.5'
 
 import os
 import brcdapi.log as brcdapi_log
 import brcdapi.gen_util as gen_util
 import brcdapi.file as brcdapi_file
 import brcdapi.excel_util as excel_util
+import brcdapi.util as brcdapi_util
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.brcddb_switch as brcddb_switch
 import brcddb.brcddb_chassis as brcddb_chassis
@@ -58,20 +61,6 @@ import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
 import brcddb.report.utils as report_utils
 import brcddb.app_data.report_tables as brcddb_rt
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    excel_util=excel_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcddb_fabric=brcddb_fabric.__version__,
-    brcddb_switch=brcddb_switch.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_chassis=brcddb_chassis.__version__,
-    brcddb_compare=brcddb_compare.__version__,
-    brcddb_common=brcddb_common.__version__,
-    report_utils=report_utils.__version__,
-    brcddb_rt=brcddb_rt.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -147,8 +136,8 @@ _control_tables = dict(  # Keys are the objects defined in brcddb.classes
             dict(lt=0, gt=0),
         '/brocade-traffic-optimizer/performance-group/aggregate-iops': dict(skip=True),
         '/brocade-traffic-optimizer/performance-group/aggregate-throughput': dict(skip=True),
-        # It wasn't clear what max-io-latency represented in the 9.1.1 Rest API Guide. I'm assuming it's 2.5 usec ticks
-        # so 4000,000 = 1 sec. The maximum I/O latency is fabric dependent. 20 msec is somewhat arbitrary
+        # It wasn't clear what max-io-latency represented in the 9.1.1 Rest API Guide. I'm assuming it's 2.5 usec ticks,
+        # so 400,000 = 1 sec. The maximum I/O latency is fabric dependent. 80,000 ticks (20 msec) is somewhat arbitrary
         '/brocade-traffic-optimizer/performance-group/max-io-latency': dict(lt=80000, gt=80000),
     },
     ZoneCfgObj={'/_(obj_key|project_obj|alerts|flags|fabric_key|reserved_keys)': dict(skip=True)},
@@ -369,7 +358,8 @@ def _zoneobj_add_to_content(obj, b_obj, c_obj, content):
     if obj is not None:
         for k, v in obj.items():
             buf = str(k)
-            mem_d_l = v['_members'] if '_members' in v else [v] if isinstance(v, dict) else list()
+            mem_d_l = gen_util.convert_to_list(v.get('_members', v if isinstance(v, dict) else list()))
+            # mem_d_l = v['_members'] if '_members' in v else [v] if isinstance(v, dict) else list()
             for mem_d in mem_d_l:
                 _content_append(dict(font='std', align='wrap', disp=(buf, mem_d['b'], mem_d['c'], mem_d['r'])), content)
                 buf = ''
@@ -813,7 +803,11 @@ def pseudo_main(bf, cf, rf):
 
     # Compare the two projects
     brcdapi_log.log('Please wait. The comparison may take several seconds', echo=True)
-    c, compare_obj = brcddb_compare.compare(input_file_d['b']['obj'], input_file_d['c']['obj'], None, _control_tables)
+    c, compare_obj = brcddb_compare.compare(
+        input_file_d['b']['obj'],
+        input_file_d['c']['obj'],
+        brcddb_control_tbl=_control_tables
+    )
 
     brcdapi_log.log('Writing report: ' + rf, echo=True)
     try:
@@ -832,13 +826,18 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     # Get command line input
     args_d = gen_util.get_input('Create a MAPS report in Excel', _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Command line feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,

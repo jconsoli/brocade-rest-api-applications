@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -38,20 +38,23 @@ Unless edited for a specific function, as a stand-alone utility this module serv
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 06 Dec 2024   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import os
 import json
 import brcdapi.log as brcdapi_log
 import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
 import brcdapi.excel_util as excel_util
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
@@ -67,25 +70,6 @@ import brcddb.report.login as report_login
 import brcddb.report.port as report_port
 import brcddb.report.switch as report_switch
 import brcddb.report.zone as report_zone
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    excel_util=excel_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_switch=brcddb_switch.__version__,
-    brcddb_class_util=brcddb_class_util.__version__,
-    brcddb_util=brcddb_util.__version__,
-    brcddb_search=brcddb_search.__version__,
-    brcddb_conv=brcddb_conv.__version__,
-    report_chassis=report_chassis.__version__,
-    report_fabric=report_fabric.__version__,
-    report_login=report_login.__version__,
-    report_port=report_port.__version__,
-    report_switch=report_switch.__version__,
-    report_zone=report_zone.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -557,7 +541,7 @@ def _get_input():
     :return ec: Status code.
     :rtype ec: int
     """
-    global __version__, _input_d, _proj_obj, _version_d
+    global __version__, _input_d, _proj_obj
 
     filter_obj, ml, ec = None, list(), brcddb_common.EXIT_STATUS_OK
 
@@ -569,7 +553,12 @@ def _get_input():
         return brcddb_common.EXIT_STATUS_INPUT_ERROR  # gen_util.get_input() already posted the error message.
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     if args_d['eh']:
         for d in _eh:
@@ -582,10 +571,10 @@ def _get_input():
     if len(ml) > 0:
         brcdapi_log.log(ml, echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    x, args_f_help, args_i_help = len('.json'), '', ''
+    x, args_i_help = len('.json'), ''
 
     # Read in the filter file
-    filter_file = args_d['f']
+    args_f_help = filter_file = args_d['f']
     if len(filter_file) <= x or filter_file[len(filter_file)-x:].lower() != '.json':
         filter_file = brcdapi_file.full_file_name(filter_file, '.txt')
     try:
@@ -600,20 +589,23 @@ def _get_input():
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Read in the project file
-    proj_file = brcdapi_file.full_file_name(args_d['i'], '.json')
+    args_i_help = proj_file = brcdapi_file.full_file_name(args_d['i'], '.json')
     try:
         _proj_obj = brcddb_project.read_from(proj_file)
     except FileNotFoundError:
-        args_i_help = ' not found'
+        args_i_help += ' ERROR: Not found.'
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     except FileExistsError:
-        args_i_help = ' folder does not exist.'
+        args_i_help += ' ERROR: folder does not exist.'
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    except PermissionError:
+        args_i_help += ' ERROR: Permission error.',
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Command line feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,
-          'Project, -i:     ' + proj_file + args_i_help,
-          'filter file, -f: ' + filter_file + args_f_help,
+          'Project, -i:     ' + args_i_help,
+          'filter file, -f: ' + args_f_help,
           'Log, -log:       ' + str(args_d['log']),
           'No log, -nl:     ' + str(args_d['nl']),
           'Suppress, -sup:  ' + str(args_d['sup']),

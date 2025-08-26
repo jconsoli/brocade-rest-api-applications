@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -39,15 +39,17 @@ Sets the zone configuration DB to that of a previously captured zone DB
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.6     | 06 Dec 2024   | Fixed spelling mistake in help message.                                               |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.6'
+__version__ = '4.0.7'
 
 import signal
 import os
@@ -62,20 +64,6 @@ import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
-
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_rest=brcdapi_rest.__version__,
-    fos_auth=fos_auth.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_fabric=brcddb_fabric.__version__,
-    api_int=api_int.__version__,
-    api_zone=api_zone.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -327,7 +315,7 @@ def _get_input():
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _required_input, _version_d
+    global __version__, _input_d, _required_input
 
     # Initialize the return variables
     ec, el = brcddb_common.EXIT_STATUS_OK, list()
@@ -340,7 +328,12 @@ def _get_input():
     # Set up logging
     if args_d['d']:
         brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Validate the input
     args_fid_help = ''

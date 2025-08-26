@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -64,15 +64,17 @@ being collected.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.5     | 06 Dec 2024   | Fixed spelling mistake in message.                                                    |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.5'
+__version__ = '4.0.6'
 
 import http.client
 import sys
@@ -92,18 +94,6 @@ import brcddb.brcddb_chassis as brcddb_chassis
 import brcddb.util.copy as brcddb_copy
 import brcddb.api.interface as brcddb_int
 import brcddb.classes.util as class_util
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    fos_auth=fos_auth.__version__,
-    brcdapi_rest=brcdapi_rest.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_copy=brcddb_copy.__version__,
-    brcddb_int=brcddb_int.__version__,
-    class_util=class_util.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -468,7 +458,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _MIN_POLL, _MIN_SAMPLES, _version_d
+    global __version__, _input_d, _MIN_POLL, _MIN_SAMPLES
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -480,9 +470,13 @@ def _get_input():
         return brcddb_common.EXIT_STATUS_INPUT_ERROR  # gen_util.get_input() already posted the error message.
 
     # Set up logging
-    if args_d['d']:
-        brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_rest.verbose_debug(args_d['d'])
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Is the poll interval valid?
     args_p_help = ''

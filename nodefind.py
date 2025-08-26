@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -35,19 +35,22 @@ Performs a node find in a project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.4     | 06 Dec 2024   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.5     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
 import os
 import brcdapi.log as brcdapi_log
 import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
 import brcdapi.excel_util as excel_util
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
@@ -58,20 +61,6 @@ import brcddb.report.login as report_login
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.brcddb_login as brcddb_login
 import brcddb.brcddb_port as brcddb_port
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    excel_util=excel_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_switch=brcddb_switch.__version__,
-    brcddb_search=brcddb_search.__version__,
-    report_login=report_login.__version__,
-    brcddb_fabric=brcddb_fabric.__version__,
-    brcddb_login=brcddb_login.__version__,
-    brcddb_port=brcddb_port.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -252,7 +241,7 @@ def _get_input():
     :return ec: Status code.
     :rtype ec: int
     """
-    global __version__, _input_d, _version_d, _search_type_d
+    global __version__, _input_d, _search_type_d
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -268,7 +257,12 @@ def _get_input():
         return brcddb_common.EXIT_STATUS_INPUT_ERROR  # gen_util.get_input() already posted the error message.
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Read in the project file
     proj_obj, args_i_help = None, ''

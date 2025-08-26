@@ -1,11 +1,11 @@
 #!/usr/bin/python
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
-the License. You may also obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
@@ -14,8 +14,6 @@ language governing permissions and limitations under the License.
 The license is free for single customer use (internal applications). Use of this module in the production,
 redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
 details.
-
-:mod:`sh_capture.py` - Reads a SAN Health report and creates the equivalent output of multi_capture.py
 
 **Description**
 
@@ -97,28 +95,27 @@ routing (IVR) or smart zones so no time was spent developing code to handle IVR 
 
 **Version Control**
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 1.0       | 13 Mar 2021   | Initial launch                                                                    |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.1     | 09 Dec 2022   | Fixed case in _port_details() when no ports are on the sheet. Fixed missed        |
-    |           |               | effective zone configuration. Fixed port number determination in Cisco switches.  |
-    |           |               | Added determination of remote SFP speed capabilities based on name server info.   |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.2     | 03 Jun 2023   | Added 'san_health' to the port object                                             |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | 1.0.3     | xx xxx 2024   | Added version numbers of imported libraries.                                      |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 1.0       | 13 Mar 2021   | Initial launch                                                                        |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.1     | 09 Dec 2022   | Fixed case in _port_details() when no ports are on the sheet. Fixed missed effective  |
+|           |               | zone configuration. Fixed port number determination in Cisco switches. Added          |
+|           |               | determination of remote SFP speed capabilities based on name server info.             |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.2     | 03 Jun 2023   | Added 'san_health' to the port object                                                 |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.3     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
-
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = 'xx xxx 2024'
+__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Development'
+__status__ = 'Released'
 __version__ = '1.0.3'
 
 import sys
@@ -144,24 +141,6 @@ import brcddb.classes.util as class_util
 import brcddb.util.obj_convert as brcddb_convert
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.util.parse_cli as parse_cli
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    excel_util=excel_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_port=brcddb_port.__version__,
-    brcddb_copy=brcddb_copy.__version__,
-    report_utils=report_utils.__version__,
-    brcddb_util=brcddb_util.__version__,
-    brcddb_search=brcddb_search.__version__,
-    class_util=class_util.__version__,
-    brcddb_convert=brcddb_convert.__version__,
-    brcddb_fabric=brcddb_fabric.__version__,
-    parse_cli=parse_cli.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only useful for building documentation
 _DEBUG = False  # When True, use _DEBUG_* below instead of passed arguments.
@@ -1296,7 +1275,7 @@ def _get_input():
     # Set up the log file
     if not args_nl:
         try:
-            brcdapi_log.open_log(args_log, version_d=_version_d)
+            brcdapi_log.open_log(args_log, version_d=brcdapi_util.get_import_modules())
         except FileNotFoundError:
             print('The folder path specified with the -log, ' + args_log + ', option is not valid.')
             exit(brcddb_common.EXIT_STATUS_INPUT_ERROR)
@@ -1319,7 +1298,7 @@ def pseudo_main():
     :return: Exit code
     :rtype: int
     """
-    global _DEBUG, _proj_obj, _port_num, _cisco_isl_count, __version__, _version_d
+    global _DEBUG, _proj_obj, _port_num, _cisco_isl_count, __version__
 
     # Get user input
     in_file, out_file, debug_mode = _get_input()

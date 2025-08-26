@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -47,15 +47,19 @@ The process is as follows:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 06 Dec 2024   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 12 Apr 2025   | FOS 9.2 updates.                                                                      |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | 25 Aug 2025   | Added capture of active SCC policy and management ethernet address.                   |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.6'
 
 import signal
 import sys
@@ -73,29 +77,12 @@ import brcddb.brcddb_project as brcddb_project
 import brcddb.util.copy as brcddb_copy
 import brcddb.api.interface as api_int
 import brcddb.brcddb_common as brcddb_common
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    fos_auth=fos_auth.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcdapi_rest=brcdapi_rest.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcdapi_port=brcdapi_port.__version__,
-    fos_cli=fos_cli.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_copy=brcddb_copy.__version__,
-    api_int=api_int.__version__,
-    brcddb_common=brcddb_common.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
 _WRITE = True  # Should always be True. Used for debug only. Prevents the output file from being written when False
-
-# debug input (for copy and paste into Run->Edit Configurations->script parameters):
-# -ip xx.xxx.xx.xx -id admin -pw password -s self -log _logs
 
 _report_kpi_l = [
     # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface.get_chassis()
@@ -133,6 +120,7 @@ _report_kpi_l = [
     'running/brocade-ficon/switch-rnid',
     'running/brocade-ficon/lirr',
     'running/brocade-ficon/rlir',
+    'running/brocade-firmware/firmware-history',  # Still needed for pre-FOS 9.2.
     'running/brocade-fru/power-supply',
     'running/brocade-fru/fan',
     'running/brocade-fru/blade',
@@ -141,6 +129,8 @@ _report_kpi_l = [
     'running/brocade-fru/wwn',
     'running/brocade-chassis/chassis',
     'running/brocade-chassis/ha-status',
+    'running/brocade-chassis/version',
+    'running/brocade-chassis/management-ethernet-interface',
     'running/brocade-maps/maps-config',
     'running/brocade-maps/rule',
     'running/brocade-maps/maps-policy',
@@ -156,6 +146,9 @@ _report_kpi_l = [
     'running/brocade-time/clock-server',
     'running/brocade-time/time-zone',
     'running/brocade-license/license',
+    'running/brocade-security/active-scc-policy-member-list',
+    'running/brocade-security/defined-scc-policy-member-list',
+    'running/brocade-security/policy-distribution-config',
 ]
 _all_fos_cli_l = [
     'fos_cli/portcfgshow',
@@ -275,10 +268,17 @@ def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
         brcdapi_log.log('Programming error encountered. See previous message', echo=True)
         write_file = False
         ec = brcddb_common.EXIT_STATUS_ERROR
-    except (FileExistsError, FileNotFoundError):
-        brcdapi_log.log(['', 'File not found: ' + str(c_file), ''], echo=True)
+    except FileNotFoundError:
+        brcdapi_log.log('Input file, ' + str(c_file) + ', not found', echo=True)
         write_file = False
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    except FileExistsError:
+        brcdapi_log.log('Folder in ' + str(c_file) + ' does not exist', echo=True)
+        write_file = False
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    except PermissionError:
+            brcdapi_log.log('Permission error writing ' + str(c_file), echo=True)
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     except brcdapi_util.VirtualFabricIdError:
         brcdapi_log.log('Software error. Search the log for "Invalid FID" for details.', echo=True)
         ec = brcddb_common.EXIT_STATUS_API_ERROR
@@ -297,8 +297,18 @@ def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
         brcdapi_log.log('Saving project to: ' + outf, echo=True)
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
-        brcdapi_file.write_dump(plain_copy, outf)
-        brcdapi_log.log('Save complete', echo=True)
+        try:
+            brcdapi_file.write_dump(plain_copy, outf)
+            brcdapi_log.log('Save complete', echo=True)
+        except FileNotFoundError:
+            brcdapi_log.log('Input file, ' + outf + ', not found', echo=True)  # I don't think this can happen
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        except FileExistsError:
+            brcdapi_log.log('Folder in ' + outf + ' does not exist', echo=True)
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        except PermissionError:
+            brcdapi_log.log('Permission error writing ' + outf, echo=True)
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec
 
@@ -309,7 +319,7 @@ def _get_input():
     :return ec: Error code
     :rtype ec: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     ec = brcddb_common.EXIT_STATUS_OK
 
@@ -317,9 +327,13 @@ def _get_input():
     args_d = gen_util.get_input('Capture (GET) requests from a chassis', _input_d)
 
     # Set up logging
-    if args_d['d']:
-        brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_rest.verbose_debug(args_d['d'])
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Is the FID or FID range valid?
     args_fid_l = gen_util.range_to_list(args_d['fid']) if isinstance(args_d['fid'], str) else None

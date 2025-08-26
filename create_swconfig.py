@@ -31,15 +31,17 @@ Creates switch configuration workbooks for each chassis from a project for use w
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.2     | 01 Mar 2025   | Error message enhancements.                                                           |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.3     | 25 Aug 2025   | Removed unused code.                                                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
-__date__ = '01 Mar 2025'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 
 import os
@@ -63,24 +65,6 @@ import brcddb.brcddb_chassis as brcddb_chassis
 import brcddb.util.util as brcddb_util
 import brcddb.classes.util as class_util
 import brcddb.report.utils as report_utils
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    excel_util=excel_util.__version__,
-    excel_fonts=excel_fonts.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_port=brcddb_port.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_fabric=brcddb_fabric.__version__,
-    brcddb_switch=brcddb_switch.__version__,
-    brcddb_iocp=brcddb_iocp.__version__,
-    brcddb_chassis=brcddb_chassis.__version__,
-    brcddb_util=brcddb_util.__version__,
-    class_util=class_util.__version__,
-    report_utils=report_utils.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 
@@ -616,24 +600,6 @@ _dv_port_name.error = 'Invalid Port Name. Must be off, default, fdmi, dynamic, o
 _dv_dup_wwn = DataValidation(type='list', formula1='"0,1,2"', allow_blank=False)
 _dv_dup_wwn.errorTitle = 'Invalid Entry'
 _dv_dup_wwn.error = 'Invalid duplicate WWN value. Value must be 0, 1, or 2.' + _dv_common_e
-# _switch_config_d is used to determine the data validation for the "Parameter" column of the workbook. If it's not in
-# _switch_config_d, the cell is assumed to be free form text (no data validation).
-_switch_config_d = {
-    'Fabric ID (FID)': dict(p=1, dv=_dv_fid),
-    'Domain ID (DID)': dict(p='0x01', dv=_dv_did),
-    'Insistent DID': dict(p='Yes', dv=_dv_yn),
-    'Fabric Principal Enable': dict(p='No', dv=_dv_yn),
-    'Fabric Principal Priority': dict(p='0x0A', dv=_dv_fab_principal),
-    'Allow XISL': dict(p='No', dv=_dv_yn),
-    'Enable Switch': dict(p='Yes', dv=_dv_yn),
-    'Enable Ports': dict(p='No', dv=_dv_yn),
-    'Switch Type': dict(p='ficon', dv=_dv_switch_type),
-    'Duplicate WWN': dict(p=0, dv=_dv_dup_wwn),
-    'Bind': dict(p='Yes', dv=_dv_yn),
-    'Routing Policy': dict(p='default', dv=_dv_routing_policy),
-    'Port Name': dict(p='None', dv=_dv_port_name),
-    'Enable CUP': dict(p='Yes', dv=_dv_yn),
-}
 
 
 def _about_sheet(wb, sheet_index):
@@ -784,7 +750,7 @@ def _switch_config(wb, sheet_index, switch_obj, sheet_l):
     :return: Exit code
     :rtype: int
     """
-    global _switch_config_hdr, _switch_config_d, _hdr1_font, _std_font, _border_thin, _align_wrap, _dv_yn, _dv_fid
+    global _switch_config_hdr, _hdr1_font, _std_font, _border_thin, _align_wrap, _dv_yn, _dv_fid
     global _dv_did, _dv_switch_type, _dv_dup_wwn, _dv_fab_principal, _dv_routing_policy, _dv_port_name
 
     fabric_name = brcddb_fabric.best_fab_name(switch_obj.r_fabric_obj())
@@ -1136,7 +1102,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_
 
     # Get command line input
     buf = 'Creates switch configuration workbooks for each chassis found in a project. WARNING: The ASIC '\
@@ -1144,7 +1110,12 @@ def _get_input():
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # User feedback
     ml = [

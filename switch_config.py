@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -57,15 +57,19 @@ the port addresses are unique, but again, humans like to see everything in order
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.5     | 04 Jan 2025   | Added ability to make port configuration settings via the CLI.                        |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | 12 Apr 2025   | Added support for $p and $i when interpreting CLI strings.                            |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '04 Jan 2025'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.5'
+__version__ = '4.0.7'
 
 import sys
 import datetime
@@ -87,23 +91,6 @@ import brcddb.api.interface as api_int
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_switch as brcddb_switch
-
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_rest=brcdapi_rest.__version__,
-    brcdapi_switch=brcdapi_switch.__version__,
-    fos_auth=fos_auth.__version__,
-    brcdapi_port=brcdapi_port.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_common=brcddb_common.__version__,
-    api_int=api_int.__version__,
-    report_utils=report_utils.__version__,
-    brcddb_port=brcddb_port.__version__,
-    brcddb_switch=brcddb_switch.__version__,
-)
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -136,6 +123,9 @@ _basic_capture_kpi_l = [
     _fc_ficon_cup,
     'running/' + brcdapi_util.bifc_uri,
 ]
+
+_cli_error_l = ('not part of this switch', 'Error', 'Invalid', 'Port is not present in this switch')
+_port_name_l = ('open -n', 'ficon -n')
 
 
 def _configuration_checks(switch_d_list):
@@ -545,6 +535,8 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
     :return: Ending status. See brcddb/common.py for more details.
     :rtype: int
     """
+    global _cli_error_l, _port_name_l
+
     ec, cli_flag = brcddb_common.EXIT_STATUS_OK, False
 
     for switch_d in switch_d_l:
@@ -558,7 +550,7 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
             if '0/' not in port:
                 break  # Port POD licenses only need to be reserved on fixed port switches
             port_obj = switch_obj.r_port_obj(port)
-            if port_obj is not None and port_obj.r_get('') != 'running/'+brcdapi_util.bifc_pod != 'reserved':
+            if port_obj is not None and port_obj.r_get('fibrechannel/pod-license-state', 'None') != 'reserved':
                 # If the port doesn't exist in the chassis, it is reported in switch_d['not_found_port_l']. If the port
                 # was already in the logical switch it may not have been reserved.
                 port_l.append(port)
@@ -610,36 +602,45 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
                         ec = brcddb_common.EXIT_STATUS_ERROR
 
         # Name the ports
-        content = [{'name': d1['port'], 'user-friendly-name': d1['port_name']} for d1 in
-                   [d0 for d0 in port_d.values() if isinstance(d0.get('port_name'), str)]]
-        if len(content) > 0:
-            brcdapi_log.log('Naming ' + str(len(content)) + ' ports.', echo)
-            obj = brcdapi_rest.send_request(session,
-                                            'running/' + brcdapi_util.bifc_uri,
-                                            'PATCH',
-                                            {'fibrechannel': content},
-                                            fid)
-            if fos_auth.is_error(obj):
-                buf = 'Error naming ports for FID ' + str(fid)
-                switch_d['err_msgs'].append(buf)
-                ml = [buf,
-                      fos_auth.formatted_error_msg(obj),
-                      'port_d:',
-                      pprint.pformat(port_d)]
-                brcdapi_log.exception(ml, echo=True)
+        if switch_d['switch_info']['port_name'] in _port_name_l:
+            content_l = list()
+            for port, d in port_d.items():
+                port_obj = switch_obj.r_port_obj(port)
+                if port_obj is None:
+                    continue  # There was an error moving the port which should have been reported elsewhere
+                new_port_name = d.get('port_name', '')
+                if len(new_port_name) == 0 or port_obj.r_port_name() == new_port_name:
+                    continue
+                content_l.append({'name': port, 'user-friendly-name': new_port_name})
+            if len(content_l) > 0:
+                brcdapi_log.log('Naming ' + str(len(content_l)) + ' ports.', echo)
+                obj = brcdapi_rest.send_request(session,
+                                                'running/' + brcdapi_util.bifc_uri,
+                                                'PATCH',
+                                                {'fibrechannel': content_l},
+                                                fid)
+                if fos_auth.is_error(obj):
+                    buf = 'Error naming ports for FID ' + str(fid)
+                    switch_d['err_msgs'].append(buf)
+                    ml = [buf,
+                          fos_auth.formatted_error_msg(obj),
+                          'port_d:',
+                          pprint.pformat(port_d)]
+                    brcdapi_log.exception(ml, echo=True)
 
         # Add CLI configurations
-        cli_l = list()
         for port, d in port_d.items():
-            if switch_obj.r_port_obj(port) is None:
-                continue  # There was an error moving the port which should have been reported elsewhere
-            for buf in [b.strip() for b in gen_util.convert_to_list(d.get('cli'))]:
+            port_obj = switch_obj.r_port_obj(port)
+            if port_obj is None or port_obj.r_is_enabled():  # port_obj is None if there was an error moving the port.
+                continue
+            cli = d.get('cli') if isinstance(d.get('cli'), str) else ''
+            for buf in [b.strip() for b in cli.split('\n')]:
                 if len(buf) > 0:
-                    cli_l.append(buf.replace('s/p', port.replace('0/', '')))
-        if len(cli_l) > 0:
-            cli_flag = True
-            for buf in cli_l:
-                fos_cli.send_command(session, fid, buf)
+                    cli_flag = True
+                    response_l = fos_cli.send_command(session, fid, buf)
+                    r_buf = response_l[0] if len(response_l) > 0 else ''
+                    if len([e_buf for e_buf in _cli_error_l if e_buf in r_buf]) > 0:
+                        switch_d['err_msgs'].append('CLI Error, port ' + port + ': ' + r_buf)
 
     if cli_flag:
         fos_cli.cli_wait()
@@ -853,16 +854,22 @@ def _get_input():
     :return: Exit code
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     # Get command line input
-    buf = 'Reads a switch configuration workbook and configures each logical switch accordingly.'
+    buf = 'Compares a switch configuration workbook to actual switch configurations in a chassis. Except for CLI '\
+          'commands, actions are only taken on differences. CLI commands are not interpreted by the script. They are '\
+          'always sent to the switch, but only if the port is disabled.'
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
-    if args_d['d']:
-        brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_rest.verbose_debug(args_d['d'])
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Command line feedback
     ml = [

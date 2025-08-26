@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -31,32 +31,26 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.3     | 06 Dec 2024   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.4     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.3'
+__version__ = '4.0.4'
 
 import os
 import brcdapi.log as brcdapi_log
 import brcdapi.file as brcdapi_file
 import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_chassis as brcddb_chassis
 import brcddb.brcddb_common as brcddb_common
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_project=brcddb_project.__version__,
-    brcddb_chassis=brcddb_chassis.__version__,
-)
-
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -108,20 +102,9 @@ def pseudo_main(proj_obj, user_id, pw, in_file, dash_p, dash_fm, out_file, log_f
     ec, command_l = brcddb_common.EXIT_STATUS_OK, list()
 
     # Generate the command file
-    ip_key = 'brocade-management-ip-interface/management-ip-interface/static-ip-addresses/ip-address'
-    ip = 'xxx.xxx.xxx.xxx'
     for chassis_obj in proj_obj.r_chassis_objects():
-        try:
-            ip = chassis_obj.r_get(ip_key)[0]
-        except IndexError:
-            pass
-        except KeyError:
-            brcdapi_log.log(
-                'Could not find IP address in chassis object ' + brcddb_chassis.best_chassis_name(chassis_obj),
-                echo=True
-            )
+        ip, subnet_mask, gateway = brcddb_chassis.static_mgmt_addr(chassis_obj, default_ip='xxx.xxx.xxx.xxx')
 
-            ec = brcddb_common.EXIT_STATUS_ERROR
         buf = 'start py restore.py -ip ' + ip + ' -id ' + user_id + ' -pw ' + pw + ' -i ' + in_file + ' -p ' + dash_p
         buf += ' -wwn ' + chassis_obj.r_obj_key()
         buf += ' -fm ' + dash_fm if isinstance(dash_fm, str) else ''
@@ -151,7 +134,7 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d, _version_d
+    global __version__, _input_d
 
     # Get command line input
     args_d = gen_util.get_input(
@@ -160,7 +143,12 @@ def _get_input():
     )
 
     # Set up logging
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # Command line feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,

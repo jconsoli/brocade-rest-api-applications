@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -104,15 +104,21 @@ each logical switch acted on.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.7     | 06 Dec 2024   | Fixed spelling mistake in message.                                                    |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.8     | 26 Dec 2024   | Removed unused import. Added SCC policy warning.                                      |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 12 Apr 2025   | FOS 9.2 updates.                                                                      |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.0     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024 Consoli Solutions, LLC'
-__date__ = '06 Dec 2024'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '25 Aug 2025'
 __license__ = 'Apache License, Version 2.0'
-__email__ = 'jack@consoli-solutions.com'
+__email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.7'
+__version__ = '4.1.0'
 
 import collections
 import pprint
@@ -130,7 +136,6 @@ import brcdapi.util as brcdapi_util
 import brcdapi.file as brcdapi_file
 import brcdapi.switch as brcdapi_switch
 import brcdapi.port as brcdapi_port
-import brcdapi.zone as brcdapi_zone
 import brcdapi.fos_cli as fos_cli
 import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_project as brcddb_project
@@ -142,28 +147,6 @@ import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
 import brcddb.util.maps as util_maps
 import brcddb.util.compare as brcddb_compare
-_version_d = dict(
-    brcdapi_log=brcdapi_log.__version__,
-    gen_util=gen_util.__version__,
-    fos_auth=fos_auth.__version__,
-    brcdapi_util=brcdapi_util.__version__,
-    brcdapi_rest=brcdapi_rest.__version__,
-    brcdapi_file=brcdapi_file.__version__,
-    brcdapi_zone=brcdapi_zone.__version__,
-    brcdapi_switch=brcdapi_switch.__version__,
-    brcdapi_port=brcdapi_port.__version__,
-    fos_cli=fos_cli.__version__,
-    brcddb_project=brcddb_project.__version__,
-    api_int=api_int.__version__,
-    api_zone=api_zone.__version__,
-    brcddb_common=brcddb_common.__version__,
-    brcddb_chassis=brcddb_chassis.__version__,
-    brcddb_fabric=brcddb_fabric.__version__,
-    brcddb_switch=brcddb_switch.__version__,
-    class_util=class_util.__version__,
-    util_maps=util_maps.__version__,
-    brcddb_compare=brcddb_compare.__version__,
-)
 
 # debug input (for copy and paste into Run->Edit Configurations->script parameters):
 # -ip 10.144.72.15 -id admin -pw AdminPassw0rd! -s self -i _capture_2024_01_12_06_30_39/combined -p * -log _logs
@@ -190,11 +173,6 @@ _input_d['p'] = dict(
     h='Required unless using -scan or -eh options. CSV list of option parameters. This determines what is to be '
       'restored. Use * for all parameters. Invoke with -eh for details.')
 _input_d['fm'] = dict(r=False, d=None, h='Optional. FID Map. Re-run with -eh for details.')
-# _input_d['cli'] = dict(
-#     r=False, d=None,
-#     h='Optional. Name of CLI file. ".txt" is automatically appended. When specified,  FOS CLI commands to restore the '
-#       'chassis are created in this file. No attempts are made to make changes via the API. Future consideration. This '
-#       'feature is not yet supported.')
 _input_d.update(gen_util.parseargs_scan_d.copy())
 _input_d.update(gen_util.parseargs_eh_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
@@ -270,11 +248,15 @@ _restore_parameters = dict(
     e='Enable. Enable all the switches and ports in the target switch that were enabled in the restore switch.',
 )
 _eh = [
-    dict(b=('', 'Overview', '________', '')),
+    dict(b=('**Overview**', '____________', '')),
     dict(b='The intended purpose is to use previously collected data from a chassis as a template to be applied to a '
-           'different chassis. The fabric map, -fm, allows you to limit the restore to specific logical switches. It '
-           'also allows you to change the FID, DID, fabric name, and/or switch name. For a specific list of supported '
-           'restore options, see the -p option.'),
+           'different chassis. The -p option allows you to selectively chose what parameters to restore. For example, '
+           'if all you want to do is copy MAPS policies and rules: -p maps.'),
+    dict(b=''),
+    dict(b='When using the script input, -i, as a template to create new logical switches, the fabric map, -fm, '
+           'allows you to limit the restore to specific logical switches. It also allows you to change the FID, DID, '
+           'fabric name, and switch name. '),
+    dict(b=''),
     dict(b=('', 'The typical use for this module is to modify a chassis for:', '')),
     dict(b=('A service action replacement', 'An upgrade', 'Reallocation of a SAN resource', 'Template',), p='  * '),
     dict(b=('It may be useful to configure chassis and switches to use as a template and make further modifications '
@@ -292,14 +274,25 @@ _eh = [
     dict(b=('A capture must be performed from the restore chassis prior to using this module. It is not necessary to '
             'collect all data; however, keep in mind that whatever data wasn\'t collected can\'t be restored.',
             '',
-            'Theory of Operation',
-            '___________________',
+            '**Theory of Operation**',
+            '_______________________',
             '')),
     dict(b=('', 'The general process is:', '')),
     dict(b='Read the input file, -i, for the restore chassis', p='1.  '),
     dict(b='A GET request is issued for each URI associated with \'k\' in the action list.', p='2.  '),
     dict(b='The action list is then processed in the order:', p='3.  '),
-    dict(b=('Virtual fabrics', 'chassis', 'user accounts', 'switch', 'port', 'MAPS', 'zoning', 'enables'), p='    - '),
+    dict(b=('Virtual fabrics',
+            'Chassis parameters',
+            'User accounts',
+            'Logical switches',
+            'Add/remove ports to/from logical switches',
+            'Configure ports',
+            'MAPS',
+            'Zoning',
+            'Chassis enable',
+            'Switch enable',
+            'Port enable'),
+         p='    - '),
     dict(b=('', 'All non-default users are re-created with default password:')),
     dict(b=(_temp_password, '', 'FID MAP, -fm', '____________', '')),
     dict(b=('This option defines the source data and destination FID for actions specified with -p. Except for the vf '
@@ -342,10 +335,15 @@ _eh = [
             '',
             '-fm 1,1-127',
             '',
-            'Exceptions and Important Notes',
-            '______________________________',
+            '**Exceptions and Important Notes**',
+            '__________________________________',
             '')),
-    dict(b=('All switch and port configurations are completed before enabling them. Ports are only disabled with "-p '
+    dict(b=('Fabric security policies, such as the SCC policy used in FICON fabrics, is not restored. This is because '
+            'logical switches are not necessarily recreated with the same WWN. When using this script as a template, '
+            'it is certain that logical switches will have different WWNs. For single switch FICON fabrics, this is '
+            'not a problem because the SCC policy is automatically created with WWN of the logical switch. For '
+            'cascaded FICON fabrics, use scc_policy.py to create the appropriate SCC policy.',
+            'All switch and port configurations are completed before enabling them. Ports are only disabled with "-p '
             'vfc". Port settings that require the port to be offline therefore will only get updated if the port is '
             'disabled.',
             'All errors are reported but otherwise ignored. The intent is to restore as much as possible.',
@@ -359,7 +357,7 @@ _eh = [
             'The FID map is built once after the initial data capture. Logical switches added to the target chassis '
             'afterwards are not included in the FID map',),
          p='  * '),
-    dict(b=('', 'Parameter, -p, options:', '__________________________', '', '*       All (full restore)')),
+    dict(b=('', '**Parameter, -p, options:**', '______________________________', '', '*       All (full restore)')),
     ]
 
 for _key, _buf in _restore_parameters.items():
@@ -982,7 +980,7 @@ def _restore_ports(cd, d):
                                                               fid_d['g'],
                                                               echo=True,
                                                               best=True,
-                                                              skip_default=bool(cd['act_d'].get('vfc')))
+                                                              skip_default=cd['act_d'].get('vfc', False))
                 if len(fault_l) > 0:
                     el.extend(['Error adding ports to ' + switch_name, '  ' + d['e'], '  Ports: ' + ', '.join(fault_l)])
 
@@ -1710,19 +1708,6 @@ _action_l = [  # See block comments above for definitions
         'connectivity-check-interval': _conv_lookup_act,
     }),
 
-    dict(k='brocade-fibrechannel-configuration/chassis-config-settings', a=_chassis_update_act, m='PATCH', rl='name',
-         p='c', rw={
-            'firmware-synchronization-enabled': _conv_lookup_act,
-            'http-session-ttl': _conv_lookup_act,
-            'ezserver-enabled': _conv_lookup_act,
-            'cs-ctl-mode': _conv_lookup_act,
-            'sddq-limit': _conv_lookup_act,
-            'vtap-qos-compatibility-mode': _conv_lookup_act,
-            'secure-mode-enabled': _conv_lookup_act,
-            'file-suffix-enabled': _conv_lookup_act,
-            # 'custom-index': _conv_lookup_act  # Probably only useful for OEM build out process
-         }),
-
     # Logical Switch Configurations: brocade-fibrechannel-logical-switch/fibrechannel-logical-switch
     dict(k=brcdapi_util.bfls_uri, a=_switch_update_act, m='PATCH', rl='name', p='s',
          rw={  # domain-id and switch-user-friendly-name set in _restore_switches()
@@ -1952,7 +1937,7 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
 
     ec, el, fid_map_d = brcddb_common.EXIT_STATUS_OK, list(), dict()
     action_l = _scan_action_l if args_scan else\
-        [d for d in _action_l if not d.get('skip', False) and bool(act_d.get(d['p']))]
+        [d for d in _action_l if not d.get('skip', False) and act_d.get(d['p'], False)]
 
     # Get a project object and some basic info for the chassis to be modified
     t_proj_obj = brcddb_project.new('Chassis to be modified', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -2040,7 +2025,7 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
 
     # Wrap up messages
     if len(el) > 0:
-        for buf in ('_____________', 'San Output:' if args_scan else 'Error Detail:', ''):
+        for buf in ('_____________', 'Scan Output:' if args_scan else 'Error Detail:', ''):
             el.insert(0, buf)
     el.extend(['', 'Chassis Summary', '_______________'])
     for k, v in local_control_d['summary']['chassis'].items():
@@ -2071,7 +2056,7 @@ def _get_input():
     :return ec: Error code from brcddb.brcddb_common
     :rtype ec: int
     """
-    global __version__, _input_d, _eh, _version_d
+    global __version__, _input_d, _eh
 
     # Initialize the variables for the call to pseudo_main()
     proj_obj, chassis_obj, args_p_d, ec = None, None, dict(), brcddb_common.EXIT_STATUS_OK
@@ -2083,9 +2068,13 @@ def _get_input():
     args_d['cli'] = None if args_d.get('cli') is None else brcdapi_file.full_file_name(args_d['cli'], '.txt')
 
     # Set up logging
-    if args_d['d']:
-        brcdapi_rest.verbose_debug(True)
-    brcdapi_log.open_log(folder=args_d['log'], suppress=args_d['sup'], no_log=args_d['nl'], version_d=_version_d)
+    brcdapi_rest.verbose_debug(args_d['d'])
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
 
     # User feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,
@@ -2098,6 +2087,7 @@ def _get_input():
           'Option parameters, -p:   ' + str(args_d['p']),
           'Scan, -scan:             ' + str(args_d['scan']),
           'CLI file name, -cli:     ' + str(args_d['cli']),
+          'Extended help, -eh:      ' + str(args_d['eh']),
           'Log, -log:               ' + str(args_d['log']),
           'No log, -nl:             ' + str(args_d['nl']),
           'Debug, -d:               ' + str(args_d['d']),
