@@ -12,7 +12,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 
 The license is free for single customer use (internal applications). Use of this module in the production,
-redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+redistribution, or service delivery for commerce requires an additional license. Contact jack_consoli@yahoo.com for
 details.
 
 **Description**
@@ -108,15 +108,17 @@ routing (IVR) or smart zones so no time was spent developing code to handle IVR 
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.3     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.4     | 19 Oct 2025   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
-__date__ = '25 Aug 2025'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '19 Oct 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 import sys
 import os

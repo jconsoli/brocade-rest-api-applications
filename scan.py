@@ -11,7 +11,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 
 The license is free for single customer use (internal applications). Use of this module in the production,
-redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+redistribution, or service delivery for commerce requires an additional license. Contact jack_consoli@yahoo.com for
 details.
 
 **Description**
@@ -25,15 +25,17 @@ Scans a project for chassis, fabric (including zoning and SCC policy), and logic
 +===========+===============+=======================================================================================+
 | 1.0.0     | 25 Aug 2025   | Initial launch                                                                        |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.1     | 19 Oct 2025   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2025 Consoli Solutions, LLC'
-__date__ = '25 Aug 2025'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '19 Oct 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Development'
-__version__ = '1.0.0'
+__status__ = 'Released'
+__version__ = '1.0.1'
 
 import sys
 import os

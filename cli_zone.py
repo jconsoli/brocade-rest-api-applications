@@ -13,7 +13,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 
 The license is free for single customer use (internal applications). Use of this module in the production,
-redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+redistribution, or service delivery for commerce requires an additional license. Contact jack_consoli@yahoo.com for
 details.
 
 **Description**
@@ -44,15 +44,17 @@ use as an example with the following caveats and features:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.5     | 19 Oct 2025   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '25 Aug 2025'
+__date__ = '19 Oct 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.4'
+__version__ = '4.0.5'
 
 import os
 import brcdapi.log as brcdapi_log

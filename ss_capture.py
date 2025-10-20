@@ -13,7 +13,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 
 The license is free for single customer use (internal applications). Use of this module in the production,
-redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+redistribution, or service delivery for commerce requires an additional license. Contact jack_consoli@yahoo.com for
 details.
 
 **Description**
@@ -62,15 +62,17 @@ $ToDo Spin through all port objects and add stuff in fos_cli to the associated A
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.2     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.3     | 19 Oct 2025   | Improved error messages and added warning for FOS bug in supportshow output.          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '25 Aug 2025'
+__date__ = '19 Oct 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import datetime
 import sys
@@ -91,6 +93,43 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
 _DEBUG = False  # When True, print additional processing status to the log & STD_OUT
+
+_warning_l = (  # FOS bug warning
+    '**WARNING:**',
+    'I believe this only happens with d,i zones. Check the supportshow files for "cfgshow --verbose".',
+    '',
+    '**Incorrect**',
+    'Note that zone:Zone70112,0 should have a line feed after Zone70. Otherwise, there is no way to separate the first zone member, in this case 112,0.',
+    '',
+    'Defined configuration:',
+    ' cfg:ED_X7_4_70',
+    'Zone70',
+    ' zone:Zone70112,0; 112,1; 112,2; 112,3; 112,4; 112,5; 112,6; 112,7; 112,8; ',
+    '',
+    '**Modify as follows:**',
+    'Add a line feed after "zone:Zone70"',
+    '',
+    'Defined configuration:',
+    ' cfg:ED_X7_4_70',
+    'Zone70',
+    ' zone:Zone70',
+    '112,0; 112,1; 112,2; 112,3; 112,4; 112,5; 112,6; 112,7; 112,8; ',
+    '',
+    '**Incorrect**',
+    'Again, note that the first member immediately follows the zone name',
+    '',
+    'Effective configuration:',
+    ' cfg:ED_X7_4_70',
+    ' zone:Zone70112,0',
+    '',
+    '**Modify as follows:**',
+    'Remove the first zone member from the zone name:',
+    '',
+    'Effective configuration:',
+    ' cfg:ED_X7_4_70',
+    ' zone:Zone70',
+    '',
+)
 
 # Input parameter definitions
 _input_d = dict(
@@ -532,7 +571,12 @@ def pseudo_main(ss_folder, out_file, sd_folder):
     global _cmd_chassisshow, _sdcmd_sw_chassisshow, _sdcmd_sw_chassisshow
 
     # Get the files to parse from ss_folder
-    file_l = list() if ss_folder is None else [ss_folder + '/' + f for f in brcdapi_file.read_directory(ss_folder)]
+    file_l = list()
+    if ss_folder is not None:
+        file_l = [ss_folder + '/' + f for f in brcdapi_file.read_directory(ss_folder)]
+        if len(file_l) == 0:
+            brcdapi_log.log('Could not find ' + ss_folder + ' or the folder is empty.', echo=True)
+            return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Add the files from sd_folder. Bladed directors have two supportshow files, one for the active CP and one for the
     # standby CP. We only want the active CP. The active CP is larger. temp_d is used to determine the larger file.
@@ -558,7 +602,7 @@ def pseudo_main(ss_folder, out_file, sd_folder):
                     save_file_d = file_d
             file_l.append(save_file_d['folder'] + '/' + save_file_d['name'])
 
-    # Process each file in the folder
+    # Process each supportshow file in the folder specified with -ss
     file_count = 0
     for file in file_l:
 
@@ -611,7 +655,8 @@ def pseudo_main(ss_folder, out_file, sd_folder):
         while len(_content) > 0:
             if _DEBUG:
                 brcdapi_log.log('debug_i: ' + str(debug_i), echo=True)
-                # if debug_i == 6:
+                # Debug
+                # if debug_i == 5:
                 #     print('TP_100')
 
             next_state = _parse_actions[state]['la'](_parse_actions[state].get('ra'))
@@ -647,7 +692,11 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_d
+    global __version__, _input_d, _warning_l
+
+    # Print warning
+    for buf in _warning_l:
+        print(buf)
 
     # Get command line input
     buf = 'Convert supportshow output files to the effective equivalent capture.py and combine.py. WARNING: Only a '\

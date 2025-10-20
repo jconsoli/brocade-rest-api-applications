@@ -13,7 +13,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 
 The license is free for single customer use (internal applications). Use of this module in the production,
-redistribution, or service delivery for commerce requires an additional license. Contact jack@consoli-solutions.com for
+redistribution, or service delivery for commerce requires an additional license. Contact jack_consoli@yahoo.com for
 details.
 
 **Description**
@@ -41,15 +41,17 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.7     | 25 Aug 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.8     | 19 Oct 2025   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '25 Aug 2025'
+__date__ = '19 Oct 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.7'
+__version__ = '4.0.8'
 
 import os
 import collections
@@ -108,6 +110,49 @@ def _custom_report(proj_obj, options):
     :param options: As passed in via the shell
     :type options: str, None
     """
+    return
+
+
+def _rnid_summary(proj_obj):
+    """Modified as needed for custom reports. Intended for programmers customizing this script
+
+    :param proj_obj: Project object
+    :type proj_obj: brcddb.classes.project.ProjectObj
+    """
+
+    # Categorize the RNID data by type, then serial number
+    rnid_sum_d = dict()  # Key is the generic device type. Value is a dict: keys are sn. The value a count of logins
+    for port_obj in proj_obj.r_port_objects():
+        rnid_d = port_obj.r_get('rnid')
+        if isinstance(rnid_d, dict):
+            try:
+                key = brcddb_iocp.dev_type_desc(rnid_d['type-number'])
+                rnid_seq_d = rnid_sum_d.get(key)
+                if not isinstance(rnid_seq_d, dict):
+                    rnid_seq_d = dict()
+                    rnid_sum_d[key] = rnid_seq_d
+                sn = rnid_d['sequence-number']
+                if sn in rnid_seq_d:
+                    rnid_seq_d[sn] += 1
+                else:
+                    rnid_seq_d[sn] = 1
+            except KeyError:
+                pass  # Just in case the RNID data is incomplete
+
+    # Format the output text
+    rnid_l = list()  # Formatted text for report output
+    for k, d in rnid_sum_d.items():
+        rnid_l.extend(['', '**' + k + '**'])
+        for seq, val in d.items():
+            rnid_l.append(str(seq) + ': ' + str(val))
+
+    # Print the RNID report
+    if len(rnid_l) > 0:
+        rnid_l.insert(0, '')
+        rnid_l.insert(0, 'RNID SUMMARY')
+        rnid_l.append('')
+        brcdapi_log.log(rnid_l, echo=True)
+
     return
 
 
@@ -359,6 +404,9 @@ def pseudo_main(proj_obj, outf, bp_rules, sfp_rules, group_file, iocp, custom_pa
     # Generate the report
     brcddb_report.report(proj_obj, outf, group_d)
     _custom_report(proj_obj, custom_parms)
+
+    # Display a summary of RNID data
+    _rnid_summary(proj_obj)
 
     return brcddb_common.EXIT_STATUS_ERROR if proj_obj.r_is_any_error() else brcddb_common.EXIT_STATUS_OK
 
