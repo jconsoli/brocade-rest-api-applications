@@ -1,26 +1,29 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2025 Consoli Solutions, LLC.  All rights reserved.
-#
-# NOT BROADCOM SUPPORTED
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may also obtain a copy of the License at
-# https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """
-:mod:`switch_config_cli.py` -
+Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may also obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+
+The license is free for single customer use (internal applications). Use of this module in the production,
+redistribution, or service delivery for commerce requires an additional license. Contact jack_consoli@yahoo.com for
+details.
+
+**Outstanding**
+
+    ToDo - Put in single file. Finish all LS configuration first.
+    ToDo - Remove: WWN Based persistent PID and Allow XISL Use in base switch configure
+    ToDo - Add port configurations to columns in workbook
+    ToDo - Bug fix: -base and -ficon is missing in the lscfg command string
 
 **Description**
 
-    Reads a switch configuration workbook and creates the CLI commands necessary to create and configure logical
-    switches.
+Reads a switch configuration workbook and creates the CLI commands necessary to create and configure logical switches.
 
 **Notes**
 
@@ -32,27 +35,24 @@
     *   There was also a need to check and validate the workbooks before attempting to make switch changes via the API
         so rather than add a test option to switch_config.py, this module is used.
 
-Version Control::
+**Version Control**
 
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-    | Version   | Last Edit     | Description                                                                       |
-    +===========+===============+===================================================================================+
-    | 1.0.0     | 25 Aug xxxx   | Initial launch                                                                    |
-    +-----------+---------------+-----------------------------------------------------------------------------------+
-
-    ToDo - Put in single file. Finish all LS configuration first.
-    ToDo - Remove: WWN Based persistent PID and Allow XISL Use in base switch configure
-    ToDo - Add port configurations to columns in workbook
-    ToDo - Bug fix: -base and -ficon is missing in the lscfg command string
++-----------+---------------+---------------------------------------------------------------------------------------+
+| Version   | Last Edit     | Description                                                                           |
++===========+===============+=======================================================================================+
+| 1.0.0     | 25 Aug 2025   | Initial launch                                                                        |
++-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.1     | 19 Oct 2025   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2025 Consoli Solutions, LLC'
-__date__ = '25 Aug 2025'
+__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
+__date__ = '19 Oct 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 import collections
 import argparse
