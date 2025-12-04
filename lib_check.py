@@ -28,17 +28,17 @@ For a generic but more detailed library validation report, use lib_validate.py
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | Version   | Last Edit     | Description                                                                           |
 +===========+===============+=======================================================================================+
-| 4.1.4     | 25 Aug 2025   | Updated versions references.                                                          |
+| 4.1.5     | 04 Dec 2025   | Updated versions references.                                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
-__date__ = '25 Aug 2025'
+__date__ = '04 Dec 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.4'
+__version__ = '4.1.5'
 
 import sys
 import os
@@ -106,13 +106,13 @@ _imports = (
     dict(d=''),
     dict(d='FOS API database libraries from github/jconsoli - brcddb'),
     dict(d=''),
-    dict(l='brcddb.api.interface', d='Required for all access to the API', r='4.0.6'),
+    dict(l='brcddb.api.interface', d='Required for all access to the API', r='4.0.7'),
     dict(l='brcddb.api.zone', d='Required for zoning applications', r='4.0.6'),
     dict(l='brcddb.apps.report', d='Required for the report.py application', r='4.0.7'),
     dict(l='brcddb.apps.zone', d='Required for the cli_zone.py application', r='4.0.4'),
     dict(l='brcddb.brcddb_bp', d='Required for the report.py application', r='4.0.6'),
     dict(l='brcddb.brcddb_chassis', d='Required for most brcddb libraries', r='4.0.8'),
-    dict(l='brcddb.brcddb_common', d='Required for most applications and brcddb libraries', r='4.0.4'),
+    dict(l='brcddb.brcddb_common', d='Required for most applications and brcddb libraries', r='4.0.5'),
     dict(l='brcddb.brcddb_fabric', d='Required for most brcddb libraries', r='4.0.8'),
     dict(l='brcddb.brcddb_login', d='Required for most applications', r='4.0.4'),
     dict(l='brcddb.brcddb_port', d='Required for most brcddb libraries', r='4.0.6'),
@@ -124,7 +124,7 @@ _imports = (
     dict(l='brcddb.classes.fabric', d='Required for all brcddb libraries', r='4.0.4'),
     dict(l='brcddb.classes.iocp', d='Required for all brcddb libraries', r='4.0.5'),
     dict(l='brcddb.classes.login', d='Required for all brcddb libraries', r='4.0.4'),
-    dict(l='brcddb.classes.port', d='Required for all brcddb libraries', r='4.0.7'),
+    dict(l='brcddb.classes.port', d='Required for all brcddb libraries', r='4.0.8'),
     dict(l='brcddb.classes.project', d='Required for all brcddb libraries', r='4.0.4'),
     dict(l='brcddb.classes.switch', d='Required for all brcddb libraries', r='4.0.6'),
     dict(l='brcddb.classes.util', d='Required for all brcddb libraries', r='4.0.4'),
@@ -138,14 +138,14 @@ _imports = (
     dict(l='brcddb.util.search', d='Required for most brcddb libraries', r='4.0.7'),
     dict(l='brcddb.util.util', d='Required for most brcddb libraries', r='4.0.6'),
     dict(l='brcddb.report.bp', d='Required for generating Excel reports', r='4.0.5'),
-    dict(l='brcddb.report.chassis', d='Required for generating Excel reports', r='4.0.8'),
+    dict(l='brcddb.report.chassis', d='Required for generating Excel reports', r='4.0.9'),
     dict(l='brcddb.report.fabric', d='Required for generating Excel reports', r='4.0.4'),
     dict(l='brcddb.report.graph', d='Required for generating Excel reports', r='4.0.3'),
     dict(l='brcddb.report.iocp', d='Required for generating Excel reports', r='4.0.5'),
     dict(l='brcddb.report.login', d='Required for generating Excel reports', r='4.0.4'),
     dict(l='brcddb.report.port', d='Required for generating Excel reports', r='4.0.5'),
-    dict(l='brcddb.report.switch', d='Required for generating Excel reports', r='4.0.5'),
-    dict(l='brcddb.report.utils', d='Required for generating Excel reports', r='4.0.8'),
+    dict(l='brcddb.report.switch', d='Required for generating Excel reports', r='4.0.6'),
+    dict(l='brcddb.report.utils', d='Required for generating Excel reports', r='4.0.9'),
     dict(l='brcddb.report.zone', d='Required for generating Excel reports', r='4.0.8'),
     dict(l='brcddb.app_data.alert_tables', d='Alert format tables. Required for best practice analysis.',
          r='4.0.5'),

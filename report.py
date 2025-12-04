@@ -43,15 +43,17 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.8     | 19 Oct 2025   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 04 Dec 2025   | Fix bug when no CPUs are logged in to a FICON logical switch.                         |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '19 Oct 2025'
+__date__ = '04 Dec 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.8'
+__version__ = '4.0.9'
 
 import os
 import collections
@@ -337,7 +339,7 @@ def _groups(proj_obj, group_l, file):
         if isinstance(port_rnid_d, dict):
             if brcddb_iocp.generic_device_type(port_rnid_d.get('type-number')) == 'CPU':
                 sn = port_rnid_d.get('sequence-number', '').upper()
-                if sn not in rnid_d['CPU'] and sn not in missing_cpu_d:
+                if sn not in rnid_d.get('CPU', list()) and sn not in missing_cpu_d:
                     missing_cpu_d[sn] = True
                     missing_cpu_l.append(port_obj)
 
