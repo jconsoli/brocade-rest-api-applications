@@ -108,7 +108,7 @@ _imports = (
     dict(d=''),
     dict(l='brcddb.api.interface', d='Required for all access to the API', r='4.0.7'),
     dict(l='brcddb.api.zone', d='Required for zoning applications', r='4.0.6'),
-    dict(l='brcddb.apps.report', d='Required for the report.py application', r='4.0.7'),
+    dict(l='brcddb.apps.report', d='Required for the report.py application', r='4.0.8'),
     dict(l='brcddb.apps.zone', d='Required for the cli_zone.py application', r='4.0.4'),
     dict(l='brcddb.brcddb_bp', d='Required for the report.py application', r='4.0.6'),
     dict(l='brcddb.brcddb_chassis', d='Required for most brcddb libraries', r='4.0.8'),
