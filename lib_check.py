@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025, 2026 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -28,17 +28,17 @@ For a generic but more detailed library validation report, use lib_validate.py
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | Version   | Last Edit     | Description                                                                           |
 +===========+===============+=======================================================================================+
-| 4.1.5     | 04 Dec 2025   | Updated versions references.                                                          |
+| 4.1.6     | 10 Jan 2026   | Updated versions references.                                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
-__date__ = '04 Dec 2025'
+__copyright__ = 'Copyright 2023, 2024, 2025, 2026 Consoli Solutions, LLC'
+__date__ = '10 Jan 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.5'
+__version__ = '4.1.6'
 
 import sys
 import os
@@ -146,7 +146,7 @@ _imports = (
     dict(l='brcddb.report.port', d='Required for generating Excel reports', r='4.0.5'),
     dict(l='brcddb.report.switch', d='Required for generating Excel reports', r='4.0.6'),
     dict(l='brcddb.report.utils', d='Required for generating Excel reports', r='4.0.9'),
-    dict(l='brcddb.report.zone', d='Required for generating Excel reports', r='4.0.8'),
+    dict(l='brcddb.report.zone', d='Required for generating Excel reports', r='4.0.9'),
     dict(l='brcddb.app_data.alert_tables', d='Alert format tables. Required for best practice analysis.',
          r='4.0.5'),
     dict(l='brcddb.app_data.report_tables', d='Required for controlling the formats when generating Excel reports',
