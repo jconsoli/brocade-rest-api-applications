@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2024, 2025, 2026 Consoli Solutions, LLC.  All rights reserved.
 
 **License**
 
@@ -37,15 +37,17 @@ Creates MAPS SFP rules from a workbook
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.5     | 19 Oct 2025   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | 12 Jan 2026   | Improved help text.                                                                   |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '19 Oct 2025'
+__copyright__ = 'Copyright 2024, 2025, 2026 Consoli Solutions, LLC'
+__date__ = '12 Jan 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.5'
+__version__ = '4.0.6'
 
 import sys
 import os
@@ -66,9 +68,6 @@ _DOC_STRING = False  # Should always be False. Prohibits any actual I/O. Only us
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
-
-# debug input (for copy and paste into Run->Edit Configurations->script parameters):
-# -ip 10.144.72.15 -id admin -pw AdminPassw0rd! -s self -i test/maps_test -log _logs
 
 # Input parameter definitions
 _input_d = gen_util.parseargs_login_d.copy()
@@ -191,7 +190,9 @@ def _get_input():
     ec, el, = brcddb_common.EXIT_STATUS_OK, list()
 
     # Get command line input
-    buf = 'Configures MAPS rules, groups, and policies. Typically from the modified output of maps_report.py'
+    buf = 'Configures MAPS rules, groups, and policies. Typically from the modified output of maps_report.py. '\
+          'Defaults are not changed. MAPS rules, groups, and policies not in the workbook specified with the -i '\
+          'parameter are deleted. THIS IS A REPLACE utility. Default rules, groups, and policies are not modified.'
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
