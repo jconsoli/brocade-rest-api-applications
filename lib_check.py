@@ -28,17 +28,17 @@ For a generic but more detailed library validation report, use lib_validate.py
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | Version   | Last Edit     | Description                                                                           |
 +===========+===============+=======================================================================================+
-| 4.1.6     | 10 Jan 2026   | Updated versions references.                                                          |
+| 4.1.7     | 12 Jan 2026   | Updated versions references.                                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024, 2025, 2026 Consoli Solutions, LLC'
-__date__ = '10 Jan 2026'
+__date__ = '12 Jan 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.6'
+__version__ = '4.1.7'
 
 import sys
 import os
