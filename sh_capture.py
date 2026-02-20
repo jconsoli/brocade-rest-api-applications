@@ -1,6 +1,6 @@
 #!/usr/bin/python
 """
-Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025, 2026 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -110,15 +110,17 @@ routing (IVR) or smart zones so no time was spent developing code to handle IVR 
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.4     | 19 Oct 2025   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.5     | 20 Feb 2026   | Updated copyright notice.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '19 Oct 2025'
+__copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
+__date__ = '20 Feb 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
 import sys
 import os

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -42,15 +42,17 @@ Unless edited for a specific function, as a stand-alone utility this module serv
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.5     | 19 Oct 2025   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.6     | xx xxx 2026   | Updated copyright notice.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '19 Oct 2025'
+__copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
+__date__ = 'xx xxx 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Released'
-__version__ = '4.0.5'
+__status__ = 'Development'
+__version__ = '4.0.6'
 
 import os
 import json

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2025 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2025, 2026 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -30,8 +30,8 @@ sure someone has a tool like this somewhere, but I couldn't find one.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2025 Consoli Solutions, LLC'
-__date__ = 'xx xxx 2025'
+__copyright__ = 'Copyright 2026 Jack Consoli'
+__date__ = 'xx xxx 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'

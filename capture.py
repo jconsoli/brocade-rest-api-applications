@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024, 2025 Jack Consoli.  All rights reserved.
+Copyright 2023, 2024, 2025, 2026 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -53,15 +53,17 @@ The process is as follows:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.7     | 19 Oct 2025   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.8     | 20 Feb 2026   | Where applicable, used URIs defined in brcdapi.util                                   |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '19 Oct 2025'
+__copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
+__date__ = '20 Feb 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.7'
+__version__ = '4.0.8'
 
 import signal
 import sys
@@ -90,11 +92,11 @@ _report_kpi_l = [
     # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface.get_chassis()
     # 'running/brocade-logging/audit-log',  # $ToDo Fix - FOS encounters an error which I'm assuming is when it wraps
     'running/brocade-logging/error-log',
-    'running/brocade-fibrechannel-switch/fibrechannel-switch',
+    'running/' + brcdapi_util.bfs_uri,
     'running/brocade-fibrechannel-switch/topology-domain',
     'running/brocade-fibrechannel-switch/topology-route',
-    'running/brocade-interface/fibrechannel',
-    'running/brocade-interface/fibrechannel-statistics',
+    'running/' + brcdapi_util.bifc_uri,
+    'running/' + brcdapi_util.bifc_stats,
     # 'running/brocade-interface/logical-e-port',
     'running/brocade-media/media-rdp',
     # 'running/brocade-fabric/access-gateway',
@@ -102,24 +104,24 @@ _report_kpi_l = [
     'running/brocade-fibrechannel-routing/lsan-zone',
     'running/brocade-fibrechannel-routing/lsan-device',
     'running/brocade-fibrechannel-routing/edge-fabric-alias',
-    'running/brocade-zone/defined-configuration',
-    'running/brocade-zone/effective-configuration',
+    'running/' + brcdapi_util.bz_def,
+    'running/' + brcdapi_util.bz_eff,
     'running/brocade-zone/fabric-lock',
-    'running/brocade-fdmi/hba',
-    'running/brocade-fdmi/port',
-    'running/brocade-name-server/fibrechannel-name-server',
+    'running/' + brcdapi_util.fdmi_hba,
+    'running/' + brcdapi_util.fdmi_port,
+    'running/' + brcdapi_util.bns_uri,
     'running/brocade-fabric-traffic-controller/fabric-traffic-controller-device',
-    'running/brocade-fibrechannel-configuration/switch-configuration',
-    'running/brocade-fibrechannel-configuration/f-port-login-settings',
-    'running/brocade-fibrechannel-configuration/port-configuration',
+    'running/' + brcdapi_util.bfc_sw_uri,
+    'running/' + brcdapi_util.bfcfp_uri,
+    'running/' + brcdapi_util.bfc_port_uri,
     'running/brocade-fibrechannel-configuration/zone-configuration',
-    'running/brocade-fibrechannel-configuration/fabric',
+    'running/' + brcdapi_util.bfc_uri,
     'running/brocade-fibrechannel-configuration/chassis-config-settings',
     'running/brocade-fibrechannel-configuration/fos-settings',
-    'running/brocade-ficon/cup',
+    'running/' + brcdapi_util.ficon_cup_uri,
     'running/brocade-ficon/logical-path',
     'running/brocade-ficon/rnid',
-    'running/brocade-ficon/switch-rnid',
+    'running/' + brcdapi_util.ficon_sw_rnid,
     'running/brocade-ficon/lirr',
     'running/brocade-ficon/rlir',
     'running/brocade-firmware/firmware-history',  # Still needed for pre-FOS 9.2.
@@ -129,9 +131,9 @@ _report_kpi_l = [
     'running/brocade-fru/history-log',
     'running/brocade-fru/sensor',
     'running/brocade-fru/wwn',
-    'running/brocade-chassis/chassis',
-    'running/brocade-chassis/ha-status',
-    'running/brocade-chassis/version',
+    'running/' + brcdapi_util.bcc_uri,
+    'running/' + brcdapi_util.bcha_uri,
+    'running/' + brcdapi_util.bcv_uri,
     'running/brocade-chassis/management-ethernet-interface',
     'running/brocade-maps/maps-config',
     'running/brocade-maps/rule',

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2024, 2025, 2026 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -33,15 +33,17 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.3     | 19 Oct 2025   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.4     | 20 Feb 2026   | Updated copyright notice.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '19 Oct 2025'
+__copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
+__date__ = '20 Feb 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 import os
 import openpyxl.utils.cell as xl

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2024, 2025, 2026 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2024, 2025, 2026 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -39,15 +39,17 @@ Creates MAPS SFP rules from a workbook
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.6     | 12 Jan 2026   | Improved help text.                                                                   |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 20 Feb 2026   | Updated copyright notice.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024, 2025, 2026 Consoli Solutions, LLC'
-__date__ = '12 Jan 2026'
+__copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
+__date__ = '20 Feb 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.6'
+__version__ = '4.0.7'
 
 import sys
 import os

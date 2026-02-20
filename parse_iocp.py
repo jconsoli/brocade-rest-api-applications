@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -39,15 +39,17 @@ Parses IOCP files and generates planning workbooks
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.6     | 19 Oct 2025   | Added CLI column.                                                                     |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 20 Feb 2026   | Updated copyright notice.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '19 Oct 2025'
+__copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
+__date__ = '20 Feb 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.6'
+__version__ = '4.0.7'
 
 import datetime
 import sys
@@ -629,8 +631,8 @@ _about_sheet_l = (
                         'General Public License or other open source license agreements. It does not consider all '
                         'supported IOCP syntax. It is only provided to give guidance in channel path planning.'),
     None,
-    dict(f=_std_font, t='Information furnished by Consoli Solutions is believed to be accurate and reliable. However, '
-                        'Consoli Solutions does not assume any liability arising out of the application or use of this '
+    dict(f=_std_font, t='Information furnished by Jack Consoli is believed to be accurate and reliable. However, '
+                        'Jack Consoli does not assume any liability arising out of the application or use of this '
                         'information, nor the application or use of any product or circuit described herein, neither '
                         'does it convey any license under its patent rights nor the rights of others.'),
     None,

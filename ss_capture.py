@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2024, 2025, 2026 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -64,15 +64,17 @@ $ToDo Spin through all port objects and add stuff in fos_cli to the associated A
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.3     | 19 Oct 2025   | Improved error messages and added warning for FOS bug in supportshow output.          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.4     | 20 Feb 2026   | Updated copyright notice.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2024, 2025 Consoli Solutions, LLC'
-__date__ = '19 Oct 2025'
+__copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
+__date__ = '20 Feb 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 import datetime
 import sys
@@ -656,10 +658,11 @@ def pseudo_main(ss_folder, out_file, sd_folder):
             if _DEBUG:
                 brcdapi_log.log('debug_i: ' + str(debug_i), echo=True)
                 # Debug
-                # if debug_i == 5:
+                # if debug_i == 697:
                 #     print('TP_100')
 
             next_state = _parse_actions[state]['la'](_parse_actions[state].get('ra'))
+
             if _DEBUG and next_state is not None and state != next_state:
                 t_buf = 'Current state: ' + str(_debug_states_1.get(state)) + ' (' + str(state) + '), '\
                         'Next state: ' + str(_debug_states_1.get(next_state)) + ' (' + str(next_state) + ')'

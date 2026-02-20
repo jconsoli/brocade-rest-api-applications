@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Copyright 2023, 2024, 2025 Consoli Solutions, LLC.  All rights reserved.
+Copyright 2023, 2024, 2025, 2026 Jack Consoli.  All rights reserved.
 
 **License**
 
@@ -45,11 +45,11 @@ of the switch WWN and port number. Note that the switch WWN will always be uniqu
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 06 Dec 2024   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
-| 4.0.5     | xx xxx 2025   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
+| 4.0.5     | xx xxx 2026   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
-__copyright__ = 'Copyright 2023, 2024, 2025 Consoli Solutions, LLC'
+__copyright__ = 'Copyright 2023, 2024, 2025, 2026 Jack Consoli'
 __date__ = 'xx xxx 2025'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
