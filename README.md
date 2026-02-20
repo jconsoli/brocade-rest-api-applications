@@ -1,7 +1,6 @@
 # brocade-rest-api-applications
 
-Consoli Solutions, LLC
-jack@consoli-solutions.com
+Jack Consoli
 jack_consoli@yahoo.com
 
 **Applications**
@@ -175,6 +174,11 @@ py zone_merge.py –i zone_merge_sample
 Sets the zone database to that of a previously captured zone database. Typically used for restoring a zone database.
 
 **Revision History**
+
+# *20 Feb 2026*
+* Updated copyright notice
+* Added ability to collect, stats_c.py, and graph, stats_g.py, from multiple switches
+* Miscellaneous bug fixes
 
 # *19 Oct 2025*
 * Added scc_policy.py - Distributes SCC_POLICY. Primarily for mainframe environments
