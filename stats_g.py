@@ -617,7 +617,7 @@ def _get_input():
         brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
 
         # Debug
-        _debug_add_data(proj_obj)
+        # _debug_add_data(proj_obj)
 
         port_obj_l = [p for p in proj_obj.r_port_objects() if p.r_get('stats_c') is not None]
         if len(port_obj_l) == 0:
