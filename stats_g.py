@@ -43,15 +43,17 @@ Reads in the output of stats_c (which collects port statistics) and creates an E
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.7     | 20 Feb 2026   | Added support for graphing from multiple switches.                                    |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.8     | 21 Feb 2026   | Cleaned up debug code.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '21 Feb 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.7'
+__version__ = '4.0.8'
 
 import sys
 import os
@@ -380,9 +382,16 @@ def _debug_add_data(proj_obj):
 
     switch_poll_d = dict()
     proj_obj.s_new_key('stats_c', switch_poll_d)
-    switch_obj = proj_obj.r_switch_obj('10:00:88:94:71:37:dd:28')
+    switch_wwn = '10:00:88:94:71:37:dd:28'
+    switch_obj = proj_obj.r_switch_obj(switch_wwn)
+    if switch_obj is None:
+        brcdapi_log.log('**Debug ERROR** Switch ' + switch_wwn + ' not found.', echo=True)
 
-    for port_obj in [switch_obj.r_port_obj(p) for p in port_l]:
+    for port in port_l:
+        port_obj = switch_obj.r_port_obj(port)
+        if port_obj is None:
+            brcdapi_log.log('**Debug ERROR** Port ' + port + ' not found.', echo=True)
+            continue
         # Insert fake data
         port_data_l = list()
         port_obj.rs_key('stats_c/samples', port_data_l)
@@ -608,7 +617,7 @@ def _get_input():
         brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
 
         # Debug
-        # _debug_add_data(proj_obj)
+        _debug_add_data(proj_obj)
 
         port_obj_l = [p for p in proj_obj.r_port_objects() if p.r_get('stats_c') is not None]
         if len(port_obj_l) == 0:
