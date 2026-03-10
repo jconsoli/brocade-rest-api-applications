@@ -28,17 +28,17 @@ For a generic but more detailed library validation report, use lib_validate.py
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | Version   | Last Edit     | Description                                                                           |
 +===========+===============+=======================================================================================+
-| 4.1.8     | 20 Feb 2026   | Updated versions references.                                                          |
+| 4.1.9     | 10 Mar 2026   | Updated versions references.                                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.8'
+__version__ = '4.1.9'
 
 import sys
 import os
@@ -93,22 +93,22 @@ _imports = (
     dict(d=''),
     dict(l='brcdapi.fos_auth', d='Required by brcdapi.brcdapi_rest.', r='4.0.4'),
     dict(l='brcdapi.brcdapi_rest', d='FOS RESTConf API driver.', r='4.0.6'),
-    dict(l='brcdapi.excel_util', d='Required by modules that read or write Excel workbooks', r='4.0.7'),
+    dict(l='brcdapi.excel_util', d='Required by modules that read or write Excel workbooks', r='4.0.8'),
     dict(l='brcdapi.excel_fonts', d='Required by modules that read or write Excel workbooks', r='4.0.5'),
-    dict(l='brcdapi.file', d='Required by modules that perform file I/O.', r='4.0.9'),
+    dict(l='brcdapi.file', d='Required by modules that perform file I/O.', r='4.1.0'),
     dict(l='brcdapi.fos_cli', d='Required by modules that need CLI access.', r='4.0.6'),
     dict(l='brcdapi.gen_util', d='Required by most scripts.', r='4.1.1'),
     dict(l='brcdapi.log', d='Required by all scripts.', r='4.0.6'),
     dict(l='brcdapi.port', d='Required for reading and configuring ports.', r='4.0.7'),
     dict(l='brcdapi.switch', d='Required for reading and configuring switches.', r='4.0.6'),
-    dict(l='brcdapi.util', d='Utilities supporting the FOS RESTConf API driver.', r='4.0.9'),
+    dict(l='brcdapi.util', d='Utilities supporting the FOS RESTConf API driver.', r='4.1.0'),
     dict(l='brcdapi.zone', d='Required by scripts performing zoning operations.', r='4.0.4'),
     dict(d=''),
     dict(d='FOS API database libraries from github/jconsoli - brcddb'),
     dict(d=''),
     dict(l='brcddb.api.interface', d='Required for all access to the API', r='4.0.8'),
     dict(l='brcddb.api.zone', d='Required for zoning applications', r='4.0.7'),
-    dict(l='brcddb.apps.report', d='Required for the report.py application', r='4.0.9'),
+    dict(l='brcddb.apps.report', d='Required for the report.py application', r='4.1.0'),
     dict(l='brcddb.apps.zone', d='Required for the cli_zone.py application', r='4.0.5'),
     dict(l='brcddb.brcddb_bp', d='Required for the report.py application', r='4.0.7'),
     dict(l='brcddb.brcddb_chassis', d='Required for most brcddb libraries', r='4.0.9'),
@@ -116,7 +116,7 @@ _imports = (
     dict(l='brcddb.brcddb_fabric', d='Required for most brcddb libraries', r='4.0.9'),
     dict(l='brcddb.brcddb_login', d='Required for most applications', r='4.0.5'),
     dict(l='brcddb.brcddb_port', d='Required for most brcddb libraries', r='4.0.7'),
-    dict(l='brcddb.brcddb_project', d='Required for most brcddb libraries', r='4.0.7'),
+    dict(l='brcddb.brcddb_project', d='Required for most brcddb libraries', r='4.0.8'),
     dict(l='brcddb.brcddb_switch', d='Required for most brcddb libraries', r='4.0.4'),
     dict(l='brcddb.brcddb_zone', d='Required for most brcddb libraries', r='4.0.6'),
     dict(l='brcddb.classes.alert', d='Required for all brcddb libraries', r='4.0.6'),
@@ -130,8 +130,8 @@ _imports = (
     dict(l='brcddb.classes.util', d='Required for all brcddb libraries', r='4.0.5'),
     dict(l='brcddb.classes.zone', d='Required for all brcddb libraries', r='4.0.7'),
     dict(l='brcddb.util.copy', d='Required for most brcddb libraries', r='4.0.4'),
-    dict(l='brcddb.util.compare', d='Required for most brcddb libraries', r='4.0.5'),
-    dict(l='brcddb.util.iocp', d='Required for most brcddb libraries', r='4.0.6'),
+    dict(l='brcddb.util.compare', d='Required for most brcddb libraries', r='4.0.6'),
+    dict(l='brcddb.util.iocp', d='Required for most brcddb libraries', r='4.0.7'),
     dict(l='brcddb.util.maps', d='Required for most brcddb libraries', r='4.0.4'),
     dict(l='brcddb.util.obj_convert', d='Required for search.py application', r='4.0.5'),
     dict(l='brcddb.util.parse_cli', d='Required for most brcddb libraries', r='4.0.9'),
@@ -145,7 +145,7 @@ _imports = (
     dict(l='brcddb.report.login', d='Required for generating Excel reports', r='4.0.5'),
     dict(l='brcddb.report.port', d='Required for generating Excel reports', r='4.0.6'),
     dict(l='brcddb.report.switch', d='Required for generating Excel reports', r='4.0.7'),
-    dict(l='brcddb.report.utils', d='Required for generating Excel reports', r='4.1.1'),
+    dict(l='brcddb.report.utils', d='Required for generating Excel reports', r='4.1.2'),
     dict(l='brcddb.report.zone', d='Required for generating Excel reports', r='4.1.0'),
     dict(l='brcddb.app_data.alert_tables', d='Alert format tables. Required for best practice analysis.',
          r='4.0.6'),

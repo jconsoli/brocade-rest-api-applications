@@ -65,15 +65,17 @@ the port addresses are unique, but again, humans like to see everything in order
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.9     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.0     | 10 Mar 2026   | Cleaned up handling of port definitions for ports not in the chassis.                 |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.9'
+__version__ = '4.1.0'
 
 import sys
 import datetime
@@ -132,18 +134,18 @@ _cli_error_l = ('not part of this switch', 'Error', 'Invalid', 'Port is not pres
 _port_name_l = ('open -n', 'ficon -n')
 
 
-def _configuration_checks(switch_d_list):
+def _configuration_checks(switch_d_l):
     """Some basic chassis configuration checks.
 
-    :param switch_d_list: Switch object as returned from report_utils.parse_switch_file()
-    :type switch_d_list: list
+    :param switch_d_l: Switch object as returned from report_utils.parse_switch_file()
+    :type switch_d_l: list
     :return: Error messages. Empty if no errors found
     :rtype: list
     """
     rl, base_l = list(), list()
 
     # Note: duplicate FID checking is done in brcddb.report.utils.parse_switch_file() so there is no need to do it here.
-    for switch_d in switch_d_list:
+    for switch_d in switch_d_l:
         switch_did = gen_util.get_key_val(switch_d, _fc_switch+'/domain-id')
 
         if switch_d['switch_info']['switch_type'] == 'base':
@@ -641,10 +643,12 @@ def _configure_ports(session, chassis_obj, switch_d_l, echo):
             for buf in [b.strip() for b in cli.split('\n')]:
                 if len(buf) > 0:
                     cli_flag = True
+                    buf = buf.replace('$p', port.replace('0/', '')).replace('$i', str(port_obj.r_index()))
                     response_l = fos_cli.send_command(session, fid, buf)
                     r_buf = response_l[0] if len(response_l) > 0 else ''
                     if len([e_buf for e_buf in _cli_error_l if e_buf in r_buf]) > 0:
                         switch_d['err_msgs'].append('CLI Error, port ' + port + ': ' + r_buf)
+                        switch_d['err_msgs'].append('FID ' + str(fid) + '. Command: ' + buf)
 
     if cli_flag:
         fos_cli.cli_wait()
@@ -702,16 +706,16 @@ def _enable_switch_and_ports(session, chassis_obj, switch_d_l, echo):
     return ec
 
 
-def _print_summary(chassis_obj, switch_d_list):
+def _print_summary(chassis_obj, switch_d_l):
     """Enable switch
 
     :param chassis_obj: Chassis object
     :type chassis_obj: brcddb.classes.chassis.ChassisObj
-    :param switch_d_list: List of switch dictionaries
-    :type switch_d_list: list
+    :param switch_d_l: List of switch dictionaries
+    :type switch_d_l: list
     """
     ml = ['', 'Summary', '_______', '']
-    for switch_d in switch_d_list:
+    for switch_d in switch_d_l:
         switch_obj = chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid'])
         try:
             ml.append('FID: ' + str(switch_d['switch_info']['fid']))
@@ -755,12 +759,12 @@ def pseudo_main(ip, user_id, pw, sec, file, force, echo):
 
     # Read in the switch configuration Workbook
     brcdapi_log.log('Reading ' + file, echo=True)
-    error_l, chassis_d, switch_d_list = report_utils.parse_switch_file(file)
-    if chassis_d is None and len(switch_d_list) == 0:
+    error_l, chassis_d, switch_d_l = report_utils.parse_switch_file(file)
+    if chassis_d is None and len(switch_d_l) == 0:
         error_l.append('Nothing to configure')
 
     # Pre-flight switch checks
-    error_l.extend(_configuration_checks(switch_d_list))
+    error_l.extend(_configuration_checks(switch_d_l))
 
     # Bail out if any errors were encountered
     if len(error_l) > 0:
@@ -784,11 +788,26 @@ def pseudo_main(ip, user_id, pw, sec, file, force, echo):
             return brcddb_common.EXIT_STATUS_API_ERROR
         chassis_obj = proj_obj.r_chassis_obj(session.get('chassis_wwn'))
 
+        # Warn of ports not physically in the chassis and remove them from the switch definitions.
+        ml, missing_port_l = list(), list()
+        for switch_d in switch_d_l:
+            sw_name = brcddb_switch.best_switch_name(chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid']))
+            missing_port_l = list()
+            for port, port_d in switch_d['port_d'].items():
+                if chassis_obj.r_port_obj(port) is None:
+                    missing_port_l.append(port)
+            for port in missing_port_l:
+                switch_d['port_d'].pop(port)
+                ml.append('  ' + sw_name + ', Port: ' + port)
+        if len(ml) > 0:
+            ml.insert(0, 'WARNING: The following ports do not exist in the chassis and therefore were ignored.')
+            brcdapi_log.log(ml, echo=True)
+
         # Make chassis updates
         ec_l.append(_configure_chassis(session, chassis_d))
 
         # Create the logical switches
-        for switch_d in switch_d_list:
+        for switch_d in switch_d_l:
             ec_l.append(_create_switch(session, chassis_obj, switch_d, echo))
 
         # re-read the chassis and logical switch data to pick up the switch(es) we just created.
@@ -798,7 +817,7 @@ def pseudo_main(ip, user_id, pw, sec, file, force, echo):
 
         # Configure the switches and fabric parameters
         for method in (_fiberchannel_switch, _switch_config, _ficon_config):
-            for switch_d in switch_d_list:
+            for switch_d in switch_d_l:
 
                 switch_obj = chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid'])
                 if switch_obj is not None:  # Alert was posted during switch creation time if the switch wasn't created
@@ -812,22 +831,22 @@ def pseudo_main(ip, user_id, pw, sec, file, force, echo):
         I didn't think of this until after the code was written. To minimize changes to working code, I just built a
         list of all ports that will be added to a logical switch, all_add_l, and removed them from the remove_port_l."""
         all_add_l = list()
-        for switch_d in switch_d_list:
+        for switch_d in switch_d_l:
             _ports_to_move(chassis_obj.r_switch_obj_for_fid(switch_d['switch_info']['fid']), switch_d, force)
             all_add_l.extend(switch_d['add_port_l'])
-        for switch_d in switch_d_list:
+        for switch_d in switch_d_l:
             switch_d['remove_port_l'] = [p for p in switch_d['remove_port_l'] if p not in all_add_l]
 
         # Add ports, re-read chassis to pick up the changes, then do it again for ports to move to the default switch
         for method in (_add_ports, _remove_ports):
-            ec_l.append(method(session, chassis_obj, switch_d_list, echo))
+            ec_l.append(method(session, chassis_obj, switch_d_l, echo))
             session.pop('chassis_wwn', None)
             api_int.get_batch(session, proj_obj, _basic_capture_kpi_l, None)
             chassis_obj = proj_obj.r_chassis_obj(session.get('chassis_wwn'))
 
         # Configure the ports, then enable the switch and ports
         for method in (_configure_ports, _enable_switch_and_ports):
-            ec_l.append(method(session, chassis_obj, switch_d_list, echo))
+            ec_l.append(method(session, chassis_obj, switch_d_l, echo))
 
     except BaseException as e:
         buf_l = ['Programming error encountered.', str(type(e)) + ': ' + str(e)]
@@ -843,7 +862,7 @@ def pseudo_main(ip, user_id, pw, sec, file, force, echo):
             brcdapi_log.exception(fos_auth.formatted_error_msg(obj), echo=True)
             ec_l.append(brcddb_common.EXIT_STATUS_API_ERROR)
     if ip is not None:
-        _print_summary(chassis_obj, switch_d_list)
+        _print_summary(chassis_obj, switch_d_l)
 
     # Return the first error code, if there was an error
     for ec in ec_l:

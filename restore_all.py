@@ -37,15 +37,17 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.6     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.6'
+__version__ = '4.0.7'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -118,15 +120,9 @@ def pseudo_main(proj_obj, user_id, pw, in_file, dash_p, dash_fm, out_file, log_f
         command_l.append(buf)
 
     # Write the output file
-    try:
-        with open(out_file, 'w') as f:
-            f.write('\n'.join(command_l) + '\n')
-        f.close()
-    except FileNotFoundError:
-        brcdapi_log.log('Input file, ' + out_file + ', not found', echo=True)
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except FileExistsError:
-        brcdapi_log.log('Folder in ' + out_file + ' does not exist', echo=True)
+    el = brcdapi_file.write_file(out_file, command_l)
+    if len(el) > 0:
+        brcdapi_log.log(el, echo=True)
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec
@@ -172,15 +168,8 @@ def _get_input():
     out_file = brcdapi_file.full_file_name(args_d['o'], '.bat')
 
     # Read the project file, -i
-    try:
-        proj_obj = brcddb_project.read_from(in_file)
-    except FileNotFoundError:
-        brcdapi_log.log('Input file, ' + in_file + ', not found', echo=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except FileExistsError:
-        brcdapi_log.log('Folder in ' + in_file + ' does not exist', echo=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
+    proj_obj = brcddb_project.read_from(in_file)
+    if proj_obj is None:
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return pseudo_main(proj_obj, args_d['id'], args_d['pw'], args_d['i'], args_d['p'], args_d['fm'], out_file,

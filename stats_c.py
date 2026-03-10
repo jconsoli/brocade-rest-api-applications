@@ -70,15 +70,17 @@ being collected.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.8     | 20 Feb 2026   | Added ability to poll multiple switches.                                              |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.8'
+__version__ = '4.0.9'
 
 import http.client
 import sys
@@ -87,7 +89,6 @@ import signal
 import datetime
 import collections
 import time
-import copy
 import brcdapi.gen_util as gen_util
 import brcdapi.util as brcdapi_util
 import brcdapi.log as brcdapi_log
@@ -167,41 +168,6 @@ _skip_list_l.extend(
     ]
 )
 
-# Debug
-_debug_d = {
-    '0/0': {
-        'out-frames': dict(i=0, v=(100, 122, 200, 150, 110, 0)),
-        'in-frames': dict(i=0, v=(5000, 2000, 2200, 1530, 1100, 4500))
-    },
-    '0/1': {
-        'out-frames': dict(i=0, v=(150, 222, 180, 150, 110, 0)),
-        'in-frames': dict(i=0, v=(3000, 2000, 2200, 1530, 1100, 4500))
-    },
-}
-
-
-def _debug_values(obj):
-    """Used for debug only. Inserts fake values for port statistics
-
-    :param obj: Port statistics collected from FOS
-    :type obj: dict
-    :return: Modified port statistics, if applicable
-    :rtype: dict
-    """
-    global _DEBUG, _debug_d
-
-    if _DEBUG and not fos_auth.is_error(obj):
-        r_obj = copy.deepcopy(obj)
-        for r_obj_d in [d for d in r_obj['fibrechannel-statistics'] if d['name'] in _debug_d]:
-            port = r_obj_d['name']
-            for key in _debug_d[port].keys():
-                r_obj_d[key] += _debug_d[port][key]['v'][_debug_d[port][key]['i']]
-                x = _debug_d[port][key]['i'] + 1
-                _debug_d[port][key]['i'] = 0 if x >= len(_debug_d[port][key]['v']) else x
-        return r_obj
-
-    return obj
-
 
 def _login(proj_obj):
     """Login to all chassis
@@ -223,7 +189,7 @@ def _login(proj_obj):
                     ],
                     echo=True
                 )
-                ec = brcddb_common.EXIT_STATUS_ERROR
+                return brcddb_common.EXIT_STATUS_ERROR
         except (KeyboardInterrupt, http.client.CannotSendRequest, http.client.ResponseNotReady):
             brcdapi_log.log('Control-C. Terminating data collection.', echo=True)
             return brcddb_common.EXIT_STATUS_ERROR
@@ -321,23 +287,22 @@ def _sample_captures(proj_obj, args_d, last_poll_time):
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
+    global _MIN_SLEEP
+
     switch_poll_d, sample_count, ec = proj_obj.r_get('stats_c'), 1, brcddb_common.EXIT_STATUS_OK
 
     while True:
 
-        # Temporary storage for port statistics. Key is the switch WWN.
-        switch_d = dict()
+        switch_d = dict()  # Temporary storage for port statistics. Key is the switch WWN.
+        time.sleep(min(_MIN_SLEEP, time.time() + args_d['p'] - last_poll_time))  # Wait for next poll cycle
 
-        # Wait for next poll cycle
-        if not _DEBUG:
-            time.sleep(min(_MIN_SLEEP, time.time() + args_d['p'] - last_poll_time))
-
+        # Capture stats
         brcdapi_log.log('Capturing data sample ' + str(sample_count), echo=True)
         last_poll_time = time.time()
         for d in switch_poll_d.values():
             chassis_obj = proj_obj.r_chassis_obj(d['session']['chassis_wwn'])
             for fid in d['fid_l']:
-                obj = _debug_values(brcdapi_rest.get_request(d['session'], _port_statistics, fid))
+                obj = brcdapi_rest.get_request(d['session'], _port_statistics, fid)
                 if fos_auth.is_error(obj):
                     brcdapi_log.log(
                         [
@@ -400,18 +365,12 @@ def _write_db(proj_obj, db_name):
     proj_obj.s_new_key('stats_c', dict(), f=True)  # Effectively deletes stats_c.
     plain_copy = dict()
     brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
-    try:
-        brcdapi_file.write_dump(plain_copy, db_name)
+    el = brcdapi_file.write_dump(plain_copy, db_name)
+    if len(el) == 0:
         brcdapi_log.log('Save complete', echo=True)
-    except FileNotFoundError:
-        brcdapi_log.log('Input file, ' + db_name + ', not found', echo=True)  # I don't think this can happen
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except FileExistsError:
-        brcdapi_log.log('Folder in ' + db_name + ' does not exist', echo=True)
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except PermissionError:
-        brcdapi_log.log('Permission error writing ' + db_name, echo=True)
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    else:
+        brcdapi_log.log(el, echo=True)
+        ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
 
@@ -426,7 +385,7 @@ def pseudo_main(switch_l, args_d):
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _uris_0, _MIN_SLEEP, _port_statistics
+    global _uris_0, _MIN_SLEEP, _port_statistics, _EXCEPTION_MSG
     
     ec, last_poll_time, switch_poll_d = brcddb_common.EXIT_STATUS_OK, 0, dict()
 

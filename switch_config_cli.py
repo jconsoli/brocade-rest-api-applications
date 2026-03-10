@@ -46,32 +46,37 @@ Reads a switch configuration workbook and creates the CLI commands necessary to 
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.2     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.3     | 10 Mar 2026   | Added port configuration commands from the CLI column.                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
+import os
 import collections
-import argparse
 import brcdapi.log as brcdapi_log
 import brcdapi.port as brcdapi_port
-import brcdapi.file as brcdapi_file
 import brcdapi.gen_util as gen_util
+import brcdapi.util as brcdapi_util
+import brcdapi.file as brcdapi_file
 import brcddb.brcddb_common as brcddb_common
 import brcddb.report.utils as report_utils
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = False  # When True, use _DEBUG_xxx instead of passed arguments
-_DEBUG_i = 'bd_test/FCIP_switch_wip'
-_DEBUG_o = 'bd_test/fcip_switch_ficon'
-_DEBUG_sup = False
-_DEBUG_log = '_logs'
-_DEBUG_nl = False
+
+# Input parameter definitions
+_input_d = dict(
+    i=dict(h='Required. File name of Excel Workbook to read.'),
+    o=dict(h='Required. File name prefix for FOS commands. One output file is generated for each logical switch. The '
+             'file name for each logical switch is this prefix appended with "_fid.txt"'),
+)
+_input_d.update(gen_util.parseargs_log_d.copy())
 
 _fc_switch = 'running/brocade-fibrechannel-switch/'
 _fc_config = 'running/brocade-fibrechannel-configuration/'
@@ -84,7 +89,7 @@ _preamble_l = [
     '#   * These steps are intended for new installs. Many of them are disruptive.',
     '#   * Carefully check the switch configuration before putting it into production.',
     '#   * Except for the chassis name, these instructions are limited to logical',
-    '#     switch configuration only.',
+    '#     switch and port configuration only.',
     '',
     '# NOTES:',
     '#   * In all examples, the -f option, force, suppresses "are you sure" questions.',
@@ -248,18 +253,18 @@ def _chassis_commands(chassis_d):
     return cmd_l
 
 
-def _configuration_checks(switch_d_list):
+def _configuration_checks(switch_d_l):
     """Some basic chassis configuration checks.
 
-    :param switch_d_list: List of switch object as returned from report_utils.parse_switch_file()
-    :type switch_d_list: list
+    :param switch_d_l: List of switch object as returned from report_utils.parse_switch_file()
+    :type switch_d_l: list
     :return: Error messages. List is empty if no errors found
     :rtype: list
     """
     rl, base_l = list(), list()
 
     # Note: duplicate FID checking is done in brcddb.report.utils.parse_switch_file() so there is no need to do it here.
-    for switch_d in switch_d_list:
+    for switch_d in switch_d_l:
         switch_did = gen_util.get_key_val(switch_d, _fc_switch+'fibrechannel-switch/domain-id')
 
         if switch_d['switch_info']['switch_type'] == 'base':
@@ -534,13 +539,15 @@ def _zone_commands(switch_d):
 _switch_actions = (_switch_commands, _port_commands, _enable_commands, _zone_commands)
 
 
-def pseudo_main(in_file, file_prefix):
+def pseudo_main(file_prefix, chassis_d, switch_d_l):
     """Basically the main().
 
-    :param in_file: Name of switch configuration workbook to read
-    :type in_file: str
     :param file_prefix: Prefix for CLI output files
     :type file_prefix: str
+    :param chassis_d: Chassis definitions from brcddb.report.utils.parse_switch_file()
+    :type chassis_d: dict
+    :param switch_d_l: List of switch definitions from brcddb.report.utils.parse_switch_file()
+    :type switch_d_l: list
     :return: Exit code
     :rtype: int
     """
@@ -548,23 +555,9 @@ def pseudo_main(in_file, file_prefix):
 
     ec = brcddb_common.EXIT_STATUS_OK
 
-    # Read in the switch configuration Workbook
-    brcdapi_log.log('Reading ' + in_file, echo=True)
-    error_l, chassis_d, switch_d_list = report_utils.parse_switch_file(in_file)
-    if chassis_d is None and len(switch_d_list) == 0:
-        error_l.append('Nothing to configure')
-
-    # Pre-flight switch checks
-    error_l.extend(_configuration_checks(switch_d_list))
-
-    # Bail out if any errors were encountered
-    if len(error_l) > 0:
-        brcdapi_log.log(error_l, echo=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
-
     # Create the switch configuration output files
     brcdapi_log.log('Creating content', echo=True)
-    for switch_d in switch_d_list:
+    for switch_d in switch_d_l:
 
         # Create the CLI for the switch configuration
         cmd_l = _preamble_l + _chassis_commands(chassis_d)
@@ -575,14 +568,10 @@ def pseudo_main(in_file, file_prefix):
         # Write the file
         file = file_prefix + '_' + str(switch_d['switch_info']['fid']) + '.txt'
         brcdapi_log.log('Writing file: ' + file, echo=True)
-        try:
-            with open(file, 'w') as f:
-                f.write('\n'.join(cmd_l))
-            f.close()
-        except (FileExistsError, FileNotFoundError):
-            brcdapi_log.log('The path specified in ' + file + ' does not exist.', echo=True)
-        except PermissionError:
-            brcdapi_log.log('You do not have access rights to write to the path specified in ' + file + '.', echo=True)
+        el = brcdapi_file.write_file(file, cmd_l)
+        if len(el) > 0:
+            brcdapi_log.log(el, echo=True)
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec
 
@@ -597,47 +586,45 @@ def _get_input():
     :return s_flag: Suppress flag
     :rtype s_flag: bool
     """
-    global __version__, _DEBUG, _DEBUG_i, _DEBUG_o, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
+    global __version__, _input_d
 
-    if _DEBUG:
-        args_i, args_o, args_sup, args_log, args_nl = \
-            brcdapi_file.full_file_name(_DEBUG_i, '.xlsx'), _DEBUG_o, _DEBUG_sup, _DEBUG_log, _DEBUG_nl
-    else:
-        buf = 'Reads a switch configuration workbook and generates FOS CLI commands to configure each logical switch. '\
-              'WARNING: For openpyxl to read the workbooks generated by this script, which uses the same openpyxl '\
-              'library, the files must be opened and saved in Excel. There is no need to make any changes.'
-        parser = argparse.ArgumentParser(description=buf)
-        parser.add_argument('-i', help='(Required) File name of Excel Workbook to read.', required=True)
-        buf = '(Required) File name prefix for FOS commands. One output file is generated for each logical switch. The'\
-              ' file name for each logical switch is this prefix appended with "_fid.txt"'
-        parser.add_argument('-o', help=buf, required=True)
-        buf = '(Optional) Suppress all library generated output to STD_IO except the exit code. Useful with batch ' \
-              'processing'
-        parser.add_argument('-sup', help=buf, action='store_true', required=False)
-        buf = '(Optional) Directory where log file is to be created. Default is to use the current directory. The log '\
-              'file name will always be "Log_xxxx" where xxxx is a time and date stamp.'
-        parser.add_argument('-log', help=buf, required=False,)
-        buf = '(Optional) No parameters. When set, a log file is not created. The default is to create a log file.'
-        parser.add_argument('-nl', help=buf, action='store_true', required=False)
-        args = parser.parse_args()
-        args_i, args_o, args_sup, args_log, args_nl = \
-            brcdapi_file.full_file_name(args.i, '.xlsx'), args.o, args.sup, args.log, args.nl
+    # Get command line input
+    buf = 'Reads a switch configuration workbook and generates FOS CLI commands to configure each logical switch.'
+    try:
+        args_d = gen_util.get_input(buf, _input_d)
+    except TypeError:
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR  # gen_util.get_input() already posted the error message.
 
-    # Set up the logging options
-    if args_sup:
-        brcdapi_log.set_suppress_all()
-    if not args_nl:
-        brcdapi_log.open_log(args_log)
-
+    # Set up logging
+    brcdapi_log.open_log(
+        folder=args_d['log'],
+        suppress=args_d['sup'],
+        no_log=args_d['nl'],
+        version_d=brcdapi_util.get_import_modules()
+    )
+    
     # User feedback
-    ml = ['switch_config.py:    ' + __version__,
-          'File, -i:            ' + args_i,
-          'Out file prefix, -o: ' + args_o]
-    if _DEBUG:
-        ml.insert(0, 'WARNING!!! Debug is enabled')
+    ml = ['',
+          os.path.basename(__file__) + ', ' + __version__,
+          'switch_config.py:    ' + __version__,
+          'File, -i:            ' + args_d['i'],
+          'Out file prefix, -o: ' + args_d['o'],
+          ]
     brcdapi_log.log(ml, echo=True)
 
-    return pseudo_main(args_i, args_o)
+    # Read and validate the switch configuration workbook
+    brcdapi_log.log('Reading ' + args_d['i'], echo=True)
+    error_l, chassis_d, switch_d_l = report_utils.parse_switch_file(brcdapi_file.full_file_name(args_d['i'], '.xlsx'))
+    if len(error_l) == 0:
+        if chassis_d is None and len(switch_d_l) == 0:
+            error_l.append('Nothing to configure')
+    else:
+        error_l.extend(_configuration_checks(switch_d_l))
+    if len(error_l) > 0:
+        brcdapi_log.log(error_l, echo=True)
+
+    return brcddb_common.EXIT_STATUS_INPUT_ERROR if len(error_l) > 0 else \
+        pseudo_main(args_d['i'], args_d['o'], switch_d_l)
 
 
 ###################################################################

@@ -137,15 +137,17 @@ _tracking_d: Used for error reporting as follows:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.1.2     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.3     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.2'
+__version__ = '4.1.3'
 
 import collections
 import sys
@@ -1908,29 +1910,19 @@ def _get_input():
 
     # If a file name was specified, read the project object from the file.
     if isinstance(args_d['i'], str):
-        try:
-            proj_obj = brcddb_project.read_from(args_d['i'])
-            if proj_obj is None:
-                args_help_d['i'] += ' **ERROR** ' if len(args_help_d['i']) == 0 else ', '
-                args_help_d['i'] += 'Unknown error. Typical of a non-JSON formatted project file.'
+        proj_obj = brcddb_project.read_from(args_d['i'])
+        if proj_obj is None:
+            args_help_d['i'] += ' **ERROR** See previous messages for details.'
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        elif not args_d['scan']:
+            if args_d['wwn'] is None:
+                args_help_d['wwn'] = e_buf
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-            elif not args_d['scan']:
-                if args_d['wwn'] is None:
-                    args_help_d['wwn'] = e_buf
+            else:
+                fab_obj = proj_obj.r_fabric_obj(args_d['wwn'])
+                if fab_obj is None:
+                    args_help_d['wwn'] = ' **ERROR** Fabric with this WWN not found in ' + args_d['i']
                     ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-                else:
-                    fab_obj = proj_obj.r_fabric_obj(args_d['wwn'])
-                    if fab_obj is None:
-                        args_help_d['wwn'] = ' **ERROR** Fabric with this WWN not found in ' + args_d['i']
-                        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        except FileNotFoundError:
-            args_help_d['i'] += ' **ERROR** ' if len(args_help_d['i']) == 0 else ', '
-            args_help_d['i'] += 'Not found'
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        except FileExistsError:
-            args_help_d['i'] += ' **ERROR** ' if len(args_help_d['i']) == 0 else ', '
-            args_help_d['i'] += 'A Folder in parameter does not exist'
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Input validation
     if not args_d['scan']:

@@ -35,15 +35,17 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.4     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.5     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
 import os
 import openpyxl.utils.cell as xl
@@ -576,15 +578,7 @@ def pseudo_main(fabric_obj, output_file, zonecfg, iocp_l):
         row += 1
 
     # Save the workbook
-    try:
-        brcdapi_log.log('Saving: ' + output_file, echo=True)
-        excel_util.save_report(wb, output_file, 'Consoli-Solutions')
-    except (FileExistsError, FileNotFoundError):
-        brcdapi_log.log('A folder in ' + output_file + ' does not exist.', echo=True)
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except PermissionError:
-        brcdapi_log.log('Permission error writing ' + output_file + '. This usually happens when the file is open.',
-                        echo=True)
+    if not excel_util.save_report(wb, output_file, 'Consoli-Solutions'):
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec
@@ -633,26 +627,21 @@ def _get_input():
         except Found:
             continue
 
-    # Read the project file, -i
+    # Read and validate the project file, -i
     proj_obj, fabric_obj = None, None
     if args_d['i'] is not None and not args_d['eh']:
         in_file = brcdapi_file.full_file_name(args_d['i'], '.json')
-        try:
-            proj_obj = brcddb_project.read_from(in_file)
-            if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
-                feedback_d['i'] += ' Error reading file. Refer to previous messages for details.'
+        proj_obj = brcddb_project.read_from(in_file)
+        if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
+            feedback_d['i'] += ' **ERROR** reading file. Refer to previous messages for details.'
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+
+        # Validate the -wwn parameter
+        elif args_d['wwn'] is not None:
+            fabric_obj = proj_obj.r_fabric_obj(args_d['wwn'])
+            if fabric_obj is None:
+                feedback_d['wwn']['h'] += ' **ERROR** Does not exist in ' + args_d['i']
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-            elif args_d['wwn'] is not None:
-                fabric_obj = proj_obj.r_fabric_obj(args_d['wwn'])
-                if fabric_obj is None:
-                    feedback_d['wwn']['h'] += ' **ERROR** Does not exist in ' + args_d['i']
-                    ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        except FileNotFoundError:
-            feedback_d['i']['h'] += ' **ERROR**: File not found.'
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        except FileExistsError:
-            feedback_d['i']['h'] += ' **ERROR**: One of the folders does not exist.'
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Read the directory of IOCP files, -iocp
     iocp_l = list()

@@ -41,15 +41,17 @@ Creates a report in Excel Workbook format with all differences between two conte
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.7     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.8     | 10 Mar 2026   | Consolidated project read error messaging.                                            |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.7'
+__version__ = '4.0.8'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -497,36 +499,44 @@ def _project_page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj):
         dict(font='hdr_2', align='wrap', disp='Fabrics Added:'),
     ]
 
-    # Add fabric changes
-    for obj in [d for d in c_obj['_fabric_objs'].values() if d['r'] == 'Added']:
-        content.append(dict(font='std', align='wrap',
-                            disp=brcddb_fabric.best_fab_name(c_proj_obj.r_fabric_obj(obj.get('c')), True)))
+    # Fabrics Added
+    for obj in [c_proj_obj.r_fabric_obj(k) for k in c_proj_obj.r_fabric_keys() if b_proj_obj.r_fabric_obj(k) is None]:
+        content.append(dict(font='std', align='wrap', disp=brcddb_fabric.best_fab_name(obj, wwn=True, fid=True)))
+
+    # Fabrics Removed
     content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Fabrics Removed:')])
-    for obj in [d for d in c_obj['_fabric_objs'].values() if d['r'] == 'Removed']:
-        content.append(dict(font='std', align='wrap',
-                            disp=brcddb_fabric.best_fab_name(b_proj_obj.r_fabric_obj(obj.get('b')), True)))
+    for obj in [b_proj_obj.r_fabric_obj(k) for k in b_proj_obj.r_fabric_keys() if c_proj_obj.r_fabric_obj(k) is None]:
+        content.append(dict(font='std', align='wrap', disp=brcddb_fabric.best_fab_name(obj, wwn=True, fid=True)))
 
-    # Add switch changes
+    # Switches Added
     content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Switches Added:')])
-    for obj in [d for d in c_obj['_switch_objs'].values() if d['r'] == 'Added']:
-        content.append(dict(font='std', align='wrap',
-                            disp=brcddb_switch.best_switch_name(c_proj_obj.r_switch_obj(obj.get('c')),
-                                                                wwn=True, did=True)))
-    content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Switches Removed:')])
-    for obj in [d for d in c_obj['_switch_objs'].values() if d['r'] == 'Removed']:
-        content.append(dict(font='std', align='wrap',
-                            disp=brcddb_switch.best_switch_name(b_proj_obj.r_switch_obj(obj.get('b')),
-                                                                wwn=True, did=True)))
+    for obj in [c_proj_obj.r_switch_obj(k) for k in c_proj_obj.r_switch_keys() if b_proj_obj.r_switch_obj(k) is None]:
+        content.append(dict(
+            font='std',
+            align='wrap',
+            disp=brcddb_switch.best_switch_name(obj, wwn=True, fid=True, did=True)
+        ))
 
-    # Add chassis changes
+    # Switches Removed
+    content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Switches Removed:')])
+    for obj in [b_proj_obj.r_switch_obj(k) for k in b_proj_obj.r_switch_keys() if c_proj_obj.r_switch_obj(k) is None]:
+        content.append(dict(
+            font='std',
+            align='wrap',
+            disp=brcddb_switch.best_switch_name(obj, wwn=True, fid=True, did=True)
+        ))
+
+    # Chassis Added
     content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Chassis Added:')])
-    for obj in [d for d in c_obj['_chassis_objs'].values() if d['r'] == 'Added']:
-        content.append(dict(font='std', align='wrap',
-                            disp=brcddb_chassis.best_chassis_name(c_proj_obj.r_chassis_obj(obj.get('c')), True)))
+    for obj in\
+            [c_proj_obj.r_chassis_obj(k) for k in c_proj_obj.r_chassis_keys() if b_proj_obj.r_chassis_obj(k) is None]:
+        content.append(dict(font='std', align='wrap', disp=brcddb_chassis.best_chassis_name(obj)))
+
+    # Chassis Removed
     content.extend([dict(), dict(font='hdr_2', align='wrap', disp='Chassis Removed:')])
-    for obj in [d for d in c_obj['_chassis_objs'].values() if d['r'] == 'Removed']:
-        content.append(dict(font='std', align='wrap',
-                            disp=brcddb_chassis.best_chassis_name(b_proj_obj.r_chassis_obj(obj.get('b')), True)))
+    for obj in\
+            [b_proj_obj.r_chassis_obj(k) for k in b_proj_obj.r_chassis_keys() if c_proj_obj.r_chassis_obj(k) is None]:
+        content.append(dict(font='std', align='wrap', disp=brcddb_chassis.best_chassis_name(obj)))
 
     # Sheet name and title
     sname = 'Project_Changes_' + str(sheet_index)
@@ -584,6 +594,7 @@ def _page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj, page):
             _api_added_compares(f_obj, k1, list(), t_content)
         # Sheet name and title
         title, sname = _main_pages[page]['ts'](b_proj_obj, base_key)
+        title = _main_pages[page]['t'] + ' ' + title
         sname = sname.replace(' ', '_').replace(':', '').replace('-', '_')
         sname = sname[:28] + '_' + str(sheet_index) if len(sname) > 28 else sname + '_' + str(sheet_index)
         tbl_contents.append(dict(s=sname, d=title))
@@ -769,22 +780,14 @@ def pseudo_main(bf, cf, rf):
     ml = list()
     input_file_d = dict(b=dict(file=bf, t='-b'), c=dict(file=cf, t='-c'))
     for d in input_file_d.values():
-        try:
-            d.update(obj=brcddb_project.read_from(d['file']))
-            if d['obj'] is None:
-                ml.append('Error reading ' + d['file'] + ', ' + d['t'] +
-                          '. Check previous messages in the log for details.')
-            else:
-                brcddb_project.build_xref(d['obj'])
-        except FileNotFoundError:
-            ml.append('File ' + d['file'] + ' not found.')
-        except FileExistsError:
-            ml.append('A folder in the path ' + d['file'] + ' does not exist.')
-        except PermissionError:
-            ml.append('Permission error reading: ' + d['file'] + '.')
-        except BaseException as e:
-            ml.append('File ' + d['file'] + ' is not a valid JSON formatted file. Error messages is:')
-            ml.append(str(type(e)) + ': ' + str(e))
+        d['obj'] = brcddb_project.read_from(d['file'])
+        if d['obj'] is None:
+            ml.append('Error reading ' + d['file'] + ', ' + d['t'] + '. Check previous messages for details.')
+        else:
+            if not brcddb_project.build_xref(d['obj']):
+                buf = 'Unknown error interpreting ' + d['file'] + '. '
+                buf += 'This typically occurs when it is not a valid JSON formatted file. Error message is:'
+                ml.append('Error interpreting ' + d['file'] + '. See previous message for details.')
     if len(ml) > 0:
         brcdapi_log.log(ml, echo=True)
         return brcddb_common.EXIT_STATUS_ERROR

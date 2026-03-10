@@ -37,15 +37,17 @@ Combines the output of multiple capture or combine files into a single project o
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.6     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.6'
+__version__ = '4.0.7'
 
 import sys
 import os
@@ -98,6 +100,7 @@ def pseudo_main(inf, outf):
         el.append('You do not have access rights to read the folder ' + inf + ' specified with -i')
     if outf in file_l:
         el.extend('Combined output file, ' + outf + ', already exists in: ' + inf + '. Processing halted')
+
     else:
         x = len('.json')
         for file in [f for f in file_l if len(f) > x and f.lower()[len(f)-x:] == '.json']:
@@ -108,14 +111,7 @@ def pseudo_main(inf, outf):
         # Now save the combined file
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
-        try:
-            brcdapi_file.write_dump(plain_copy, inf + '/' + outf)
-        except FileNotFoundError:
-            el.append('Input file, ' + inf + '/' + outf + ', not found')
-        except FileExistsError:
-            el.append('Folder in ' + inf + '/' + outf + ' does not exist')
-        except PermissionError:
-            el.append('Permission error writing ' + inf + '/' + outf)
+        el.extend(brcdapi_file.write_dump(plain_copy, inf + '/' + outf))
 
     # Wrap up
     if len(el) > 0:

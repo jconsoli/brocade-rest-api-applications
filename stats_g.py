@@ -45,22 +45,22 @@ Reads in the output of stats_c (which collects port statistics) and creates an E
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.8     | 21 Feb 2026   | Cleaned up debug code.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 10 Mar 2026   | Added error handling for excel_util.save_report().                                    |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '21 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.8'
+__version__ = '4.0.9'
 
 import sys
 import os
 import datetime
-import time
 import collections
-import copy
 import brcdapi.log as brcdapi_log
 import brcdapi.gen_util as gen_util
 import brcdapi.util as brcdapi_util
@@ -76,9 +76,6 @@ import brcddb.report.zone as report_zone
 import brcddb.report.port as report_port
 import brcddb.util.copy as brcddb_copy
 import brcddb.report.graph as report_graph
-
-# Debug
-import random
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
@@ -361,54 +358,6 @@ def _condition_samples(port_obj_l):
             brcdapi_log.log(buf + ' Statistic(s) not found: '.join(ignored_stats_l), echo=True)
 
 
-# Debug
-def _debug_add_data(proj_obj):
-    """Adds debug data to port objects
-
-    :param proj_obj: The project object
-    :type proj_obj: brcddb.classes.project.ProjectObj
-    """
-    proj_obj.rs_key('stats_c', dict())
-    time_inc = 10
-
-    port_l = ['3/23', '3/22', '3/1', '3/0', '3/47', '3/46', '3/25']
-    port_l.extend(['4/23', '4/22', '4/2', '4/1', '4/0', '4/47', '4/25'])
-    port_l.extend(['5/23', '5/22', '5/1', '5/0', '5/33', '5/26'])
-    port_l.extend(['6/23', '6/22', '6/21', '6/8'])
-    port_l.extend(['9/23', '9/22', '9/21', '9/2', '9/25'])
-    port_l.extend(['10/21', '10/0', '10/45', '10/43', '10/26', '10/25'])
-    port_l.extend(['11/23', '11/22', '11/5', '11/47', '11/28'])
-    port_l.extend(['12/8', '12/47', '12/46'])
-
-    switch_poll_d = dict()
-    proj_obj.s_new_key('stats_c', switch_poll_d)
-    switch_wwn = '10:00:88:94:71:37:dd:28'
-    switch_obj = proj_obj.r_switch_obj(switch_wwn)
-    if switch_obj is None:
-        brcdapi_log.log('**Debug ERROR** Switch ' + switch_wwn + ' not found.', echo=True)
-
-    for port in port_l:
-        port_obj = switch_obj.r_port_obj(port)
-        if port_obj is None:
-            brcdapi_log.log('**Debug ERROR** Port ' + port + ' not found.', echo=True)
-            continue
-        # Insert fake data
-        port_data_l = list()
-        port_obj.rs_key('stats_c/samples', port_data_l)
-        port_stats_d = port_obj.r_get(brcdapi_util.stats_uri)
-        if port_stats_d.get('time-generated') is None:
-            port_stats_d['time-generated'] = int(time.time())
-        port_stats_d = port_stats_d.copy()
-        for i in range(0, 20):
-            port_stats_d['in-frames'] += random.randint(0, 1000)
-            port_stats_d['out-frames'] += random.randint(0, 5000)
-            port_stats_d['time-generated'] += time_inc
-            port_data_l.append(port_stats_d)
-            port_stats_d = copy.deepcopy(port_stats_d)
-
-    return
-
-
 def pseudo_main(proj_obj, args_d):
     """Basically the main(). Did it this way, so it can easily be used as a standalone module or called from another.
 
@@ -421,7 +370,6 @@ def pseudo_main(proj_obj, args_d):
     """
     global _hdr1_font, _align_wrap_c, _std_font, _bold_font, _link_font, _unknown_stat_d
 
-    ec = brcddb_common.EXIT_STATUS_OK
     stats_map_d, graph_map_d, stats_g_d = dict(), dict(), proj_obj.r_get('stats_c/stats_g_d')
     chart_msg = 'WARNING: The FOS statistics poll cycle, 2 sec, is not synchronized between different switches. Network'
     chart_msg += ' delays that occurred during data capture with stats_c.py may add additional time base discrepancies.'
@@ -551,18 +499,11 @@ def pseudo_main(proj_obj, args_d):
         stat_l.insert(0, 'The following statistics are unknown and therefore skipped:')
         brcdapi_log.log(stat_l, echo=True)
 
+    # Write the report and return.
     brcdapi_log.log('Writing ' + args_d['r'])
-    try:
-        excel_util.save_report(wb, args_d['r'])
-    except FileExistsError:
-        brcdapi_log.log('Folder in ' + args_d['r'] + ' does not exist', echo=True)
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except PermissionError:
-        buf = 'Permission error writing ' + args_d['r'] + '. This typically occurs when the file is open in Excel.'
-        brcdapi_log.log(buf, echo=True)
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    return brcddb_common.EXIT_STATUS_OK if excel_util.save_report(wb, args_d['r']) else \
+        brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    return ec
 
 def _get_input():
     """Parses the module load command line
@@ -611,14 +552,14 @@ def _get_input():
             ec = brcddb_common.EXIT_STATUS_ERROR
 
     if ec == brcddb_common.EXIT_STATUS_OK:
+
+        # Make a copy of the project object of the project just read.
         proj_obj = brcddb_project.new(obj.get('_obj_key'), obj.get('_date'))
         proj_obj.s_python_version(sys.version)
         proj_obj.s_description(obj.get('_description'))
         brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
 
-        # Debug
-        # _debug_add_data(proj_obj)
-
+        # Figure out which ports have statistical data captured from stats_c.py
         port_obj_l = [p for p in proj_obj.r_port_objects() if p.r_get('stats_c') is not None]
         if len(port_obj_l) == 0:
             i_help = ' **ERROR** No data captured'
@@ -627,13 +568,13 @@ def _get_input():
             # The ports don't need to be sorted. Humans just like to see them added to the report this way.
             proj_obj.rs_key('stats_c/stats_g_d/port_obj_l', brcddb_util.sort_ports(port_obj_l))
 
-    # -stat
+    # -stat validation check
     stat_help = str(args_d['stat'])
     if args_d['stat'] is None and (args_d['group'] is not None or args_d['isl']):
         stat_help = ' **ERROR** Required when -group or -isl is specified.'
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
-    # -max
+    # -max validation check
     max_help = ''
     temp_l = args_d['max'].split('_')
     if len(temp_l) != 2:

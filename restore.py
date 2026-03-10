@@ -114,15 +114,17 @@ each logical switch acted on.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.1.2     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.3     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.2'
+__version__ = '4.1.3'
 
 import collections
 import pprint
@@ -151,9 +153,6 @@ import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
 import brcddb.util.maps as util_maps
 import brcddb.util.compare as brcddb_compare
-
-# debug input (for copy and paste into Run->Edit Configurations->script parameters):
-# -ip 10.144.72.15 -id admin -pw AdminPassw0rd! -s self -i _capture_2024_01_12_06_30_39/combined -p * -log _logs
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 _DEBUG = False   # When True, prints status to the log and console
@@ -2115,29 +2114,26 @@ def _get_input():
     if len(ml) == 0:
         # Read the project file
         if isinstance(args_d['i'], str):
-            try:
-                proj_obj = brcddb_project.read_from(args_d['i'])
-                if proj_obj is None:
-                    ml.append('File, -i, appears to be corrupted: ' + args_d['i'])
-                else:
-                    chassis_obj_l = proj_obj.r_chassis_objects()
-            except (FileExistsError, FileNotFoundError):
-                ml.append('Input file, -i, not found: ' + args_d['i'])
-            if not args_d['scan']:
-                if args_d['wwn'] is not None:
-                    chassis_obj = proj_obj.r_chassis_obj(args_d['wwn'])
-                    if chassis_obj is None:
-                        ml.append('Could not find a chassis matching ' + args_d['wwn'] + ' in ' + str(args_d['i']))
-                else:
-                    num_chassis = len(chassis_obj_l)
-                    if num_chassis == 0:
-                        ml.append('There are no chassis in the input file, -i: ' + str(args_d['i']))
-                    elif num_chassis == 1:
-                        chassis_obj = chassis_obj_l[0]
+            proj_obj = brcddb_project.read_from(args_d['i'])
+            if proj_obj is None:
+                ml.append('Error reading: ' + args_d['i'] + '. See previous messages for details.')
+            else:
+                chassis_obj_l = proj_obj.r_chassis_objects()
+                if not args_d['scan']:
+                    if args_d['wwn'] is not None:
+                        chassis_obj = proj_obj.r_chassis_obj(args_d['wwn'])
+                        if chassis_obj is None:
+                            ml.append('Could not find a chassis matching ' + args_d['wwn'] + ' in ' + str(args_d['i']))
                     else:
-                        ml.extend(['Multiple chassis found in ' + args_d['i'],
-                                   'Specify with the chassis to restore from using the -wwn option.',
-                                   'Re-run with -scan for a list of available chassis.'])
+                        num_chassis = len(chassis_obj_l)
+                        if num_chassis == 0:
+                            ml.append('There are no chassis in the input file, -i: ' + str(args_d['i']))
+                        elif num_chassis == 1:
+                            chassis_obj = chassis_obj_l[0]
+                        else:
+                            ml.extend(['Multiple chassis found in ' + args_d['i'],
+                                       'Specify with the chassis to restore from using the -wwn option.',
+                                       'Re-run with -scan for a list of available chassis.'])
 
         # Get and validate the list of actions, -p
         if not args_d['scan'] and args_d['cli'] is None:

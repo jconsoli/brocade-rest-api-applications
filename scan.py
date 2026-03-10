@@ -29,15 +29,17 @@ Scans a project for chassis, fabric (including zoning and SCC policy), and logic
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.2     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.3     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import sys
 import os
@@ -72,19 +74,12 @@ def pseudo_main(in_file):
     :rtype: int
     """
     # Read the project file, -i
-    try:
-        proj_obj = brcddb_project.read_from(in_file)
-        if proj_obj is not None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
-            brcdapi_log.log(brcddb_project.scan(proj_obj, logical_switch=True), echo=True)
-            return brcddb_common.EXIT_STATUS_OK
-    except FileNotFoundError:
-        brcdapi_log.log('Input file, ' + in_file + ', not found', echo=True)
-    except FileExistsError:
-        brcdapi_log.log('Folder in ' + in_file + ' does not exist', echo=True)
-    except PermissionError:
-        brcdapi_log.log('You do not have access rights to read ' + in_file + '.', echo=True)
+    proj_obj = brcddb_project.read_from(in_file)
+    if proj_obj is None:
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR
+    brcdapi_log.log(brcddb_project.scan(proj_obj, logical_switch=True), echo=True)
 
-    return brcddb_common.EXIT_STATUS_INPUT_ERROR
+    return brcddb_common.EXIT_STATUS_OK
 
 
 def _get_input():

@@ -37,16 +37,17 @@ Creates switch configuration workbooks for each chassis from a project for use w
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.5     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.6     | 10 Mar 2026   | Consolidated project read error messaging.                                            |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.5'
-
+__version__ = '1.0.6'
 
 import os
 import collections
@@ -64,19 +65,21 @@ import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.brcddb_switch as brcddb_switch
 import brcddb.brcddb_port as brcddb_port
-import brcddb.util.iocp as brcddb_iocp
 import brcddb.brcddb_chassis as brcddb_chassis
-import brcddb.util.util as brcddb_util
 import brcddb.classes.util as class_util
 import brcddb.report.utils as report_utils
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
 
-_config_d = dict(x64='templates/X6-4_Switch_Configuration.xlsx',
-                 x68='templates/X6-8_Switch_Configuration.xlsx',
-                 x74='templates/X7-4_Switch_Configuration.xlsx',
-                 x78='templates/X7-8_Switch_Configuration.xlsx',
-                 fixed='templates/Fixed_Port_Switch_Configuration.xlsx')
+_config_d = dict(
+    x64='templates/X6-4_Switch_Configuration.xlsx',
+    x68='templates/X6-8_Switch_Configuration.xlsx',
+    x74='templates/X7-4_Switch_Configuration.xlsx',
+    x78='templates/X7-8_Switch_Configuration.xlsx',
+    fixed='templates/Fixed_Port_Switch_Configuration.xlsx',
+)
+
+_user_warning = ' users are expected to carefully review the output file before use with switch_config.py.'
 
 _valid_switch_type_l = [str(k) for k in _config_d.keys()]
 _input_d = dict(
@@ -762,22 +765,15 @@ def _switch_config(wb, sheet_index, switch_obj, sheet_l):
     did_hex = switch_obj.r_did()
     if isinstance(did_hex, int):
         did_hex = hex(did_hex).upper().replace('X', 'x')
-    switch_type = 'open'
-    insistent_did = 'Yes' if switch_obj.r_get(brcdapi_util.bfc_idid, False) else 'No'
-    for port_obj in switch_obj.r_port_objects():
-        if port_obj.r_get('rnid') is not None:
-            switch_type = 'ficon'
-            insistent_did = 'Yes'
-            break
-    port_name = 'default'  # ToDo - This isn't necessarily correct. Should use the port name configuration
-    for port_obj in switch_obj.r_port_objects():
-        if port_obj.r_port_name() is not None:
-            port_name = 'ficon -n' if switch_type == 'ficon' else 'open -n'
-            break
+    switch_type = 'open'  # Just a failsafe
     for key, buf in {brcdapi_util.bfls_base_sw_en: 'base', brcdapi_util.bfls_ficon_mode_en: 'ficon'}.items():
         if switch_obj.r_get(key, False):
             switch_type = buf
             break
+    insistent_did = 'Yes' if switch_obj.r_get(brcdapi_util.bfc_idid, False) else 'No'
+    port_name = switch_obj.r_get(brcdapi_util.bfc_portname_mode)
+    if port_name == 'off':
+        port_name = 'ficon -n' if switch_type == 'ficon' else 'open -n'
     try:
         apt_policy = _apt_policy_d.get(switch_obj.r_get(brcdapi_util.bfs_adv_tuning), 'default')
     except (ValueError, KeyError, TypeError):
@@ -805,7 +801,7 @@ def _switch_config(wb, sheet_index, switch_obj, sheet_l):
         'Bind': dict(p='Yes' if switch_type == 'ficon' else 'No', dv=_dv_yn),
         'Routing Policy': dict(p=apt_policy, dv=_dv_routing_policy),
         'Port Name': dict(p=port_name, dv=_dv_port_name),
-        'Port Name Format': dict(p=None),
+        'Port Name Format': dict(p=switch_obj.r_get(brcdapi_util.bfc_portname_format)),
         'Enable CUP': dict(p='Yes' if switch_obj.r_get(brcdapi_util.ficon_cup_en, False) else 'No', dv=_dv_yn),
     }
 
@@ -967,9 +963,6 @@ def _add_slot(wb, sheet_index, slot, slot_type, port_obj_l):
     """
     global _slot_sheet_d, _white_bold_font, _align_wrap_c, _fill_slot, _border_thin, _std_font, _fill_asic_d
 
-    # Debug
-    global _debug_i
-
     ec = brcddb_common.EXIT_STATUS_OK
 
     # Create the slot sheet and perform basic sheet setup
@@ -1061,10 +1054,14 @@ def psuedo_main(folder, proj_obj, sheet_l):
             'The contents of this Workbook were generated from a script that reads a data collection file and '
             'generates a standard switch configuration workbook.',
             '',
+            'WARNING: ',
+            '',
             'The intended uses are:',
             '  *   Graphical documentation depicting where connections are made.',
             '  *   To be modified for use with switch_config.py.',
             '  *   A planning tool to aid in determining physical switch ports for device connections.',
+            '  *   WARNING: CLI commands are not included. Some API requests may be wrong. Users are',
+            '      expected to carefully review the workbook prior to use with switch_config.py.',
         )
         report_utils.about_page(wb, sheet_index, 'About', os.path.basename(__file__),  __version__, buf_l)
         sheet_index += 1
@@ -1106,11 +1103,13 @@ def _get_input():
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
-    global __version__, _input_
+    global __version__, _input_d, _user_warning
 
     # Get command line input
-    buf = 'Creates switch configuration workbooks for each chassis found in a project. WARNING: The ASIC '\
-          'number is not correct with 128 port fixed port switches and CLI port configurations have not been filled in.'
+    buf = 'Creates switch configuration workbooks for each chassis found in a project. WARNING: The ASIC '
+    buf += 'number is not correct with 128 port fixed port switches, CLI port configurations have not been filled in, '
+    buf += 'and' + _user_warning
+
     args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
@@ -1135,15 +1134,8 @@ def _get_input():
 
     # Read the project file, -i
     in_file = brcdapi_file.full_file_name(args_d['i'], '.json')
-    try:
-        proj_obj = brcddb_project.read_from(in_file)
-        if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
-            return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except FileNotFoundError:
-        brcdapi_log.log('Input file, ' + in_file + ', not found', echo=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except (FileExistsError, FileNotFoundError):
-        brcdapi_log.log('Folder in ' + in_file + ' does not exist', echo=True)
+    proj_obj = brcddb_project.read_from(in_file)
+    if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     proj_obj.s_description('\n'.join(ml))
 
@@ -1211,5 +1203,8 @@ if _DOC_STRING:
     exit(brcddb_common.EXIT_STATUS_OK)
 else:
     _ec = _get_input()
-    brcdapi_log.close_log('Processing complete with ending status: ' + str(_ec), echo=True)
+    brcdapi_log.close_log(
+        ['WARNING: ' + _user_warning, 'Processing complete with ending status: ' + str(_ec)],
+        echo=True
+    )
     exit(_ec)

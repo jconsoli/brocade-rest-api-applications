@@ -39,15 +39,17 @@ Creates a MAPS report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.6     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.7     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025,2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.6'
+__version__ = '1.0.7'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -62,9 +64,6 @@ import brcddb.brcddb_switch as brcddb_switch
 import brcddb.report.maps as maps_report
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-
-# debug input (for copy and paste into Run->Edit Configurations->script parameters):
-# -i test/test_output -o test/maps_report -log _logs
 
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
@@ -128,14 +127,7 @@ def pseudo_main(proj_obj, outf):
 
     # Save the report.
     brcdapi_log.log('Saving ' + outf, echo=True)
-    try:
-        excel_util.save_report(wb, outf)
-    except PermissionError:
-        brcdapi_log.log(['', 'Permission error writing ' + outf + '. File may be open in another application.'],
-                        echo=True)
-        ec = brcddb_common.EXIT_STATUS_ERROR
-    except FileNotFoundError:
-        brcdapi_log.log(['', 'Write report failed. Folder in ' + outf + ' does not exist.'], echo=True)
+    if not excel_util.save_report(wb, outf):
         ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
@@ -163,21 +155,14 @@ def _get_input():
     )
 
     # Get the project object
-    e_buf_l, proj_obj, inf = list(), None, brcdapi_file.full_file_name(args_d['i'], '.json')
     args_i_help = args_d['i']
     input_file = brcdapi_file.full_file_name(args_d['i'], '.json')
     output_file = brcdapi_file.full_file_name(args_d['o'], '.xlsx')
-    try:
-        proj_obj = brcddb_project.read_from(input_file)
-    except FileNotFoundError:
-        args_i_help += ' ERROR: Not found.'
+    proj_obj = brcddb_project.read_from(input_file)
+    if proj_obj is None:
+        args_i_help += ' **ERROR** See previous message for details.'
         ec = brcddb_common.EXIT_STATUS_ERROR
-    except FileExistsError:
-        args_i_help += ' ERROR: Folder in file name does not exist.'
-        ec = brcddb_common.EXIT_STATUS_ERROR
-    except PermissionError:
-        args_i_help += ' ERROR: You do not have access rights to read this file or folder.'
-        ec = brcddb_common.EXIT_STATUS_ERROR
+
     # User feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,
           'In file, -i:         ' + args_i_help,

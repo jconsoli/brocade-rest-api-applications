@@ -55,15 +55,17 @@ The process is as follows:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.8     | 20 Feb 2026   | Where applicable, used URIs defined in brcdapi.util                                   |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.8'
+__version__ = '4.0.9'
 
 import signal
 import sys
@@ -242,7 +244,7 @@ def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
 
     signal.signal(signal.SIGINT, brcdapi_rest.control_c)
 
-    ec, write_file = None, False
+    ec, write_file = brcddb_common.EXIT_STATUS_OK, False
 
     # Create project
     proj_obj = brcddb_project.new("Captured_data", datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -272,6 +274,11 @@ def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
         brcdapi_log.log('Programming error encountered. See previous message', echo=True)
         write_file = False
         ec = brcddb_common.EXIT_STATUS_ERROR
+    except brcdapi_util.VirtualFabricIdError:
+        brcdapi_log.log('Software error. Search the log for "Invalid FID" for details.', echo=True)
+        ec = brcddb_common.EXIT_STATUS_API_ERROR
+
+    # We haven't done anything with files yet. IDK how the remaining exceptions can occur. I'm not changing working code
     except FileNotFoundError:
         brcdapi_log.log('Input file, ' + str(c_file) + ', not found', echo=True)
         write_file = False
@@ -283,9 +290,6 @@ def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
     except PermissionError:
             brcdapi_log.log('Permission error writing ' + str(c_file), echo=True)
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except brcdapi_util.VirtualFabricIdError:
-        brcdapi_log.log('Software error. Search the log for "Invalid FID" for details.', echo=True)
-        ec = brcddb_common.EXIT_STATUS_API_ERROR
     except BaseException as e:
         brcdapi_log.log('Programming error encountered.: ' + str(type(e)) + ': ' + str(e), echo=True)
         write_file = False
@@ -301,18 +305,12 @@ def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
         brcdapi_log.log('Saving project to: ' + outf, echo=True)
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
-        try:
-            brcdapi_file.write_dump(plain_copy, outf)
+        el = brcdapi_file.write_dump(plain_copy, outf)
+        if len(el) > 0:
+            brcdapi_log.log(el, echo=True)
+            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        else:
             brcdapi_log.log('Save complete', echo=True)
-        except FileNotFoundError:
-            brcdapi_log.log('Input file, ' + outf + ', not found', echo=True)  # I don't think this can happen
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        except FileExistsError:
-            brcdapi_log.log('Folder in ' + outf + ' does not exist', echo=True)
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        except PermissionError:
-            brcdapi_log.log('Permission error writing ' + outf, echo=True)
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec
 

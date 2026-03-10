@@ -41,15 +41,17 @@ Parses IOCP files and generates planning workbooks
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.7     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.8     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.7'
+__version__ = '4.0.8'
 
 import datetime
 import sys
@@ -1214,14 +1216,15 @@ def psuedo_main(proj_obj, prefix, switch_type, iocp, switch_id_map, sheet_l, deb
         for file in file_l:
             brcdapi_log.log('Parsing: ' + file, True)
             iocp_l = brcdapi_file.read_file(iocp + '/' + file, False, False)
+            if not isinstance(iocp_l, list):
+                return brcddb_common.EXIT_STATUS_OK
             chpid_l, cntlunit_l = brcddb_iocp.condition_iocp(iocp_l)
-            try:
-                brcdapi_file.write_file(
+            el = brcdapi_file.write_file(
                     prefix + file.split('.')[0] + '.txt',
                     [buf.strip() for buf in cntlunit_l if 'LINK=' in buf],
                 )
-            except (FileExistsError, FileNotFoundError, PermissionError):
-                brcdapi_log.log('Error writing file: ' + file, echo=True)
+            if len(el) > 0:
+                brcdapi_log.log(el, echo=True)
             return brcddb_common.EXIT_STATUS_OK
 
     for file in file_l:

@@ -47,15 +47,17 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.1.0     | 20 Feb 2026   | Moved reading and parsing of the groups file to brcddb.report.utils.groups()          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.1     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.0'
+__version__ = '4.1.1'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -249,15 +251,8 @@ def _get_input():
     group_file = brcdapi_file.full_file_name(args_d['group'], '.xlsx')
 
     # Read the project file, -i
-    try:
-        proj_obj = brcddb_project.read_from(in_file)
-        if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
-            return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except FileNotFoundError:
-        brcdapi_log.log('Input file, ' + in_file + ', not found', echo=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except FileExistsError:
-        brcdapi_log.log('Folder in ' + in_file + ' does not exist', echo=True)
+    proj_obj = brcddb_project.read_from(in_file)
+    if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     proj_obj.s_description('\n'.join(ml))
 

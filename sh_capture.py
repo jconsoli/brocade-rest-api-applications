@@ -112,15 +112,17 @@ routing (IVR) or smart zones so no time was spent developing code to handle IVR 
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.5     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.6     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.5'
+__version__ = '1.0.6'
 
 import sys
 import os
@@ -1331,8 +1333,12 @@ def pseudo_main():
     brcdapi_log.log("Saving project to: " + out_file, echo=True)
     plain_copy = dict()
     brcddb_copy.brcddb_to_plain_copy(_proj_obj, plain_copy)
-    brcdapi_file.write_dump(plain_copy, out_file)
-    brcdapi_log.log('Save complete', echo=True)
+    el = brcdapi_file.write_dump(plain_copy, out_file)
+    if len(el) == 0:
+        brcdapi_log.log('Save complete', echo=True)
+    else:
+        brcdapi_log.log(el, echo=True)
+        ec = brcddb_common.EXIT_STATUS_ERROR
 
     return ec
 

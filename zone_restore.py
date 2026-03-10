@@ -45,15 +45,17 @@ Sets the zone configuration DB to that of a previously captured zone DB
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.9     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.0     | 10 Mar 2026   | Improved error messaging.                                                             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.9'
+__version__ = '4.1.0'
 
 import signal
 import os
@@ -65,7 +67,6 @@ import brcdapi.util as brcdapi_util
 import brcdapi.file as brcdapi_file
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_common as brcddb_common
-import brcddb.brcddb_fabric as brcddb_fabric
 import brcddb.api.interface as api_int
 import brcddb.api.zone as api_zone
 
@@ -256,7 +257,7 @@ def pseudo_main(ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, cli_
     # Read the project file
     proj_obj = brcddb_project.read_from(cfile)
     if proj_obj is None:
-        return brcddb_common.EXIT_STATUS_ERROR
+        return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     fab_obj = proj_obj.r_fabric_obj(wwn)
     if scan_flag:
@@ -267,18 +268,10 @@ def pseudo_main(ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, cli_
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     if isinstance(cli_file, str):
-        try:
-            with open(cli_file, 'w') as f:
-                f.write('\n'.join(_cli_commands(fab_obj)))
-            f.close()
-        except FileNotFoundError:
-            brcdapi_log.log(['', 'Folder in path ' + cli_file + ' does not exist.', ''], echo=True)
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-        except PermissionError:
-            brcdapi_log.log(['', 'Permission error writing ' + cli_file + '.', ''], echo=True)
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-
-        return ec
+        el = brcdapi_file.write_file(cli_file, _cli_commands(fab_obj))
+        if len(el) > 0:
+            brcdapi_log.log(el, echo=True)
+            return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Login
     session = api_int.login(user_id, pw, ip, sec, proj_obj)
@@ -292,16 +285,15 @@ def pseudo_main(ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, cli_
         obj = api_zone.replace_zoning(session, fab_obj, fid, fab_obj.r_defined_eff_zonecfg_key())
         if fos_auth.is_error(obj):
             brcdapi_log.log(fos_auth.formatted_error_msg(obj), echo=True)
+            ec = brcddb_common.EXIT_STATUS_ERROR
         else:
             brcdapi_log.log('Zone restore completed successfully.', echo=True)
 
-        # Activate the zone configuration
-        if zone_cfg is not None:
-            brcdapi_log.log('Enabling zone configuration ' + zone_cfg + ', fid: ' + str(fid), echo=True)
-            api_zone.enable_zonecfg(session, fid, zone_cfg)
+            # Activate the zone configuration
+            if zone_cfg is not None:
+                brcdapi_log.log('Enabling zone configuration ' + zone_cfg + ', fid: ' + str(fid), echo=True)
+                api_zone.enable_zonecfg(session, fid, zone_cfg)
 
-    except FileNotFoundError:
-        pass
     except BaseException as e:
         brcdapi_log.log(['', 'Software error.', str(type(e)) + ': ' + str(e)], echo=True)
 

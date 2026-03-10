@@ -66,15 +66,17 @@ $ToDo Spin through all port objects and add stuff in fos_cli to the associated A
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.4     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.5     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '10 Mar 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
 import datetime
 import sys
@@ -611,6 +613,8 @@ def pseudo_main(ss_folder, out_file, sd_folder):
         # Read the supportshow file
         brcdapi_log.log('Processing: ' + file, echo=True)
         _content = brcdapi_file.read_file(file, False, False)
+        if not isinstance(_content, list):
+            return brcddb_common.EXIT_STATUS_ERROR
 
         # Create a project object
         # ToDo date below should be date of supportshow, not the date processed.
@@ -683,8 +687,12 @@ def pseudo_main(ss_folder, out_file, sd_folder):
     brcdapi_log.log('Saving project to: ' + out_file, echo=True)
     plain_copy = dict()
     brcddb_copy.brcddb_to_plain_copy(_working_proj_obj, plain_copy)
-    brcdapi_file.write_dump(plain_copy, out_file)
-    brcdapi_log.log('Save complete', echo=True)
+    el = brcdapi_file.write_dump(plain_copy, out_file)
+    if len(el) == 0:
+        brcdapi_log.log('Save complete', echo=True)
+    else:
+        brcdapi_log.log(el, echo=True)
+        return brcddb_common.EXIT_STATUS_ERROR
 
     return _working_proj_obj.r_exit_code()
 
