@@ -175,6 +175,11 @@ Sets the zone database to that of a previously captured zone database. Typically
 
 **Revision History**
 
+# * 10 Mar 2026*
+* Additional error check
+* Improved error feedback
+* Miscellaneous bug fixes
+
 # *20 Feb 2026*
 * Updated copyright notice
 * Added ability to collect, stats_c.py, and graph, stats_g.py, from multiple switches
