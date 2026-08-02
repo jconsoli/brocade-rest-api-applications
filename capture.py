@@ -57,15 +57,18 @@ The process is as follows:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.9     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.0     | 01 Aug 2026   | Added brocade-chassis/chassis and brocade-chassis/management-interface-configuration  |
+|           |               | to the default data capture.                                                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.9'
+__version__ = '4.1.0'
 
 import signal
 import sys
@@ -93,6 +96,8 @@ _WRITE = True  # Should always be True. Used for debug only. Prevents the output
 _report_kpi_l = [
     # 'running/brocade-fabric/fabric-switch',  Done automatically in brcddb.api.interface.get_chassis()
     # 'running/brocade-logging/audit-log',  # $ToDo Fix - FOS encounters an error which I'm assuming is when it wraps
+    'running/' + brcdapi_util.bcc_uri,
+    'running/' + brcdapi_util.bcmic_uri,
     'running/brocade-logging/error-log',
     'running/' + brcdapi_util.bfs_uri,
     'running/brocade-fibrechannel-switch/topology-domain',
@@ -162,10 +167,11 @@ _all_fos_cli_l = [
 ]
 _report_kpi_l.extend(_all_fos_cli_l)
 
-_input_c_help = ('Optional. Name of file with list of KPIs to capture and/or FOS commands to execute. Note that FOS '
-                 'commands are executed on all logical switches specified with the -fid option. FOS commands must '
-                 'begin with "fos_cli/". Use * to capture all data the chassis supports + ' + ', '.join(_all_fos_cli_l))
-_input_c_help += ' all FOS. The default is to capture all KPIs and FOS commands required for the report.'
+_input_c_help = 'Optional. Name of file with list of KPIs to capture and/or FOS commands to execute. Use * to ' \
+                'capture all API GET requests FOS supports + ' + ', '.join(_all_fos_cli_l) + '. Not all API requests '
+_input_c_help += 'supported by FOS are supported by all chassis. Some may require a license. Error messages returned '\
+                 'by FOS should be ignored. FOS commands are executed at the logical switch level and must begin ' \
+                 'with "fos_cli/". The default is to capture all KPIs and FOS commands required for the report.'
 _input_d = gen_util.parseargs_login_d.copy()
 _input_d.update(
     f=dict(h='Required. Output file for captured data. ".json" is automatically appended.'),
@@ -216,7 +222,7 @@ def _kpi_list(session, c_file):
     return rl
 
 
-def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
+def pseudo_main(ip, user_id, pw, outf, c_file, fid_l, args_clr, args_nm):
     """Basically the main(). Did it this way so that it can be imported and called from another program.
 
     :param ip: IP address
@@ -227,8 +233,6 @@ def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
     :type pw: str
     :param outf: Name of output file
     :type outf: str
-    :param sec: Type of HTTP security. Should be 'none' or 'self'
-    :type sec: str
     :param c_file: Name of file containing URIs to GET.
     :type c_file: str, None
     :param fid_l: CSV list of FIDs to capture data for
@@ -252,7 +256,7 @@ def pseudo_main(ip, user_id, pw, outf, sec, c_file, fid_l, args_clr, args_nm):
     proj_obj.s_description("This is a test")
 
     # Login
-    session = api_int.login(user_id, pw, ip, sec, proj_obj)
+    session = api_int.login(user_id, pw, ip, proj_obj=proj_obj)
     if fos_auth.is_error(session):
         return brcddb_common.EXIT_STATUS_API_ERROR
 
@@ -348,7 +352,6 @@ def _get_input():
         os.path.basename(__file__) + ', ' + __version__,
         'IP, -ip:             ' + brcdapi_util.mask_ip_addr(args_d['ip'], keep_last=True),
         'ID, -id:             ' + args_d['id'],
-        'Security, -s:        ' + args_d['s'],
         'Output file, -f:     ' + args_d['f'],
         'KPI file, -c:        ' + str(args_d['c']),
         'FID List, -fid:      ' + str(args_d['fid']),
@@ -365,7 +368,7 @@ def _get_input():
         return ec
 
     args_f = brcdapi_file.full_file_name(args_d['f'], '.json')
-    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_f, args_d['s'], args_d['c'], args_fid_l,
+    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_f, args_d['c'], args_fid_l,
                        args_d['clr'], args_d['nm'])
 
 

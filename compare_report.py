@@ -43,15 +43,17 @@ Creates a report in Excel Workbook format with all differences between two conte
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.8     | 10 Mar 2026   | Consolidated project read error messaging.                                            |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 01 Aug 2026   | Added DID in hex to report.                                                           |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.8'
+__version__ = '4.0.9'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -313,7 +315,7 @@ def _chassis_name(p_obj, wwn, flag=True):
 
 
 def _switch_name(p_obj, wwn, flag=True):
-    return brcddb_switch.best_switch_name(p_obj.r_switch_obj(wwn), wwn=flag, did=True)
+    return brcddb_switch.best_switch_name(p_obj.r_switch_obj(wwn), wwn=flag, did=True, did_hex=True)
 
 
 def _port_name(p_obj, wwn, flag=True):
@@ -380,10 +382,18 @@ def _switch_add_to_content(obj, b_obj, c_obj, content):
     """Same as _basic_add_to_content() except obj is a list of switch change objects"""
     start = len(content)
     for change_obj in [t_obj for t_obj in obj if t_obj.get('r') is not None]:
-        b_buf = brcddb_switch.best_switch_name(b_obj.r_project_obj().r_switch_obj(change_obj.get('b')),
-                                               wwn=True, did=True)
-        c_buf = brcddb_switch.best_switch_name(c_obj.r_project_obj().r_switch_obj(change_obj.get('c')),
-                                               wwn=True, did=True)
+        b_buf = brcddb_switch.best_switch_name(
+            b_obj.r_project_obj().r_switch_obj(change_obj.get('b')),
+            wwn=True,
+            did=True,
+            did_hex=True
+        )
+        c_buf = brcddb_switch.best_switch_name(
+            c_obj.r_project_obj().r_switch_obj(change_obj.get('c')),
+            wwn=True,
+            did=True,
+            did_hex=True
+        )
         _content_append(dict(font='std', align='wrap', disp=('', b_buf, c_buf, change_obj.get('r'))), content)
     if len(content) == start:
         content.append(dict(merge=4, font='std', align='wrap', disp=('No changes',)))
@@ -514,7 +524,7 @@ def _project_page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj):
         content.append(dict(
             font='std',
             align='wrap',
-            disp=brcddb_switch.best_switch_name(obj, wwn=True, fid=True, did=True)
+            disp=brcddb_switch.best_switch_name(obj, wwn=True, fid=True, did=True, did_hex=True)
         ))
 
     # Switches Removed
@@ -523,7 +533,7 @@ def _project_page(wb, sheet_index, b_proj_obj, c_proj_obj, c_obj):
         content.append(dict(
             font='std',
             align='wrap',
-            disp=brcddb_switch.best_switch_name(obj, wwn=True, fid=True, did=True)
+            disp=brcddb_switch.best_switch_name(obj, wwn=True, fid=True, did=True, did_hex=True)
         ))
 
     # Chassis Added

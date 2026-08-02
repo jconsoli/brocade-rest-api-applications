@@ -45,16 +45,16 @@ of the switch WWN and port number. Note that the switch WWN will always be uniqu
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.4     | 06 Dec 2024   | Updated comments only.                                                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
-| 4.0.5     | xx xxx 2026   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
+| 4.0.5     | 01 Aug 2026   | Use brcddb.util.util.get_import_modules to dynamically determined imported libraries. |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024, 2025, 2026 Jack Consoli'
-__date__ = 'xx xxx 2025'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
-__status__ = 'Development'
+__status__ = 'Released'
 __version__ = '4.0.5'
 
 import os
@@ -175,7 +175,7 @@ def _capture_data(proj_obj, kpi_l, fid_l, user_id, pw, ip_addr, sec):
     :type: int
     """
     # Login
-    session = api_int.login(user_id, pw, ip_addr, sec, proj_obj)
+    session = api_int.login(user_id, pw, ip_addr, proj_obj=proj_obj)
     if fos_auth.is_error(session):
         return brcddb_common.EXIT_STATUS_API_ERROR  # api_int.login() prints the error message detail.
 
@@ -206,14 +206,15 @@ def _parse_login_credentials(in_file):
     # Read the file with login credentials and format into a list of dictionaries
     rl = list()
     file_content = brcdapi_file.read_file(in_file, remove_blank=True, rc=True)
-    for mod_line in file_content:
-        params = mod_line.replace(' ', '').split(',')
-        if len(params) == 3:
-            params.append('none')
-        if len(params) == 4:
-            rl.append(dict(id=params[0], pw=params[1], ip=params[2], sec=params[3]))
-        else:
-            brcdapi_log.log('Missing parameters in input file. Line:\n' + mod_line, True)
+    if isinstance(file_content, list):
+        for mod_line in file_content:
+            params = mod_line.replace(' ', '').split(',')
+            if len(params) == 3:
+                params.append('none')
+            if len(params) == 4:
+                rl.append(dict(id=params[0], pw=params[1], ip=params[2], sec=params[3]))
+            else:
+                brcdapi_log.log('Missing parameters in input file. Line:\n' + mod_line, True)
 
     return rl
 

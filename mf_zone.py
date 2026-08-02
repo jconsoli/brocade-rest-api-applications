@@ -37,15 +37,17 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.5     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.6     | 01 Aug 2026   | Modified to use new brcddb_switch.best_switch_name() format.                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.5'
+__version__ = '1.0.6'
 
 import os
 import openpyxl.utils.cell as xl
@@ -155,7 +157,7 @@ def _zone_option_all_func(fabric_obj, zonecfg, rnid_d, notes_l):
         for port_obj in [obj for obj in switch_obj.r_port_objects() if not obj.r_is_icl()]:
             member_l.append(did + ',' + str(port_obj.r_index()))
             buf = brcddb_port.port_best_desc(port_obj) + ', Switch: '
-            buf += brcddb_switch.best_switch_name(port_obj.r_switch_obj(), fid=True, did=True)
+            buf += brcddb_switch.best_switch_name(port_obj, fid=True, did=True, did_hex=True)
             buf += ', Port: ' + port_obj.r_obj_key()
             comment_l.append(buf)
     if len(member_l) > 1:
@@ -179,7 +181,7 @@ def _zone_option_all_f_func(fabric_obj, zonecfg, rnid_d, notes_l):
         for port_obj in [obj for obj in switch_obj.r_port_objects() if obj.c_login_type().lower() == 'f-port']:
             member_l.append(did + ',' + str(port_obj.r_index()))
             buf = brcddb_port.port_best_desc(port_obj) + ', Switch: '
-            buf += brcddb_switch.best_switch_name(port_obj.r_switch_obj(), fid=True, did=True)
+            buf += brcddb_switch.best_switch_name(port_obj, fid=True, did=True, did_hex=True)
             buf += ', Port: ' + port_obj.r_obj_key()
             comment_l.append(buf)
     if len(member_l) > 1:
@@ -207,7 +209,7 @@ def _zone_option_dev_func(fabric_obj, zonecfg, rnid_d, notes_l):
             for port_obj in port_obj_l:
                 member_l.append(str(port_obj.r_did()) + ',' + str(port_obj.r_index()))
                 buf = brcddb_port.port_best_desc(port_obj) + ', Switch: '
-                buf += brcddb_switch.best_switch_name(port_obj.r_switch_obj(), fid=True, did=True)
+                buf += brcddb_switch.best_switch_name(port_obj, fid=True, did=True, did_hex=True)
                 buf += ', Port: ' + port_obj.r_obj_key()
                 comment_l.append(buf)
             zdb_l.append(dict(Zone_Object='alias', Action='create', Name=alias, Member=member_l, Comments=comment_l))
@@ -217,7 +219,7 @@ def _zone_option_dev_func(fabric_obj, zonecfg, rnid_d, notes_l):
         for port_obj in port_obj_l:
             tag = port_obj.r_get('rnid/tag')
             if tag is None:
-                buf = 'Missing tag for switch ' + brcddb_switch.best_switch_name(port_obj.r_switch_obj()) + ', port '
+                buf = 'Missing tag for switch ' + brcddb_switch.best_switch_name(port_obj) + ', port '
                 buf += port_obj.r_obj_key()
                 temp_notes_l.append(buf)
             else:
@@ -270,7 +272,7 @@ def _zone_option_channel_func(fabric_obj, zonecfg, rnid_d, notes_l):
                     else:
                         cu_di_l.append(str(cu_port_obj.r_did()) + ',' + str(cu_port_obj.r_index()))
                         buf = brcddb_port.port_best_desc(cu_port_obj) + ', Switch: '
-                        buf += brcddb_switch.best_switch_name(cu_port_obj.r_switch_obj(), fid=True, did=True)
+                        buf += brcddb_switch.best_switch_name(cu_port_obj, fid=True, did=True, did_hex=True)
                         buf += ', Port: ' + cu_port_obj.r_obj_key()
                         comment_l.append(buf)
                 zone_name = _unique_zone_name(fabric_obj, 'CHPID_' + iocp_obj.r_obj_key() + '_' + chpid_obj.r_obj_key())
@@ -303,14 +305,15 @@ def _zone_option_channel_func(fabric_obj, zonecfg, rnid_d, notes_l):
 _zone_options_l = (
     dict(
         h=dict(p1='A single large standard zone with all physical ports in the fabric except ICL ports is created. '
-                  'This is typical of zoning methods currently being used for mainframe environments.'),
+                  'This is the easiest zoning method to use because it will support any IODF. It only needs to be '
+                  'created and activated once.'),
         a=_zone_option_all_func,
         sname='All_Ports',
     ),
     dict(
         h=dict(p1='The same as "All_Ports" except only online ports that are not E-Ports or ports configured for test '
-                  'or loopback. Any port associated with a channel or control unit interface that was offline when the '
-                  'data was collected will need to be added.'),
+                  'or loopback are included in the zone. Any port associated with a channel or control unit interface '
+                  'that was offline when the data was collected will need to be added.'),
         a=_zone_option_all_f_func,
         sname='All_F_Ports',
     ),
@@ -319,25 +322,10 @@ _zone_options_l = (
             dict(p1='Device zoning creates a group of control units by serial number. A separate peer zone for each '
                     'CHPID and each group of control units is created.'),
             dict(p1=''),
-            dict(p1='There is no need for mainframe storage administrators to know the difference between a zone and a '
-                    'peer zone, but for the curious:'),
-            dict(p1='', b1_prefix='  ', b1_char='*'),
-            dict(b1='Peer zones have two membership lists, member and principal member.'),
-            dict(b1='Any port in the member list can communicate with any port in the principal list.'),
-            dict(b1='Ports in the member list cannot communicate with other ports in the member list. If this is '
-                    'desired, you need to create another zone that permits it.'),
-            dict(b1='Ports in the principal list cannot communicate with other ports in the principal list.'),
-            dict(p1=''),
-            dict(p1='In addition to creating smaller zones, using peer zones is ideal because it ensures that low '
-                    'level fibre channel traffic from control units is not presented to other control unit ports.'),
-            dict(p1=''),
-            dict(p1='**WARNING** Any storage port that presents RNID data is considered a control unit. Mainframe '
-                    'storage ports configured for peer-to-peer may or may not present RNID data. If RNID data is '
-                    'presented, a zone for a CHPID to it will be created. Since there will not be any link '
-                    'addresses defined to the port, that does not create a problem; however, the storage ports will '
-                    'not be able to communicate with each other. You will need to add separate zones for disk '
-                    'mirroring ports. Since disk mirroring ports do not behave as mainframe ports, consider putting '
-                    'mirroring ports in their own logical fabric.'),
+            dict(p1='**WARNING** A separate zone for Channel-to-Channel (CTC) will need to be created. Similarly, '
+                    'peer-to-peer disk mirroring ports will need a separate zone as well. Since peer-to-peer ports use '
+                    'native fibre channel protocol, not FICON, you can still put all the peer-to-peer ports in one '
+                    'domain index zone. Consider creating a separate logical switch for disk mirroring ports.'),
             dict(p1=''),
             dict(p1='Any channel or control unit interface that was offline when the data was collected will need to '
                     'be added.'),
@@ -345,21 +333,21 @@ _zone_options_l = (
             dict(p1='This is a little more flexible than "By_Channel" because supplying IOCPs is not required and a '
                     'new IODF can be activated with new link addresses for existing CHPIDs and control units. If there '
                     'are new CHPIDs, new devices, or any channel or device connection was moved, the zone database '
-                    'will need to be updated accordingly. This is because FICON zoning is based on physical ports. New '
-                    'channels, devices, or any relocation of channels or devices will result in a new physical port.'),
+                    'will need to be updated accordingly.'),
         ],
         a=_zone_option_dev_func,
         sname='By_Device'
     ),
     dict(
         h=[
-            dict(p1='As with "By_Device", individual zones are built on a per channel basis. The difference is that '
-                 'the channel zones only include ports associated with the "LINK=" statements in the CNTLUNIT macros. '
-                 'Since the ports are determined from the "LINK=" statements, the control units do not have to be '
-                 'online.'),
+            dict(p1='Zones are built on a per channel basis. One peer-zone per CHPID is created. The member is the '
+                    'CHPID port. The principal members are all the ports associated with the "LINK=" statements in the '
+                    'CNTLUNIT macros. Since the ports are determined from the "LINK=" statements, the control units do '
+                    'not have to be online. Entry link addresses can only be determined when the channel is online and '
+                    'the CHPIDs are configured online.'),
             dict(p1=''),
-            dict(p1='Entry link addresses for channels are not specified in the IOCP files. They can only be '
-                    'determined when the channel is online and the associated CHPID has been configured online.'),
+            dict(p1='A copy of the IOCP in plain text, build I/O configuration statements from HCD, from each CPC is '
+                    'required as input for the -iocp command line option to build a worksheet with these zones.'),
             dict(p1=''),
             dict(p1='This method produces the smallest zones, but a zone configuration update will be required if:'),
             dict(p1='', b1_char='*', b1_prefix='  '),
@@ -394,10 +382,8 @@ _eh_l = [
             'organizations to create CLI zone scripts for SAN implementation engineers that do not have access to a '
             'Python interpreter with the brcddb and brcdapi libraries installed.'),
     dict(p1=''),
-    dict(p1='Zone configurations are based on a fabric. This is why the -wwn parameter is required. Use the -scan '
-            'parameter to determine the fabric world wide name (WWN). The fabric WWN is not needed for anything other '
-            'than identifying which fabric in the data collection, specified with the -i parameter. to base the zone '
-            'configuration on.'),
+    dict(p1='Zone configurations are based on a fabric. Fabrics are identified by a world wide name (WWN), -wwn '
+            'parameter. Use the -scan parameter to determine the WWN.'),
     dict(p1=''),
     dict(p1='**Naming Conventions**'),
     dict(p1='', b1_char='*', b1_prefix='  ', b2_char='-', b2_prefix='      '),
@@ -422,13 +408,48 @@ _eh_l = [
     dict(p1='Create a new zone configuration whenever modifying the zone database of an existing fabric so that your '
             'back-out plan is to simply activate the old zone configuration.'),
     dict(p1=''),
-    dict(p1='**Background**'),
+    dict(p1='**What Is Zoning?**'),
     dict(p1=''),
-    dict(p1='In mainframe environments, controlling what servers (channels) can access what devices (control units) is '
-            'handled by the IODF. In open systems environments, this function is handled with fabric zoning in the SAN '
-            'switches. The most common approach to zoning for mainframes has been to create a single large zone. These '
-            'large zones have become somewhat of a concern, so in addition to creating one large zone, this script '
-            'also provides alternate zoning methods intended to reduce zone size.'),
+    dict(p1='SAN switches do not route frames anywhere until programmed to do so. This is referred to as "Zoning". '
+            'In mainframe environments, controlling what servers (channels) can access what devices (control units) is '
+            'handled by the IODF. In open systems environments, this function is handled by the SAN. As a result, there'
+            ' are two types of zoning, WWN and Domain Index.'),
+    dict(p1=''),
+    dict(p1='Some of the zoning methods use peer zones. There is no need for mainframe storage administrators to know '
+            'the difference between a zone and a peer zone. For the curious:'),
+    dict(p1='', b1_prefix='  ', b1_char='*'),
+    dict(b1='Peer zones have two membership lists, member and principal member.'),
+    dict(b1='Any port in the member list can communicate with any port in the principal list and vice versa.'),
+    dict(b1='Ports in the member list cannot communicate with other ports in the member list.'),
+    dict(b1='Ports in the principal member list cannot communicate with other ports in the principal member list.'),
+    dict(p1=''),
+    dict(p1='The two types of zoning are:'),
+    dict(p1=''),
+    dict(p1='WWN'),
+    dict(p1=''),
+    dict(p1='Used by open systems. All Fibre Channel devices have a unique name. This name is referred to as a World '
+            'Wide Name (WWN). In open systems environments, zones consist of WWNs. Devices can only communicate with '
+            'other devices whose WWNs are in the same zone.'),
+    dict(p1=''),
+    dict(p1='Domain Index (d,i)'),
+    dict(p1=''),
+    dict(p1='Used by mainframes. In mainframe environments, controlling what channels can access what control units is '
+            'handled by the IODF. The IODF is based on link addresses. Link addresses correspond to physical ports in '
+            'the SAN. Mainframe zoning, therefore, is based on physical ports. Brocade offers flexible port numbering '
+            'options. To ensure a consistent way to reference physical ports, Brocade SAN switches assign a consistent '
+            'port index to each physical port. There is no need for a mainframe SAN administrator to know anything else'
+            ' about port numbering options or port indexes. It is mentioned here only to explain why the index is used '
+            'instead of the port number.'),
+    dict(p1=''),
+    dict(p1='Since FICON is a protocol transported by Fibre Channel, channels and control unit ports do have WWNs, but '
+            'they are not obvious in mainframe tools and, more importantly, the IODF is built by link address, not '
+            'WWN.'),
+    dict(p1=''),
+    dict(p1='The most common approach to zoning for mainframes has been to create a single large zone with all ports in'
+            ' it. Since all ports are in a zone, all link addresses are accessible. Large zones have become somewhat of'
+            ' a concern. The purpose of this script is to facilitate different zoning methods, some of which are '
+            'intended to reduce the size of mainframe zones. SAN administrators should discuss these zoning options '
+            'with their SAN vendor or Brocade representative.'),
     dict(p1=''),
     dict(p1='**Zoning Methods**'),
 ]
@@ -449,19 +470,28 @@ _eh_l.append(dict(p1=''))
 
 # Input parameter definitions
 _input_d = dict(
-    i=dict(r=False,
-           h='Required unless using -eh. Name of input file generated by capture.py, combine.py, or multi_capture.py. '
-             'Extension ".json" is automatically added.'),
-    o=dict(r=False,
-           h='Required unless using -eh or -scan. Output file file name. Extension ".xlsx" is automatically added.'),
+    i=dict(
+        r=False,
+        h='Required unless using -eh. Name of input file generated by capture.py, combine.py, or multi_capture.py. '
+          'Extension ".json" is automatically added.'
+    ),
+    o=dict(
+        r=False,
+        h='Required unless using -eh or -scan. Output file file name. Extension ".xlsx" is automatically added.'
+    ),
     wwn=dict(r=False, h='Required unless using -eh or -scan. Fabric WWN. Run with -scan option if unknown.'),
-    cfg=dict(r=False,
-             h='Required unless using -eh or -scan. This name of the new zone configuration to create.'),
-    iocp=dict(r=False,
-              h='Required when the zoning type, -z, is "channel". Name of folder with IOCP files. All files in this '
-                'folder must be IOCP files (build I/O configuration statements from HCD) and must begin with the CEC '
-                'serial number followed by \'_\'. Leading 0s are not required. Example, for a CPC with serial number '
-                '12345: 12345_M90_iocp.txt. Generates zone configurations based on channel paths.'),
+    cfg=dict(
+        r=False,
+        h='Required unless using -eh or -scan. This name of the new zone configuration to create.'
+    ),
+    iocp=dict(
+        r=False,
+        h='Optional. Name of folder with IOCP files. If this option is specified, a worksheet with zone configurations '
+          'based on channel paths is created. All files in this folder must be IOCP files in plain text (build I/O '
+          'configuration statements from HCD) and must begin with the CPC serial number followed by "_". Leading 0s are'
+          ' not required. The remaining characters in the file name are not used by this script. Example, for a CPC '
+          'with serial number 12345: 12345_M90_iocp.txt.'
+    )
 )
 _input_d.update(gen_util.parseargs_scan_d.copy())
 _input_d.update(gen_util.parseargs_eh_d.copy())
@@ -595,10 +625,10 @@ def _get_input():
     ec = brcddb_common.EXIT_STATUS_OK
 
     # Get command line input
-    args_d = gen_util.get_input(
-        'Creates workbooks for use with zone_config.py for common mainframe zoning operations.',
-        _input_d
-    )
+    buf = 'Creates workbooks for use with zone_config.py for common mainframe zoning operations. Each workbook contains'
+    buf += ' a worksheet for each type of zone configuration. SAN administrators pick the worksheet with their '
+    buf += 'preferred zoning method.'
+    args_d = gen_util.get_input(buf, _input_d)
 
     # Set up logging
     brcdapi_log.open_log(

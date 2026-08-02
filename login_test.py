@@ -39,15 +39,17 @@ Login and logout. Used to validate the HTTP(S) connections
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.6     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 01 Aug 2026   | Removed no longer supported HTTP access. Only HTTPS is supported.                     |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.6'
+__version__ = '4.0.7'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -63,7 +65,7 @@ _input_d.update(gen_util.parseargs_log_d.copy())
 _input_d.update(gen_util.parseargs_debug_d.copy())
 
 
-def pseudo_main(ip, user_id, pw, sec):
+def pseudo_main(ip, user_id, pw):
     """For consistency with all other modules.
 
     :param ip: IP address
@@ -72,8 +74,6 @@ def pseudo_main(ip, user_id, pw, sec):
     :type user_id: str
     :param pw: Password
     :type pw: str
-    :param sec: Type of HTTP security. Should be 'none' or 'self'
-    :type sec: str
     :return: Exit code. See exist codes in brcddb.brcddb_common
     :rtype: int
     """
@@ -84,7 +84,7 @@ def pseudo_main(ip, user_id, pw, sec):
     # Login
     brcdapi_log.log('Attempting login', True)
     try:
-        session = brcdapi_rest.login(user_id, pw, ip, sec)
+        session = brcdapi_rest.login(user_id, pw, ip)
         if brcdapi_auth.is_error(session):
             brcdapi_log.log('Login failed. Error message is:', echo=True)
             brcdapi_log.log(brcdapi_auth.formatted_error_msg(session), echo=True)
@@ -132,7 +132,6 @@ def _get_input():
         os.path.basename(__file__) + ', ' + __version__,
         'IP, -ip:               ' + brcdapi_util.mask_ip_addr(args_d['ip'], keep_last=True),
         'ID, -id:               ' + args_d['id'],
-        'Security, -s:          ' + args_d['s'],
         'Log, -log:             ' + str(args_d['log']),
         'No log, -nl:           ' + str(args_d['nl']),
         'Debug, -d:             ' + str(args_d['d']),
@@ -141,7 +140,7 @@ def _get_input():
     ]
     brcdapi_log.log(ml, echo=True)
 
-    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'])
+    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'])
 
 
 ###################################################################

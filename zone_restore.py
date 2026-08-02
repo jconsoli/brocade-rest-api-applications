@@ -47,15 +47,17 @@ Sets the zone configuration DB to that of a previously captured zone DB
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.1.0     | 10 Mar 2026   | Improved error messaging.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.1     | 01 Aug 2026   | Removed obsolete HTTP access. Only HTTPS is supported.                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.0'
+__version__ = '4.1.1'
 
 import signal
 import os
@@ -226,7 +228,7 @@ def _cli_commands(fab_obj):
     return rl
 
 
-def pseudo_main(ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, cli_file):
+def pseudo_main(ip, user_id, pw, scan_flag, fid, cfile, wwn, zone_cfg, cli_file):
     """Basically the main(). Did it this way so that it can easily be used as a standalone module or called externally.
 
     :param ip: IP address
@@ -235,8 +237,6 @@ def pseudo_main(ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, cli_
     :type user_id: str
     :param pw: Password
     :type pw: str
-    :param sec: Type of HTTP security. Should be 'none' or 'self'
-    :type sec: str
     :param scan_flag: If True, do not make any zoning changes. Just scan the fabrics
     :type scan_flag: bool
     :param fid: Fabric ID
@@ -274,7 +274,7 @@ def pseudo_main(ip, user_id, pw, sec, scan_flag, fid, cfile, wwn, zone_cfg, cli_
             return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Login
-    session = api_int.login(user_id, pw, ip, sec, proj_obj)
+    session = api_int.login(user_id, pw, ip, proj_obj=proj_obj)
     if fos_auth.is_error(session):
         brcdapi_log.log(fos_auth.formatted_error_msg(session), echo=True)
         return brcddb_common.EXIT_STATUS_ERROR
@@ -344,7 +344,6 @@ def _get_input():
     ml = [os.path.basename(__file__) + ', ' + __version__,
           'IP address, -ip:         ' + brcdapi_util.mask_ip_addr(args_d['ip']),
           'ID, -id:                 ' + str(args_d['id']),
-          'HTTPS, -s:               ' + str(args_d['s']),
           'FID, -fid:               ' + str(args_d['fid']) + args_fid_help,
           'Input file, -i:          ' + args_d['i'],
           'WWN, -wwn:               ' + str(args_d['wwn']),
@@ -370,7 +369,7 @@ def _get_input():
     signal.signal(signal.SIGINT, brcdapi_rest.control_c)
 
     return ec if ec != brcddb_common.EXIT_STATUS_OK else \
-        pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'], args_d['scan'], args_d['fid'], cfile,
+        pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['scan'], args_d['fid'], cfile,
                     args_d['wwn'], args_d['a'], cli_file)
 
 

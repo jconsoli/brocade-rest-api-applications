@@ -51,15 +51,17 @@ This is effectively an intelligent batch file that does the following:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.8     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 01 Aug 2026   | Removed obsolete HTTP access. Only HTTPS is supported.                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.8'
+__version__ = '4.0.9'
 
 import signal
 import datetime
@@ -80,7 +82,6 @@ _DOC_STRING = False  # Should always be False. Prohibits any code execution. Onl
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
-
 _DEBUG = False   # When True, echos additional status and debug information to STD_IO
 
 # Input parameter definitions
@@ -113,8 +114,11 @@ _input_d = dict(
              '"report_yyyy_mm_dd_hh_mm_ss.xlsx", "maps_report_yyyy_mm_dd_hh_mm_ss.xlsx" and '
              '"compare_to_yyyy_mm_dd_hh_mm_ss.xlsx"'),
     c=dict(r=False,
-           h='Optional. Name of file with list of KPIs to capture. Use * to capture all data the chassis supports. The '
-             'default is to capture all KPIs required for the report.'),
+           h='Optional. Name of file with list of KPIs to capture and/or FOS commands to execute. Use * to capture all '
+             'API GET requests FOS supports + fos_cli/portcfgshow, fos_cli/portbuffershow. Not all API requests '
+             'supported by FOS are supported by all chassis. Some may require a license. Error messages returned by '
+             'FOS should be ignored. FOS commands are executed at the logical switch level and must begin with '
+             '"fos_cli/". The default is to capture all KPIs and FOS commands required for the report.'),
     clr=dict(r=False, t='bool', d=False, h='Optional. No parameters. Clear port statistics after successful capture'),
     nm=dict(r=False, t='bool', d=False,
             h='Optional. No parameters. By default, all but the last octet of IP addresses are masked before being '
@@ -163,7 +167,6 @@ def psuedo_main(addl_parms_all, addl_parms_capture, addl_parms_report, file, fol
             switch_params.append(['-id', d['user_id'],
                                   '-pw', d['pw'],
                                   '-ip', d['ip_addr'],
-                                  '-s', 'self' if d['security'] is None else d['security'],
                                   '-f', folder + '/' + buf])
     except FileNotFoundError:
         ml.extend(['', file + ' not found.'])

@@ -48,15 +48,17 @@ use as an example with the following caveats and features:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.6     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.7     | 01 Aug 2026   | Removed obsolete HTTP access. Only HTTPS is supported.                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.6'
+__version__ = '4.0.7'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -118,7 +120,7 @@ def _format_fault(obj, line_num, file_content):
     return '\n'.join(msg_l)
 
 
-def pseudo_main(ip, user_id, pw, sec, cli_file, fid, t_flag, f_flag):
+def pseudo_main(ip, user_id, pw, cli_file, fid, t_flag, f_flag):
     """Basically the main(). Did it this way so that it can easily be used as a standalone module or called externally.
 
     :param ip: IP address
@@ -127,8 +129,6 @@ def pseudo_main(ip, user_id, pw, sec, cli_file, fid, t_flag, f_flag):
     :type user_id: str
     :param pw: Password
     :type pw: str
-    :param sec: Type of HTTP security. Should be 'none' or 'self'
-    :type sec: str
     :param cli_file: Name of file with zoning CLI commands
     :type cli_file: str
     :param fid: Fabric ID for zoning CLI commands
@@ -145,7 +145,6 @@ def pseudo_main(ip, user_id, pw, sec, cli_file, fid, t_flag, f_flag):
         'ip-addr': ip,
         'id': user_id,
         'pw': pw,
-        'sec': sec,
         'force': f_flag,
         'test': t_flag,
     }
@@ -250,8 +249,7 @@ def _get_input():
         return ec
 
     args_d['cli'] = brcdapi_file.full_file_name(args_d['cli'], '.txt')
-    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'], args_d['cli'], args_d['fid'], args_d['t'],
-                       args_d['f'])
+    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['cli'], args_d['fid'], args_d['t'], args_d['f'])
 
 
 ##################################################################

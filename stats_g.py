@@ -47,15 +47,17 @@ Reads in the output of stats_c (which collects port statistics) and creates an E
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.9     | 10 Mar 2026   | Added error handling for excel_util.save_report().                                    |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.0     | 01 Aug 2026   | Modified to use new brcddb_switch.best_switch_name() format.                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.9'
+__version__ = '4.1.0'
 
 import sys
 import os
@@ -354,7 +356,7 @@ def _condition_samples(port_obj_l):
                     last_value = next_last_value
 
         if len(ignored_stats_l) > 0:
-            buf = brcddb_switch.best_switch_name(port_obj.r_switch_obj()) + ', port ' + port_obj.r_key()
+            buf = brcddb_switch.best_switch_name(port_obj) + ', port ' + port_obj.r_key()
             brcdapi_log.log(buf + ' Statistic(s) not found: '.join(ignored_stats_l), echo=True)
 
 
@@ -387,7 +389,7 @@ def pseudo_main(proj_obj, args_d):
     for port_obj in stats_g_d['port_obj_l']:
         time_generated = port_obj.r_get(brcdapi_util.stats_time)
         sname = str(unique_sheet_num) + '_Port_' + port_obj.r_obj_key().replace('/', '_')
-        title = brcddb_switch.best_switch_name(port_obj.r_switch_obj(), did=True) + ' Port ' + port_obj.r_obj_key()
+        title = brcddb_switch.best_switch_name(port_obj, did=True) + ' Port ' + port_obj.r_obj_key()
         stats_map_d[title] = sname
         title += ' Beginning ' + datetime.datetime.fromtimestamp(time_generated).strftime('%d %b %Y')
         cell_map_d = report_port.port_stats(
@@ -398,7 +400,7 @@ def pseudo_main(proj_obj, args_d):
             0,  # Sheet index
             port_obj.r_get('stats_c/samples'),
             time_format='HH:MM:SS;@',
-            sub_hdr=brcddb_switch.best_switch_name(port_obj.r_switch_obj())[0:27] + ' ' + port_obj.r_obj_key(),
+            sub_hdr=brcddb_switch.best_switch_name(port_obj)[0:27] + ' ' + port_obj.r_obj_key(),
             time_hdr=port_obj.r_get(brcdapi_util.stats_time)
         )
         port_obj.r_get('stats_c').update(dict(sheet=cell_map_d['sheet'], sheet_name=sname, cell_map_d=cell_map_d))

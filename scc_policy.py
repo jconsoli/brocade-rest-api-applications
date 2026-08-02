@@ -62,15 +62,17 @@ activated.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.2     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.3     | 01 Aug 2026   | Removed obsolete HTTP access. Only HTTPS is supported. Display DID in hex.            |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 import sys
 import datetime
@@ -98,8 +100,8 @@ _STAND_ALONE = True  # See note above
 _input_d = dict(
     i=dict(h='Required. Workbook with SCC policy instructions. See zone_merge_sample.xlsx for details. ".xlsx" is '
              'automatically appended. zone_merge_sample.xlsx is not a mistake. The same workbook is used for setting '
-             'the SCC policy. Only cells in columns "user_id", "pw", "ip_addr", "security", and "fid" are read. All '
-             'other cells are ignored.'),
+             'the SCC policy. Only cells in columns "user_id", "pw", "ip_addr", and "fid" are read. All other cells '
+             'are ignored.'),
     sheet=dict(h='Required. Specifies the sheet name in the workbook specified with -i to be used.'),
     add=dict(r=False,
              h='Optional. List of switch WWNs to add to the SCC_POLICY. The intended purpose is to add members to the '
@@ -107,7 +109,7 @@ _input_d = dict(
     remove=dict(r=False,
                 h='Optional. List of switch WWNs to remove from the SCC_POLICY.'),
     clr=dict(r=False, t='bool', d=False,
-             h='Optional. No parameters. By default, WWNs are added to the existing SCC_POLICY membership list. When'
+             h='Optional. No parameters. By default, WWNs are added to the existing SCC_POLICY membership list. When '
                '-clr is specified, the existing policy is cleared and replaced.'),
     api=dict(r=False, t='bool', d=False,
              h='Optional. No parameters. By default, only the equivalent CLI commands are output. This option '
@@ -205,61 +207,6 @@ def _compare_membership(hdr, title_a, a_l, title_b, b_l, disp=True):
     return r_val
 
 
-def _login_and_capture(proj_obj, row_str, ip_addr, user_id, pw, sec):
-    """ Login and capture SCC policy data
-
-    :param proj_obj: Project object
-    :type proj_obj: brcddb.classes.project.ProjectObj
-    :param row_str: Row number as text. Used for error messages
-    :type row_str: str
-    :param ip_addr: IP address
-    :type ip_addr: str
-    :param user_id: User ID
-    :type user_id: str
-    :param pw: Password
-    :type pw: str
-    :param sec: Type of HTTP security. Should be 'none' or 'self'
-    :type sec: str
-    :return ec: Exit status code. See brcddb_common.EXIT_STATUS for details
-    :rtype ec: int
-    :return session: Login session object
-    :rtype session: dict
-    :return chassis_obj: Chassis object
-    :rtype chassis_obj: brcddb.classes.chassis.ChassisObj
-    """
-    global _basic_capture_uris
-
-    chassis_wwn_d = dict()
-    # I'm going to let api_int.get_batch() capture everything I need. Below gets a list of chassis keys already
-    # captured. The one that isn't in this dictionary when I'm done is the new one.
-    for wwn in proj_obj.r_chassis_keys():
-        chassis_wwn_d[wwn] = True
-
-    # Login
-    session = api_int.login(user_id, pw, ip_addr, sec, proj_obj)
-    if fos_auth.is_error(session):
-        brcdapi_log.log(
-            ['Row ' + row_str + ': ' + 'Login failed. Error message is:', fos_auth.formatted_error_msg(session)],
-            echo=True)
-        return brcddb_common.EXIT_STATUS_API_ERROR, session, None
-
-    # Collect the data
-    api_int.get_batch(session, proj_obj, _basic_capture_uris + _scc_policy_capture_uris)
-
-    # Figure out which chassis object is the one we just collected.
-    for chassis_obj in proj_obj.r_chassis_objects():
-        if chassis_obj.r_obj_key() not in chassis_wwn_d:
-            return brcddb_common.EXIT_STATUS_OK, session, chassis_obj
-
-    # If we fell out of the for loop above, the chassis object couldn't be found
-    brcdapi_log.log(
-        'Error encountered collecting chassis data: ' + brcdapi_util.mask_ip_addr(ip_addr, keep_last=True),
-        echo=True
-    )
-
-    return brcddb_common.EXIT_STATUS_API_ERROR, session, None
-
-
 def _evaluate_scc(switch_obj, scc_wwn_l):
     """Determines if the SCC_POLICY needs to be created, what WWNs need to be added to the membership list, and which
     WWNs need to be removed from the membership list. This information is added to the switch object in a dictionary
@@ -355,7 +302,7 @@ def _generate_cli(switch_obj_l, scc_wwn_l):
                 scc_d = switch_obj.r_get('initial_scc_policy_d')
                 temp_cli_l = list()
                 comment = '# Chassis: ' + brcddb_chassis.best_chassis_name(switch_obj.r_chassis_obj()) + ', Switch: '
-                comment += brcddb_switch.best_switch_name(switch_obj, fid=True, did=True, wwn=True)
+                comment += brcddb_switch.best_switch_name(switch_obj, fid=True, did=True, did_hex=True, wwn=True)
     
                 if scc_d['create_bool']:
                     temp_cli_l.append('secpolicycreate "SCC_POLICY" "' + ';'.join(scc_d['add_l']) + '"')
@@ -426,7 +373,7 @@ def _summary(args_d, switch_obj_l):
     if args_d['api']:
         # Get a list of successes and failures by switch
         for switch_obj in switch_obj_l:
-            summary_l.append(brcddb_switch.best_switch_name(switch_obj, did=True, wwn=True, fid=True))
+            summary_l.append(brcddb_switch.best_switch_name(switch_obj, did=True, did_hex=True, wwn=True, fid=True))
             scc_policy_d = switch_obj.r_get('scc_policy_d')
             summary_l.append('  Defined SCC_POLICY: ' + _summary_d[scc_policy_d['defined']])
             summary_l.append('  Active SCC_POLICY:  ' + _summary_d[scc_policy_d['activated']])
@@ -452,14 +399,14 @@ def _define_activate_scc_policy(switch_obj, scc_wwn_l, activate_flag):
     global _scc_policy_capture_uris, _WAIT_TIME, _row_str
 
     fid = switch_obj.r_fid()
-    switch_name = brcddb_switch.best_switch_name(switch_obj, wwn=True, did=True, fid=True)
+    switch_name = brcddb_switch.best_switch_name(switch_obj, wwn=True, did=True, did_hex=True, fid=True)
     chassis_obj = switch_obj.r_chassis_obj()
     login_d = chassis_obj.r_get('scc_login_d')
     _row_str = login_d['row_str']
 
     # Login
     time.sleep(_WAIT_TIME)
-    session = api_int.login(login_d['user_id'], login_d['pw'], login_d['ip_addr'], login_d['sec'])
+    session = api_int.login(login_d['user_id'], login_d['pw'], login_d['ip_addr'])
     if fos_auth.is_error(session):
         brcdapi_log.log(['Failed to login to: ' + switch_name, fos_auth.formatted_error_msg(session)], echo=True)
         raise HaltProcessing
@@ -493,7 +440,7 @@ def _define_activate_scc_policy(switch_obj, scc_wwn_l, activate_flag):
 
         api_int.logout(session)
         time.sleep(_WAIT_TIME)
-        session = api_int.login(login_d['user_id'], login_d['pw'], login_d['ip_addr'], login_d['sec'])
+        session = api_int.login(login_d['user_id'], login_d['pw'], login_d['ip_addr'])
         if fos_auth.is_error(session):
             buf = 'Row: ' + _row_str + '. Failed to login to: ' + switch_name
             brcdapi_log.log([buf, fos_auth.formatted_error_msg(session)], echo=True)
@@ -554,7 +501,7 @@ def _define_activate_scc_policy(switch_obj, scc_wwn_l, activate_flag):
     else:  # We modified the policy, so logout and back in to pick up the changes
         api_int.logout(session)
         time.sleep(_WAIT_TIME)
-        session = api_int.login(login_d['user_id'], login_d['pw'], login_d['ip_addr'], login_d['sec'])
+        session = api_int.login(login_d['user_id'], login_d['pw'], login_d['ip_addr'])
         if fos_auth.is_error(session):
             buf = 'Row: ' + _row_str + '. Failed to login to: ' + switch_name
             brcdapi_log.log([buf, fos_auth.formatted_error_msg(session)], echo=True)
@@ -658,14 +605,14 @@ def _initial_capture(proj_obj, poll_l):
     # Login and capture the data
     for d in poll_l:
         # Frequently used:
-        ip_addr, user_id, pw, sec = d['ip_addr'], d['user_id'], d['pw'], d['security']
+        ip_addr, user_id, pw = d['ip_addr'], d['user_id'], d['pw']
         _row_str, fid = str(d['row']), d['fid']
         brcdapi_log.log('Processing row: ' + _row_str, echo=True)
         session = chassis_track_d.get(ip_addr, None)
         if session is None:
 
             # Login
-            session = api_int.login(user_id, pw, ip_addr, sec, proj_obj)
+            session = api_int.login(user_id, pw, ip_addr, proj_obj=proj_obj)
             if fos_auth.is_error(session):
                 brcdapi_log.log(
                     ['Row ' + _row_str + ': ' + 'Login failed. Error message is:',
@@ -690,7 +637,7 @@ def _initial_capture(proj_obj, poll_l):
         chassis_obj = proj_obj.r_chassis_obj(session['chassis_wwn'])
         chassis_obj.s_new_key(
             'scc_login_d',
-            dict(user_id=user_id, ip_addr=ip_addr, pw=pw, sec=sec, row_str=_row_str),
+            dict(user_id=user_id, ip_addr=ip_addr, pw=pw, row_str=_row_str),
             f=True
         )
 
@@ -737,7 +684,7 @@ def _determine_scc_membership(scc_switch_obj_l, add_l, remove_l, clr_flag):
     secondary_obj_l = list()  # Non-principal switch object to add to process_obj_l
     # Determine what WWNs should be in the SCC policy based on the input workbook
     scc_obj_d = dict()  # Switches from workbook. Key: Switch WWN. Value: Switch object
-    scc_wwn_l = add_l  # Absolute list of WWNs that should be in the SCC_POLICY membership list
+    scc_wwn_l = add_l.copy()  # Absolute list of WWNs that should be in the SCC_POLICY membership list
     for switch_obj in scc_switch_obj_l:
         _row_str = switch_obj.r_chassis_obj().r_get('scc_login_d/row_str')
         wwn = switch_obj.r_obj_key()
@@ -755,8 +702,8 @@ def _determine_scc_membership(scc_switch_obj_l, add_l, remove_l, clr_flag):
     for wwn in remove_l:
         switch_obj = scc_obj_d[wwn]
         if switch_obj is not None:
-            buf = 'Row: ' + _row_str + '. Cannot remove ' + wwn
-            buf += ' because it is the WWN of ' + brcddb_switch.best_switch_name(switch_obj, fid=True, did=True)
+            buf = 'Row: ' + _row_str + '. Cannot remove ' + wwn + ' because it is the WWN of '
+            buf += brcddb_switch.best_switch_name(switch_obj, fid=True, did=True, did_hex=True)
             brcdapi_log.log(buf, echo=True)
             raise HaltProcessing
         try:
@@ -791,7 +738,7 @@ def _final_validation(scc_switch_obj_l, scc_wwn_l, activate_flag):
         # Login
         time.sleep(_WAIT_TIME)
         login_d = switch_obj.r_chassis_obj().r_get('scc_login_d')
-        session = api_int.login(login_d['user_id'], login_d['pw'], login_d['ip_addr'], login_d['sec'])
+        session = api_int.login(login_d['user_id'], login_d['pw'], login_d['ip_addr'])
         if fos_auth.is_error(session):
             buf = 'Row ' + login_d['row_str'] + ': ' + 'Login failed during final validation. Error message is:'
             brcdapi_log.log([buf, fos_auth.formatted_error_msg(session)], echo=True)
@@ -802,7 +749,7 @@ def _final_validation(scc_switch_obj_l, scc_wwn_l, activate_flag):
 
         # Capture the SCC_POLICY data
         api_int.get_batch(session, switch_obj.r_project_obj(), _scc_policy_capture_uris, fid=switch_obj.r_fid())
-        switch_name = brcddb_switch.best_switch_name(switch_obj, wwn=True, did=True, fid=True)
+        switch_name = brcddb_switch.best_switch_name(switch_obj, wwn=True, did=True, did_hex=True, fid=True)
         hdr = 'Unexpected Defined SCC_POLICY for ' + switch_name
         if not _compare_membership(hdr, 'Defined', switch_obj.r_defined_scc(list()), 'Expected', scc_wwn_l):
             scc_policy_d['defined'] = 'validation_fail'
@@ -834,8 +781,6 @@ def pseudo_main(poll_l, add_l, remove_l, args_d):
     global _basic_capture_uris, _row_str
 
     ec = brcddb_common.EXIT_STATUS_OK
-
-    scc_wwn_d, scc_switch_obj_l = dict(), list()
 
     # Create a project
     proj_obj = brcddb_project.new('sec_policy', datetime.datetime.now().strftime('%d %b %Y %H:%M:%S'))
@@ -880,12 +825,12 @@ def pseudo_main(poll_l, add_l, remove_l, args_d):
     except HaltProcessing:
         if ec == brcddb_common.EXIT_STATUS_OK:
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    # except BaseException as e:
-    #     brcdapi_log.log(
-    #         'Row ' + _row_str + ': Programming error encountered.: ' + str(type(e)) + ': ' + str(e),
-    #         echo=True
-    #     )
-    #     ec = brcddb_common.EXIT_STATUS_API_ERROR
+    except BaseException as e:
+        brcdapi_log.log(
+            'Row ' + _row_str + ': Programming error encountered.: ' + str(type(e)) + ': ' + str(e),
+            echo=True
+        )
+        ec = brcddb_common.EXIT_STATUS_API_ERROR
 
     return ec
 

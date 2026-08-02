@@ -72,15 +72,17 @@ being collected.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.9     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.0     | 01 Aug 2026   | Removed obsolete HTTP access. Only HTTPS is supported.                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.9'
+__version__ = '4.1.0'
 
 import http.client
 import sys
@@ -134,7 +136,7 @@ _m_help += str(_MIN_SAMPLES) + '. Maximum: None.'
 _input_d = collections.OrderedDict()
 _input_d.update(
     i=dict(h='Required. Name of workbook containing login credentials and FID number for switches to be polled. '
-             '".xlsx" extension is automatically appended.'),
+             '".xlsx" extension is automatically appended. See stats_capture.xlsx as an example.'),
     o=dict(h='Required. Name of output file where raw data is to be stored. ".json" extension is automatically '
              'appended.'),
     p=dict(r=False, t='float', d=_DEFAULT_POLL_INTERVAL, h=_p_help),
@@ -180,7 +182,7 @@ def _login(proj_obj):
     switch_poll_d = proj_obj.rs_key('stats_c', dict())
     for d in switch_poll_d.values():
         try:
-            d['session'] = brcddb_int.login(d['user_id'], d['pw'], d['ip_addr'], d['security'], proj_obj)
+            d['session'] = brcddb_int.login(d['user_id'], d['pw'], d['ip_addr'], proj_obj)
             if fos_auth.is_error(d['session']):
                 brcdapi_log.log(
                     [

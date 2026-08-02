@@ -16,11 +16,13 @@ The license is free for single customer use (internal applications). Use of this
 redistribution, or service delivery for commerce requires an additional license. Contact jack_consoli@yahoo.com for
 details.
 
+ToDo - long distance setting and locked E-port, from CLI, not getting set
+
 **Description**
 
 Restores a switch to a previously captured chassis DB
 
-TODO enable effective zone configuration
+ToDo enable effective zone configuration
 
 **Prominent Data Structures**
 
@@ -116,15 +118,17 @@ each logical switch acted on.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.1.3     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 01 Aug 2026   | Remove CLI wait. This is now done automatically in brcdapi.brcdapi_rest. Gen 8 updates|
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.3'
+__version__ = '4.1.4'
 
 import collections
 import pprint
@@ -155,7 +159,7 @@ import brcddb.util.maps as util_maps
 import brcddb.util.compare as brcddb_compare
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
-_DEBUG = False   # When True, prints status to the log and console
+_DEBUG = True   # When True, prints status to the log and console. Also prints additional error messages to the log.
 # _STAND_ALONE: True: Executes as a standalone module taking input from the command line. False: Does not automatically
 # execute. This is useful when importing this module into another module that calls psuedo_main().
 _STAND_ALONE = True  # See note above
@@ -192,7 +196,6 @@ _switch_sum_template_d['Zone Changes'] = False
 _switch_sum_template_d['Enabled Zone Config'] = ''
 _switch_sum_template_d['MAPS Changes'] = False
 
-_cli_change_flag = False
 _DEFAULT_WAIT = 10  # Time to sleep waiting for the CLI and API to sync up
 _check_log = ' Check the log for details.'
 _MAX_LINE_LEN = 72  # Used to control how long help messages can be.
@@ -214,6 +217,7 @@ _basic_capture_kpi_l = [
     'running/' + brcdapi_util.bfc_sw_uri,
     'running/' + brcdapi_util.bfc_port_uri,
     'running/' + brcdapi_util.bifc_uri,
+    'running/' + brcdapi_util.bfc_uri,
 ]
 _full_capture_l = _basic_capture_kpi_l.copy()
 _all_fos_cli_l = [
@@ -242,7 +246,6 @@ _restore_parameters = dict(
     # sec='Security features.',
     # l='Logging. WIP',
     # fcr='Fibre Channel Routing. WIP',
-    # ficon='FICON. WIP',
     # fcip='Fibre Channel Over IP. WIP',
     z='Zoning. Restores the zoning configurations for each logical fabric. If "ze" is not specified and a zone '
       'configuration is enabled in the target switch, the active zones and associated aliases will remain unchanged.',
@@ -270,9 +273,9 @@ _eh = [
     dict(b='Refers to the chassis being rebuilt.', p='Target   '),
     dict(b=('',
             'The intended purpose of this script is primarily to be used as a template either for deploying new or '
-            'reallocating resources. It may be desirable therefore to only update certain configuration parameters, '
-            'certain FIDs, or to map FIDs on the restore chassis to different FIDs on the target chassis. The options '
-            '-p and -fm are used for this purpose.',
+            'reallocating resources. It may be desirable to only update certain configuration parameters, certain FIDs,'
+            ' or to map FIDs on the restore chassis to different FIDs on the target chassis. The options -p and -fm are'
+            ' used for this purpose.',
             '')),
     dict(b=('A capture must be performed from the restore chassis prior to using this module. It is not necessary to '
             'collect all data; however, keep in mind that whatever data wasn\'t collected can\'t be restored.',
@@ -391,13 +394,15 @@ def _send_request(session, http_method, key, content, fid=None):
     :return: Error messages.
     :rtype: list
     """
+    global _DEBUG
+
     el = list()
     if content is None or len(content) == 0:
         return el
     uri = 'running/' + key
-    obj = brcdapi_rest.send_request(session, uri, http_method, {key.split('/').pop(): content}, fid=fid)
+    obj = brcdapi_rest.send_request(session, uri, http_method, {key.split('/').pop(): content}, fid=fid, debug=_DEBUG)
     if fos_auth.is_error(obj):
-        el.extend(['Error updating chassis URI:', '  ' + uri, 'FOS error:', fos_auth.formatted_error_msg(obj)])
+        el.extend(['ERROR: Updating chassis URI:', '  ' + uri, 'FOS error:', fos_auth.formatted_error_msg(obj)])
 
     return el
 
@@ -455,13 +460,13 @@ def _patch_content(r_obj, t_obj, d):
         for obj in (r_obj, t_obj):
             obj_type = str(class_util.get_simple_class_type(obj))
             if obj_type not in ('ChassisObj', 'SwitchObj'):
-                el.append('Invalid object type: ' + obj_type + '. ' + d['e'] + '.' + _check_log)
+                el.append('ERROR: Invalid object type: ' + obj_type + '. ' + d['e'] + '.' + _check_log)
         if type(r_obj) is not type(t_obj):
-            el.append('Object types do not match. ' + d['e'] + '.' + _check_log)
+            el.append('ERROR: Object types do not match. ' + d['e'] + '.' + _check_log)
         if key is None:
-            el.append('Missing k in dictionary for ' + d['e'] + '.' + _check_log)
+            el.append('ERROR: Missing k in dictionary for ' + d['e'] + '.' + _check_log)
         if not isinstance(rw_d, dict):
-            el.append('rw missing in dictionary for ' + d['e'] + '.' + _check_log)
+            el.append('ERROR: rw missing in dictionary for ' + d['e'] + '.' + _check_log)
 
         # Figure out the differences
         if len(el) == 0:
@@ -476,8 +481,8 @@ def _patch_content(r_obj, t_obj, d):
             rd.update({key.split('/').pop(): content_d})
 
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, obj, r_obj, t_obj], full=True))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d, obj, r_obj, t_obj], full=True))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
 
     return el, rd
 
@@ -501,19 +506,19 @@ def _post_content(r_obj, d):
         # Validate the input
         obj_type = str(class_util.get_simple_class_type(r_obj))
         if obj_type not in ('ChassisObj', 'SwitchObj'):
-            el.append('Invalid object type: ' + obj_type + '. ' + d['e'])
+            el.append('ERROR: Invalid object type: ' + obj_type + '. ' + d['e'])
         if key is None:
-            el.append('Missing k in dictionary for ' + d['e'])
+            el.append('ERROR: Missing k in dictionary for ' + d['e'])
         if not isinstance(rw_d, dict):
-            el.append('rw missing in dictionary for ' + d['e'])
+            el.append('ERROR: rw missing in dictionary for ' + d['e'])
 
         # Figure out what the return content should be
         for key in [k for k, v in rw_d.items() if v]:
             rd.update({key.split('/').pop(): _conv_lookup_act(r_obj, key)})
 
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, r_obj], full=True))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d, r_obj], full=True))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
 
     return el, rd
 
@@ -566,18 +571,12 @@ def _conv_lookup_act(obj, key, sub_key=None):
     return None
 
 
-def _conv_ficon_lookup_act(obj, key, sub_key=None):
-    """Returns None of any parameter with a FICON switch that must not be set. See _conv_none_act() for parameters"""
-    try:
-        if obj.r_get('r_is_ficon', False):
-            return None
-        full_key = key if sub_key is None else key + '/' + sub_key
-        return copy.deepcopy(gen_util.get_key_val(obj, full_key))
-    except BaseException as e:
-        ml = ['Key: ' + str(key), 'sub_key: ' + str(sub_key), str(type(e)) + ': ' + str(e)]
-        ml.extend(_fmt_errors(obj, full=True))
-        brcdapi_log.exception(ml, echo=True)
-    return None
+def _conv_sw_idid_act(obj, key, sub_key=None):
+    """Returns None for FICON switch else the URL for key. See _conv_none_act() for parameters"""
+    if obj.r_is_ficon():  # This function is only called when obj is a SwitchObj
+        return None
+    full_key = key if sub_key is None else key + '/' + sub_key
+    return copy.deepcopy(gen_util.get_key_val(obj, full_key))
 
 
 def _default_user_pw_act(obj, key, sub_key=None):
@@ -612,17 +611,18 @@ def _fm_switch_obj(ml, chassis_obj, fid_map_d, v, fm_index):
     :rtype: None
     """
     if v is None:
-        ml.append('No parameters specified with -fm option at index ' + str(fm_index))
+        ml.append('ERROR: No parameters specified with -fm option at index ' + str(fm_index))
     else:
         try:
             fid_map_d.update(r_switch_obj=chassis_obj.r_switch_obj_for_fid(int(v)))
             if fid_map_d['r_switch_obj'] is None:
-                ml.append('Resource FID, ' + v + ', is not present in the restore chassis.')
+                ml.append('ERROR: Resource FID, ' + v + ', is not present in the restore chassis.')
             else:
                 fid_map_d.update(r_fid=int(v))
                 return
         except ValueError:
-            ml.append('Resource FID, ' + v + ', must be an integer in the range: 1-128 at index ' + str(fm_index))
+            ml.append('ERROR: Resource FID, ' + v + ', must be an integer in the range: 1-128 at index ' +
+                      str(fm_index))
     fid_map_d.update(r_switch_obj=None)  # If we got this far, we didn't find the switch object
 
 
@@ -630,8 +630,8 @@ def _fm_fid(ml, chassis_obj, fid_map_d, v, fm_index):
     """Fills in t_fid in the fid_map_d. See _fm_switch_obj() for parameter definitions"""
     for fid in gen_util.range_to_list(v):
         if fid < 1 or fid > 128:
-            ml.append('Target FID, ' + v + ', in -fm parameter must be an integer in the range: 1-128 at index ' +
-                      str(fm_index))
+            ml.append('ERROR: Target FID, ' + v +
+                      ', in -fm parameter must be an integer in the range: 1-128 at index ' + str(fm_index))
             continue
         else:
             fid_map_d['t_fid'] = fid
@@ -645,7 +645,7 @@ def _fm_fid(ml, chassis_obj, fid_map_d, v, fm_index):
         fid_map_d.update(t_fid=fid)
         return
     except ValueError:
-        ml.append('Target FID, ' + v + ', in -fm parameter must be an integer in the range: 1-128 at index ' +
+        ml.append('ERROR: Target FID, ' + v + ', in -fm parameter must be an integer in the range: 1-128 at index ' +
                   str(fm_index))
 
 
@@ -654,7 +654,7 @@ def _fm_fabric_name(ml, chassis_obj, fid_map_d, v, fm_index):
     if fid_map_d['r_switch_obj'] is None:
         return
     if v is None or len(v) == 0:
-        fabric_name = brcddb_fabric.best_fab_name(fid_map_d['r_switch_obj'].r_fabric_obj())
+        fabric_name = brcddb_fabric.best_fab_name(fid_map_d['r_switch_obj'])
         if ':' in fabric_name:
             fabric_name = None  # The WWN is returned if the fabric isn't named
         fid_map_d.update(fab_name=fabric_name)
@@ -675,7 +675,7 @@ def _fm_did(ml, chassis_obj, fid_map_d, v, fm_index):
             raise ValueError
         fid_map_d.update(did=did)
     except ValueError:
-        ml.append('Target DID, ' + v + ', must be an integer in the range: 1-239 at index ' + str(fm_index))
+        ml.append('ERROR: Target DID, ' + v + ', must be an integer in the range: 1-239 at index ' + str(fm_index))
 
 
 def _fm_switch_name(ml, chassis_obj, fid_map_d, v, fm_index):
@@ -726,11 +726,11 @@ def _data_capture(cd, d):
         if api_int.get_batch(cd['session'], cd['t_proj_obj'], d['rl']):
             cd['t_chassis_obj'] = cd['t_proj_obj'].r_chassis_obj(cd['session']['chassis_wwn'])
         else:
-            _data_collect_error_l.append('Error(s) capturing data. Check the log for details')
+            _data_collect_error_l.append('ERROR: Error capturing data. Check the log for details')
 
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d]))
-        _data_collect_error_l.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d]))
+        _data_collect_error_l.append('ERROR: Software error. Search the log for EXCEPTION:')
 
     if len(_data_collect_error_l) > 0:
         raise FIDMapError
@@ -765,11 +765,12 @@ def _build_fid_map(cd, d):
     did_range_buf = ', is not a valid DID. DIDs must be a decimal integer from 1-239'
     r_chassis_obj, t_chassis_obj, fid_map_d = cd['r_chassis_obj'], cd['t_chassis_obj'], cd['fid_map_d']
     if r_chassis_obj is None:
-        ml.append('A chassis object was not found in the project.')
+        ml.append('ERROR: A chassis object was not found in the project.')
     else:
         r_fid_l = r_chassis_obj.r_fid_list()
         if len(r_fid_l) == 0:
-            ml.append('No logical switches found in the chassis. This typically occurs with non-VF enabled chassis')
+            ml.append('ERROR: No logical switches found in the chassis. This typically occurs with non-VF enabled ' +
+                      'chassis')
     if len(ml) > 0:
         return ml, fid_map_d
 
@@ -780,16 +781,16 @@ def _build_fid_map(cd, d):
         try:
             r_fid = int(fid_l[0])
         except IndexError:
-            ml.append('There are no parameters at index ' + str(fm_index) + ' after splitting -fm input by ";"')
+            ml.append('ERROR: There are no parameters at index ' + str(fm_index) + ' after splitting -fm input by ";"')
             fm_index += 1
             continue
         except ValueError:
-            ml.append('The restore FID at index ' + str(fm_index) + ', ' + fid_l[0] + fid_range_buf)
+            ml.append('ERROR: The restore FID at index ' + str(fm_index) + ', ' + fid_l[0] + fid_range_buf)
             fm_index += 1
             continue
         r_switch_obj = r_chassis_obj.r_switch_obj_for_fid(r_fid)
         if r_switch_obj is None:
-            ml.append('FID ' + fid_l[0] + ' does not exist in the restore chassis.')
+            ml.append('ERROR: FID ' + fid_l[0] + ' does not exist in the restore chassis.')
             fm_index += 1
             continue
 
@@ -811,23 +812,18 @@ def _build_fid_map(cd, d):
         try:
             t_fid_l = gen_util.range_to_list(fid_l[1])
         except ValueError:
-            ml.append('The target FID, ' + fid_l[1] + ', at index ' + str(fm_index) + fid_range_buf)
+            ml.append('ERROR: The target FID, ' + fid_l[1] + ', at index ' + str(fm_index) + fid_range_buf)
         for t_fid in t_fid_l:
             if t_fid < 1 or t_fid > 128:
-                ml.append('The target FID, ' + str(t_fid) + ', at index ' + str(fm_index) + fid_range_buf)
-            # t_switch_obj = t_chassis_obj.r_switch_obj_for_fid(t_fid)
-            # if t_switch_obj is None:
-            #     wl.append(t_fid)
-            #     fm_index += 1
-            #     continue
+                ml.append('ERROR: The target FID, ' + str(t_fid) + ', at index ' + str(fm_index) + fid_range_buf)
             try:
                 t_did = r_switch_obj.r_did() if len(fid_l[3]) == 0 else int(fid_l[3])
             except ValueError:
-                ml.append('The target DID, ' + str(fid_l[3]) + did_range_buf)
+                ml.append('ERROR: The target DID, ' + str(fid_l[3]) + did_range_buf)
                 fm_index += 1
                 continue
             if t_did < 1 or t_did > 239:
-                ml.append('The target DID, ' + str(t_did) + did_range_buf)
+                ml.append('ERROR: The target DID, ' + str(t_did) + did_range_buf)
                 fm_index += 1
                 continue
             fid_map_d.update({t_fid: dict(
@@ -860,8 +856,8 @@ def _data_clear(cd, d):
     except KeyError:
         pass  # chassis_wwn and perhaps t_proj_obj does not exist if no data has been captured yet.
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, cd]))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d, cd]))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
     return el
 
 
@@ -874,12 +870,12 @@ def _del_switches(cd, d):
             fid = switch_obj.r_fid()
             obj = brcdapi_switch.delete_switch(cd['session'], fid, echo=True)
             if fos_auth.is_error(obj):
-                el.extend(['Error deleting ' + switch_name, fos_auth.formatted_error_msg(obj)])
+                el.extend(['ERROR: Error deleting ' + switch_name, fos_auth.formatted_error_msg(obj)])
             else:
                 _switch_summary(cd, switch_name)['Removed'] = True
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, cd, obj], full=True))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d, cd, obj], full=True))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
     return el
 
 
@@ -894,7 +890,7 @@ def _vf_enable(cd, d):
                 # Set VF
                 obj = brcdapi_rest.send_request(cd['session'], d['k'], d['m'], content_d)
                 if fos_auth.is_error(obj):
-                    el.extend(['Error updating chassis URI: ' + d['k'] + ', Index: ' + d['e'],
+                    el.extend(['ERROR: Error updating chassis URI: ' + d['k'] + ', Index: ' + d['e'],
                                'FOS error:',
                                fos_auth.formatted_error_msg(obj)])
                 else:
@@ -902,8 +898,8 @@ def _vf_enable(cd, d):
                 # Re-enable chassis. Note: If the chassis was disabled from the start, we wouldn't have gotten this far
                 el.extend(_enable_disable_chassis(cd['session'], True, '_vf_enable, index: ' + d['e']))
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, cd, obj], full=True))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d, cd, obj], full=True))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
     return el
 
 
@@ -923,7 +919,7 @@ def _restore_switches(cd, d):
                                                    r_switch_obj.r_is_ficon(),
                                                    echo=True)
                 if fos_auth.is_error(obj):
-                    el.extend(['Error creating ' + switch_name + ', ' + d['e'], fos_auth.formatted_error_msg(obj)])
+                    el.extend(['ERROR: Creating ' + switch_name + ', ' + d['e'], fos_auth.formatted_error_msg(obj)])
                 else:
                     _switch_summary(cd, switch_name)['Added'] = True
 
@@ -934,13 +930,13 @@ def _restore_switches(cd, d):
                 }
                 obj = brcdapi_switch.fibrechannel_switch(cd['session'], t_fid, content_d)
                 if fos_auth.is_error(obj):
-                    buf = 'Error setting Domain ID, ' + str(fm_d['t_did']) + ' and switch name ' + switch_name +\
+                    buf = 'ERROR: setting Domain ID, ' + str(fm_d['t_did']) + ' and switch name ' + switch_name +\
                           fm_d['t_switch_name'] + ' for FID ' + str(t_fid)
                     el.extend([buf, d['e'] + ': FOS error is:', fos_auth.formatted_error_msg(obj)])
 
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, 'Parameter d:', d], full=True))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, 'Parameter d:', d], full=True))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
 
     return el
 
@@ -953,7 +949,7 @@ def _restore_ports(cd, d):
             r_switch_obj = fm_d['r_switch_obj']
             t_switch_obj = t_chassis_obj.r_switch_obj_for_fid(t_fid)
             if t_switch_obj is None:
-                el.append('Could not restore ports. FID ' + str(t_fid) + ' does not exist')
+                el.append('ERROR: Could not restore ports. FID ' + str(t_fid) + ' does not exist')
                 continue
             switch_name = fm_d['t_switch_name'] + ' FID: ' + str(t_fid)
 
@@ -985,7 +981,10 @@ def _restore_ports(cd, d):
                                                               best=True,
                                                               skip_default=cd['act_d'].get('vfc', False))
                 if len(fault_l) > 0:
-                    el.extend(['Error adding ports to ' + switch_name, '  ' + d['e'], '  Ports: ' + ', '.join(fault_l)])
+                    el.extend([
+                        'ERROR: Error adding ports to ' + switch_name, '  ' + d['e'],
+                        '  Ports: ' + ', '.join(fault_l)
+                    ])
 
             switch_sum_d = _switch_summary(cd, switch_name)
             switch_sum_d['Ports Added'] += len(success_l)
@@ -995,7 +994,7 @@ def _restore_ports(cd, d):
             switch_sum_d['Ports Removed'] += len(success_l)
 
             # Bind any addresses that need to be bound.
-            if brcddb_switch.switch_type(t_switch_obj) == 'FICON':
+            if t_switch_obj.c_switch_type() == 'ficon':
                 port_d = dict()
                 for port in success_l:
                     r_port_obj = r_switch_obj.r_port_obj(port)
@@ -1007,8 +1006,9 @@ def _restore_ports(cd, d):
                     brcdapi_port.bind_addresses(cd['session'], t_fid, port_d)
 
     except BaseException as e:
-        brcdapi_log.exception(['Software error. Exception:'] + _fmt_errors(['Exception:', e, 't_fid :' + str(t_fid)]))
-        el.append('Software error. Check the log for "Software error. Exception:"')
+        brcdapi_log.exception(['ERROR: Software error. Exception:'] +
+                              _fmt_errors(['Exception:', e, 't_fid :' + str(t_fid)]))
+        el.append('ERROR: Software error. Check the log for "Software error. Exception:"')
 
     return el
 
@@ -1019,24 +1019,26 @@ def _none_act(cd, d):
 
 def _fibrechannel_switch(cd, d):
     """Actions for brocade-fibrechannel-switch. See _data_capture() for parameter definitions"""
+    # ToDo - Add mod for this
     el = list()
     try:
         brcdapi_log.log('_fibrechannel_switch', echo=True)
         el.append('WIP: _fibrechannel_switch')
     except BaseException as e:
-        brcdapi_log.exception(['Software error. Exception:'] + _fmt_errors(e))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(['Software error.'] + _fmt_errors(e))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
     return el
 
 
 def _trunk_act(cd, d):
     """Re-create trunk groups. See _data_capture() for parameter definitions"""
     el = list()
+    # ToDo - Finish this
     try:
         el.append('WIP: _trunk_act')
     except BaseException as e:
-        brcdapi_log.exception(['Software error. Exception:'] + _fmt_errors(e))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(['Software error.'] + _fmt_errors(e))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
     return el
     # rl = [{'trunk-index': d['trunk-index'], 'trunk-members': d['trunk-members']} for d in
     #       gen_util.convert_to_list(d['r_obj'].r_get(d['key']))]
@@ -1067,8 +1069,8 @@ def _user_act(cd, d):
         if len(content_l) > 0:
             return _send_request(cd['session'], d['m'], key, content_l)
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, cd], full=True))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d, cd], full=True))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
         
     return el
 
@@ -1085,14 +1087,14 @@ def _zone_restore(cd, d):
         if r_fab_obj is None:
             continue
         t_switch_obj = t_chassis_obj.r_switch_obj_for_fid(t_fid)
-        error_preamble = 'Could not restore zone configuration for FID ' + str(t_fid)
+        error_preamble = 'ERROR: Could not restore zone configuration for FID ' + str(t_fid)
         if t_switch_obj is None:
             el.append(error_preamble + '. FID does not exist in target switch.')
             continue
         t_fab_obj = t_switch_obj.r_fabric_obj()
         if t_fab_obj is None:
             if t_switch_obj.r_is_enabled():
-                el.append('Software error. ' + error_preamble + '. Fabric for switch does not exist.')
+                el.append(error_preamble + 'Software error. Fabric for switch does not exist.')
             else:
                 el.append(error_preamble + ' because the switch is disabled.')
             continue
@@ -1113,9 +1115,9 @@ def _zone_restore(cd, d):
                 eff_zone_config = r_fab_obj.r_defined_eff_zonecfg_key()
             obj = api_zone.replace_zoning(cd['session'], r_fab_obj, t_fid, eff=eff_zone_config)
             if fos_auth.is_error(obj):
-                buf = 'Failed to replace zoning in FID ' + str(t_fid)
+                buf = 'ERROR: Failed to replace zoning in FID ' + str(t_fid)
                 brcdapi_log.log([buf] + _fmt_errors(fos_auth.formatted_error_msg(obj)), echo=True)
-                el.append('Failed to replace zoning in FID ' + str(t_fid))
+                el.append('ERROR: Failed to replace zoning in FID ' + str(t_fid))
             else:
                 _switch_summary(cd, fm_d['t_switch_name'] + ' FID: ' + str(t_fid))['Zone Changes'] = True
 
@@ -1138,18 +1140,18 @@ def _chassis_update_act(cd, d):
             brcddb_chassis.best_chassis_name(r_chassis_obj), brcddb_chassis.best_chassis_name(t_chassis_obj)
         rd, td = r_chassis_obj.r_get(key), t_chassis_obj.r_get(key)
         if rd is not None and type(td) is not type(rd):
-            el.append(key + ' not supported in target chassis ' + t_name)
+            el.append('ERROR: ' + key + ' not supported in target chassis ' + t_name)
         elif td is not None and not isinstance(rd, type(td)):
-            el.append(key + ' not supported in restore chassis ' + r_name)
+            el.append('ERROR: ' + key + ' not supported in restore chassis ' + r_name)
         if len(el) > 0:
             return el
         for k, method in rw_d.items():
             r_val, t_val = method(rd, k), method(td, k)
             if t_val is not None and type(r_val) is not type(t_val):
-                el.append(key + '/' + str(k) + ' not supported in restore chassis ' + r_name)
+                el.append('ERROR: ' + key + '/' + str(k) + ' not supported in restore chassis ' + r_name)
                 continue
             elif r_val is not None and type(t_val) is not type(r_val):
-                el.append(key + '/' + str(k) + ' not supported in target chassis ' + t_name)
+                el.append('ERROR: ' + key + '/' + str(k) + ' not supported in target chassis ' + t_name)
                 continue
             if d['m'] == 'POST':
                 content_l.append({k: r_val})
@@ -1158,19 +1160,23 @@ def _chassis_update_act(cd, d):
         if len(content_l) > 0:
             return _send_request(cd['session'], d['m'], key, content_l)
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, cd], full=True))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d, cd], full=True))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
     return el
 
 
 def _switch_update_act(cd, d):
     """Switch updates that do not have any special considerations. See _data_capture() for parameter definitions"""
-    el, content_d = list(), dict()
+    global _DEBUG
+
+    el, content_d, step = list(), dict(), 0
 
     for t_fid, fm_d in cd['fid_map_d'].items():
+        brcdapi_log.log('_switch_update_act sub-step: ' + str(step), _DEBUG)
+        step += 1
         t_switch_obj = cd['t_chassis_obj'].r_switch_obj_for_fid(t_fid)
         if t_switch_obj is None:
-            el.append('Could not update switch configuration. FID ' + str(t_fid) + ' does not exist')
+            el.append('ERROR: Could not update switch configuration. FID ' + str(t_fid) + ' does not exist')
             continue
         r_switch_obj = cd['fid_map_d'][t_fid]['r_switch_obj']
         try:
@@ -1180,11 +1186,11 @@ def _switch_update_act(cd, d):
             for k, method in rw_d.items():
                 r_val, t_val = method(r_switch_obj, key, k), method(t_switch_obj, key, k)
                 if t_val is not None and type(r_val) is not type(t_val):
-                    el.append(key + '/' + str(k) + ' missing in restore switch ' +
+                    el.append('ERROR: ' + key + '/' + str(k) + ' missing in restore switch ' +
                               brcddb_switch.best_switch_name(r_switch_obj, fid=True))
                     continue
-                elif r_val is not None and type(t_val) is not type(r_val):
-                    el.append(key + '/' + str(k) + ' not supported in target chassis ' +
+                elif k != 'principal-priority' and r_val is not None and type(t_val) is not type(r_val):
+                    el.append('ERROR: ' + key + '/' + str(k) + ' not supported in target chassis ' +
                               brcddb_switch.best_switch_name(t_switch_obj, fid=True))
                     continue
                 if d['m'] == 'POST':
@@ -1193,11 +1199,12 @@ def _switch_update_act(cd, d):
                     content_d.update({k: r_val})
 
             # Send the changes to the target switch
+            content_d = d.get('mod', _mod_no_change)(t_switch_obj, content_d)
             if len(content_d) > 0:
                 if 'brocade-fibrechannel-switch' in key:
                     obj = brcdapi_switch.fibrechannel_switch(cd['session'], t_fid, content_d, t_switch_obj.r_obj_key())
                     if fos_auth.is_error(obj):
-                        el.extend(['Error updating chassis URI:',
+                        el.extend(['ERROR: Error updating chassis URI:',
                                    '  ' + key,
                                    pprint.pformat(content_d),
                                    'FOS error:',
@@ -1206,8 +1213,8 @@ def _switch_update_act(cd, d):
                     el.extend(_send_request(cd['session'], d['m'], key, content_d, fid=t_fid))
 
         except BaseException as e:
-            brcdapi_log.exception(_fmt_errors(['Exception:', e, d, cd], full=True))
-            el.append('Software error. Check the log for details')
+            brcdapi_log.exception(_fmt_errors([e, d, cd], full=True))
+            el.append('ERROR: Software error. Search the log for EXCEPTION:')
 
     return el
 
@@ -1216,11 +1223,13 @@ def _fcr_update_act(cd, d):
     """Switch updates that do not have any special considerations. See _data_capture() for parameter definitions"""
     el = list()
 
+    # ToDo function description is wrong. What does this have to do with FCR?
+
     for t_fid, fm_d in cd['fid_map_d'].items():
-        t_switch_type = brcddb_switch.switch_type(cd['t_chassis_obj'].r_switch_obj_for_fid(t_fid))
-        r_switch_type = brcddb_switch.switch_type(cd['fid_map_d'][t_fid]['r_switch_obj'])
+        t_switch_type = cd['t_chassis_obj'].r_switch_obj_for_fid(t_fid).c_switch_type()
+        r_switch_type = cd['fid_map_d'][t_fid]['r_switch_obj'].c_switch_type()
         if isinstance(t_switch_type, str) and isinstance(r_switch_type, str):
-            if r_switch_type == 'Base' and t_switch_type == 'Base':
+            if r_switch_type == 'base' and t_switch_type == 'base':
                 # Modify the FID map in cd so _switch_update_act() can be called
                 fcr_cd = cd.copy()
                 fcr_cd.update(fid_map_d=dict())
@@ -1232,64 +1241,64 @@ def _fcr_update_act(cd, d):
     return el
 
 
-def _port_config_cli(el, r_port_obj, t_port_obj):
-    # ToDo This is a hack until long distance modes are supported in the API
-    # Since there is no way to determine what the -distance setting was for LS mode, treat it like LD mode with the
-    # current number of reserved buffers for the port. The flaw with this is that if the link speed is ever changed
-    # the number of reserved buffers will not be correct. There is no way to tell if -distance was specified with the
-    # portcfglongdistance command or what the value was. Similarly, there is no way to determine if -buffers was
-    # specified with LD mode, so I'm just assuming it wasn't.
+def _port_config_cli(r_port_obj, t_port_obj):
+    """Builds list of CLI commands for a port. Limited to portcfg and portbuffer at this time.
 
+    :param r_port_obj: Port object from recovery switch
+    :type r_port_obj: brcddb.class.port.PortObj
+    :param r_port_obj: Port object from target switch
+    :type r_port_obj: brcddb.class.port.PortObj
+    :return: List of CLI commands for this port
+    :rtype: list
+    """
     cli_l = list()
     if r_port_obj is None or t_port_obj is None:
         return cli_l
-
     r_portcfgshow_d = r_port_obj.r_get('fos_cli/portcfgshow')
-    t_portcfgshow_d = t_port_obj.r_get('fos_cli/portcfgshow', dict())
     r_portbuffershow_d = r_port_obj.r_get('fos_cli/portbuffershow')
-    if r_portcfgshow_d is None or r_portbuffershow_d is None:
+    if not isinstance(r_portcfgshow_d, dict) or not isinstance(r_portbuffershow_d, dict):
         return cli_l
-    t_port_num = fos_cli.cli_port(t_port_obj.r_obj_key())
-    if isinstance(r_portcfgshow_d, dict) and isinstance(r_portbuffershow_d, dict):
 
-        # Locked E-Port
-        r_val, t_val = r_portcfgshow_d.get('Locked E_Port', None), t_portcfgshow_d.get('Locked E_Port', None)
-        if r_val is not None:
-            if type(r_val) is not type(t_val) or r_val != t_val:
-                buf = '2' if r_val == 'ON' else '1'
-                cli_l.append('portcfgeport ' + t_port_num + ' -p ' + buf)
+    t_portcfgshow_d = t_port_obj.r_get('fos_cli/portcfgshow', dict())
+    t_port_num = t_port_obj.r_obj_key().replace('0/', '')  # FOS doesn't like leading 0/ for fixed port switches.
 
-        # Long distance mode
-        r_val, t_val = r_portcfgshow_d.get('Long Distance', None), t_portcfgshow_d.get('Long Distance', None)
-        if r_val is not None:
-            if r_val == 'LS':
-                r_val = 'LD'  # Treating LS and LD the same
-            r_vc_link_init = str(r_port_obj.r_get('fibrechannel/vc-link-init'))
-            t_vc_link_init = str(t_port_obj.r_get('fibrechannel/vc-link-init'))
-            r_buffers = str(r_port_obj.r_get('fibrechannel/reserved-buffers') - 6)
-            t_buffers = str(r_port_obj.r_get('fibrechannel/reserved-buffers') - 6)
-            try:
-                if type(r_val) is not type(t_val) or r_val != t_val:
-                    raise Found
-                if type(r_vc_link_init) is not type(t_vc_link_init) or r_vc_link_init != t_vc_link_init:
-                    raise Found
-                if type(r_buffers) is not type(t_buffers) or r_buffers != t_buffers:
-                    raise Found
-            except Found:
-                if r_val == '..':
-                    cli_l.append('portcfglongdistance ' + t_port_num + ' L0')
-                elif r_val == 'LS' or r_val == 'LD':
-                    cli_l.append('portcfglongdistance ' + t_port_num + ' LD ' + r_vc_link_init + ' -buffers ' +
-                                 r_buffers)
-                elif r_val == 'LE':
-                    cli_l.append('portcfglongdistance ' + t_port_num + ' LE ' + r_vc_link_init)
+    # Locked E-Port (portcfgeport)
+    r_e_port = r_portcfgshow_d.get('Locked E_Port', '..')
+    if r_e_port != t_portcfgshow_d.get('Locked E_Port', '..'):
+        cli_l.append('portcfgeport ' + t_port_num + ' -p ' + '2' if r_e_port == 'ON' else '1')
 
-        # ISL R_RDY Mode
-        r_val, t_val = r_portcfgshow_d.get('ISL R_RDY Mode', None), t_portcfgshow_d.get('ISL R_RDY Mode', None)
-        if r_val is not None:
-            if type(r_val) is not type(t_val) or r_val != t_val:
-                buf = '1' if r_val == 'ON' else '0'
-                cli_l.append('portcfgislmode ' + t_port_num + ' ' + buf)
+    # Long distance mode (portcfglongdistance)
+    # ToDo - If the only change for LD or LS was the number of reserved credits, that gets missed.
+    r_vc_init = '1' if r_portcfgshow_d.get('VC Link Init', '..') == 'ON' else '0'
+    t_vc_init = '1' if t_portcfgshow_d.get('VC Link Init', '..') == 'ON' else '0'
+    r_ld, t_ld = r_portcfgshow_d.get('Long Distance', '..'), t_portcfgshow_d.get('Long Distance', '..')
+    if r_ld == 'L0':
+        if t_ld != r_ld:
+            cli_l.append('portcfglongdistance ' + t_port_num + ' L0')
+    elif r_ld == 'LE':
+        if t_ld != r_ld or r_vc_init != t_vc_init:
+            cli_l.append('portcfglongdistance ' + t_port_num + ' LE ' + r_vc_init)
+    elif r_ld == 'LD':
+        if t_ld != r_ld or r_vc_init != t_vc_init:
+            # There is no easy way of know if it was configured for distance or buffers or the length or number of
+            # buffers, so just set the distance to 100 Km
+            cli_l.append('portcfglongdistance ' + t_port_num + ' LD ' + r_vc_init + ' -distance 100')
+    elif r_ld == 'LS':
+        try:
+            r_max_resv = max(int(r_portbuffershow_d['max_resv']) - 6, 20)
+            if t_ld != r_ld or r_vc_init != t_vc_init:
+                # There is no easy way of know if it was configured for distance or buffers, but I do know how many
+                # buffers were reserved. max_resv is always the number of required buffers + 6, so back out the 6
+                cli_l.append('portcfglongdistance ' + t_port_num + ' LS ' + r_vc_init + ' -buffers ' + str(r_max_resv))
+        except (KeyError, ValueError):
+            if t_ld != r_ld or r_vc_init != t_vc_init:
+                # There is a FOS bug if we get here. Just set the maximum distance
+                cli_l.append('portcfglongdistance ' + t_port_num + ' LS ' + r_vc_init + ' -distance 100')
+
+    # ISL R_RDY Mode (portcfgislmode)
+    r_r_rdy, t_r_rdy = r_portcfgshow_d.get('ISL R_RDY Mode', '..'), t_portcfgshow_d.get('ISL R_RDY Mode', '..')
+    if r_r_rdy != t_r_rdy:
+        cli_l.append('portcfgislmode ' + t_port_num + ', ' + '1' if r_r_rdy == 'ON' else '0')
 
     return cli_l
 
@@ -1302,7 +1311,7 @@ def _port_update_act(cd, d):
         for t_fid, fm_d in cd['fid_map_d'].items():
             t_switch_obj = cd['t_chassis_obj'].r_switch_obj_for_fid(t_fid)
             if t_switch_obj is None:
-                el.append('Could not update port configurations. FID ' + str(t_fid) + ' does not exist')
+                el.append('ERROR: Could not update port configurations. FID ' + str(t_fid) + ' does not exist')
                 continue
             r_switch_obj = cd['fid_map_d'][t_fid]['r_switch_obj']
 
@@ -1320,7 +1329,7 @@ def _port_update_act(cd, d):
                     if r_val is None and t_val is None:
                         continue
                     if r_val is None or t_val is None:
-                        el.append(key + '/' + str(k) + ' not restored in port ' + t_port_obj.r_obj_key())
+                        el.append('ERROR: ' + key + '/' + str(k) + ' not restored in port ' + t_port_obj.r_obj_key())
                         continue
                     if d['m'] == 'POST':
                         sub_d.update({k: r_val})
@@ -1334,41 +1343,28 @@ def _port_update_act(cd, d):
                 el.extend(_send_request(cd['session'], d['m'], d['k'], content_l, fid=t_fid))
 
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, cd], full=True))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d, cd], full=True))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
+
     return el
-
-
-def _port_cli_wait_act(cd, d):
-    """Checks to see if CLI commands were issued and sleeps to allow the API and CLI to sync up. See _data_capture() \
-    for parameter definitions"""
-    global _cli_change_flag, _DEFAULT_WAIT
-    if _cli_change_flag:
-        fos_cli.cli_wait(_DEFAULT_WAIT)
-        _cli_change_flag = False
-    return list()
 
 
 def _port_cli_update_act(cd, d):
     """Port updates that must be done via the CLI. See _data_capture() for parameter definitions"""
-    global _cli_change_flag
-
     el = list()
 
     for t_fid, fm_d in cd['fid_map_d'].items():
         cli_l = list()
         t_switch_obj = cd['t_chassis_obj'].r_switch_obj_for_fid(t_fid)
         if t_switch_obj is None:
-            el.append('Could not update port configurations. FID ' + str(t_fid) + ' does not exist')
+            el.append('ERROR: Could not update port configurations. FID ' + str(t_fid) + ' does not exist')
             continue
         for r_port_obj in cd['fid_map_d'][t_fid]['r_switch_obj'].r_port_objects():
-            cli_l.extend(_port_config_cli(el, r_port_obj, t_switch_obj.r_port_obj(r_port_obj.r_obj_key())))
+            cli_l.extend(_port_config_cli(r_port_obj, t_switch_obj.r_port_obj(r_port_obj.r_obj_key())))
 
         # Send the CLI updates
-        if len(cli_l) > 0:
-            _cli_change_flag = True
-            for buf in cli_l:
-                fos_cli.send_command(cd['session'], t_fid, buf)
+        for buf in cli_l:
+            fos_cli.send_command(cd['session'], t_fid, buf)
 
     return el
 
@@ -1402,8 +1398,8 @@ def _maps_act(cd, d):
                         _switch_summary(cd, d['t_switch_name'] + ' FID: ' + str(t_fid))['MAPS Changes'] = True
 
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, d, cd]))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, d, cd]))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
 
     return el
 
@@ -1446,24 +1442,94 @@ def _enable(cd, d):
                 continue
 
             # Enable the switch
-            obj = brcdapi_switch.enable_switch(cd['session'], t_fid)
-            if fos_auth.is_error(obj):
-                el.extend(['Failed to enable FID ' + str(t_fid), fos_auth.formatted_error_msg(obj)])
-                # A disabled switch is not in a fabric and nothing else can be enabled in a disabled switch
-                continue
+            if not t_switch_obj.r_is_enabled() or \
+                    t_switch_obj.r_is_persistent_disable() != r_switch_obj.r_is_persistent_disable():
+                obj = brcdapi_switch.enable_switch(
+                    cd['session'],
+                    t_fid,
+                    persistent=not r_switch_obj.r_is_persistent_disable()
+                )
+                if fos_auth.is_error(obj):
+                    el.extend(['ERROR: Enabling FID ' + str(t_fid), fos_auth.formatted_error_msg(obj)])
 
             # Enable the ports
             port_l = [p for p in t_switch_obj.r_port_keys() + t_switch_obj.r_ge_port_keys() if
-                      r_switch_obj.r_port_obj(p) is not None and r_switch_obj.r_port_obj(p).r_is_enabled()]
-            obj = brcdapi_port.enable_port(cd['session'], t_fid, port_l, persistent=True, echo=False)
+                      r_switch_obj.r_port_obj(p) is not None and r_switch_obj.r_port_obj(p).r_is_enabled() and
+                      not t_switch_obj.r_port_obj(p).r_is_enabled()]
+            obj = brcdapi_port.enable_port(cd['session'], t_fid, port_l, persistent=True, best=True, echo=False)
             if fos_auth.is_error(obj):
-                el.extend(['Failed to enable FID ' + str(t_fid), fos_auth.formatted_error_msg(obj)])
+                el.extend(['ERROR: Not all ports enabled for FID ' + str(t_fid), fos_auth.formatted_error_msg(obj)])
 
     except BaseException as e:
-        brcdapi_log.exception(_fmt_errors(['Exception:', e, cd]))
-        el.append('Software error. Check the log for details')
+        brcdapi_log.exception(_fmt_errors([e, cd]))
+        el.append('ERROR: Software error. Search the log for EXCEPTION:')
 
     return el
+
+
+def _mod_no_change(t_switch_obj, content_d):
+    """Returns content_d unchanged
+
+    :param t_switch_obj: brcddb class object from the target switch
+    :type t_switch_obj: brcddb.class.chassis.ChassisObj, brcddb.class.switch.SwitchObj, brcddb.class.port.PortObj
+    :param content_d: Content to be sent to switch via send_request.
+    :type content_d: dict, list
+    :return: Content - dictionaries if a single dictionaries was passed in, otherwise a list of dictionaries
+    :rtype: dict, list
+    """
+    return content_d
+
+
+def _mod_bfc_fab(t_switch_obj, content_d):
+    """Parses brocade-fibrechannel-configuration/fabric content and modifies content if necessary. Only valid for switch
+    objects. See _mod_no_change() for parameter definitions.
+
+    Modifies the content as follows:
+
+    1.  Ensures that 'principal-priority' is set when enabling fabric principal selection. FOS requires the principal
+        priority to be set as well, even if it's not changing. The calling function only puts changes in content_d.
+
+    2.  Ensures that "insistent-domain-id-enabled" is not set if the switch is configured as FICON. Although insistent
+        domain ID is required for FOS switches, it is set when the switch is created. FOS generically returns an error
+        if any attempt to touch it is requested, even if it's consistent with the switch's configuration.
+    """
+    t_content_l = list()
+    for c_d in gen_util.convert_to_list(content_d):
+        r_content_d = dict()
+        for key, val in c_d.items():
+
+            # Principal switch
+            if key == 'principal-selection-enabled':
+                if key not in r_content_d and t_switch_obj.r_get(brcdapi_util.bfc_principal_en, False) != val:
+                    r_content_d[key] = val
+                    if val and 'principal-priority' not in c_d:
+                        # Something is hosed up if it's not in r_switch_obj. Default '0x0a' is belt and suspenders
+                        r_content_d['principal-priority'] = t_switch_obj.r_get(brcdapi_util.bfc_principal_pri, '0x0a')
+
+            elif key == 'principal-priority':
+                if key not in r_content_d and 'principal-selection-enabled' not in c_d:
+                    if val != t_switch_obj.r_get(brcdapi_util.bfc_principal_pri, not val):
+                        # We only get here if the "Fabric Principal" cell is empty and the "Fabric Principal Priority"
+                        # is changing.
+                        r_content_d['principal-selection-enabled'] = True  # Needs to be here when changing the priority
+                        r_content_d['principal-priority'] = val
+
+            # Insistent Domain ID
+            elif key == 'insistent-domain-id-enabled':
+                if not t_switch_obj.r_is_ficon():
+                    r_content_d[key] = val  # FOS won't allow you to set IDID, True or False, on a FICON switch
+
+            # No modifications required
+            else:
+                r_content_d[key] = val
+
+        if len(r_content_d) > 0:
+            t_content_l.append(r_content_d)
+
+    if len(t_content_l) == 0:
+        t_content_l.append(dict())
+
+    return t_content_l[0] if isinstance(content_d, dict) else t_content_l
 
 
 """_control_d is a dictionary of dictionaries. The first key is the highest level branch (right after running) and
@@ -1481,8 +1547,10 @@ brcdapi library.
 +-------+-----------+-----------------------------------------------------------------------------------------------+
 | Key   | Type      | Description                                                                                   |
 +=======+===========+===============================================================================================+
-| a     | method    | Pointer to method to call when interpreting the branch. If None or not present, the URI is    |
+| a     | function  | Pointer to function to call when interpreting the branch. If None or not present, the URI is  |
 |       |           | put in _full_capture_l, so a GET is performed, but no action is taken.                        |
++-------+-----------+-----------------------------------------------------------------------------------------------+
+| d     | int       | Used for debug only.                                                                          |
 +-------+-----------+-----------------------------------------------------------------------------------------------+
 | e     | str       | Text to append to error messages. Only useful for trouble shooting.                           |
 +-------+-----------+-----------------------------------------------------------------------------------------------+
@@ -1490,6 +1558,8 @@ brcdapi library.
 |       |           | method needs to access an API resource. May be a CSV if multiple KPIs are required.           |
 +-------+-----------+-----------------------------------------------------------------------------------------------+
 | m     | HTTP      | HTTP method                                                                                   |
++-------+-----------+-----------------------------------------------------------------------------------------------+
+| mod   | function  | Modifies, if necessary, any content before sending it to the switch.                          |
 +-------+-----------+-----------------------------------------------------------------------------------------------+
 | p     | None, str | If None, always execute this action. Otherwise, the entry is only executed if specified with  |
 |       |           | the -p option on the command line. See -p options in _restore_parameters for details.         |
@@ -1500,8 +1570,9 @@ brcdapi library.
 |       |           | interprets the value for the leaf. At the time this was written, there were only two options: |
 |       |           |                                                                                               |
 |       |           |   _conv_none_act      Always returns None. None is assumed for any leaf not in the            |
-|       |           |                       dictionary so this is only useful as a place holder for a leaf you may  |
-|       |           |                       want to change at a future date.                                        |
+|       |           |                       dictionary. This is useful when the associated parameter is dependant   |
+|       |           |                       on another parameter (in which case a function in 'mod' will set it).   |
+|       |           |                       It's also useful for special cases.                                     |
 |       |           |                                                                                               |
 |       |           |   _conv_lookup_act    A simple deepcopy of what ever the value for the leaf is.               |
 +-------+-----------+-----------------------------------------------------------------------------------------------+
@@ -1545,32 +1616,32 @@ WARNING: This is a template with some suggestions. Anything with _conv_none_act 
 """
 
 _scan_action_l = [
-    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Basic Capture 0', p='m'),
-    dict(a=_scan_act, e='Scan', p='m'),
+    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Basic Capture 0', p='m', d=0),
+    dict(a=_scan_act, e='Scan', p='m', d=1),
     ]
 
 _action_l = [  # See block comments above for definitions
     
     # Start with a full data capture and build the FID map
-    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Initial Capture', p='m'),
-    dict(a=_build_fid_map, e='Build FID map', p='m'),
+    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Initial Capture', p='m', d=2),
+    dict(a=_build_fid_map, e='Build FID map', p='m', d=3),
 
     # Virtual Fabrics
-    dict(k=brcdapi_util.bcc_uri, a=_vf_enable, e='_vf_enable', p='vfc', rw={'vf-enabled': _conv_lookup_act}),
-    dict(a=_del_switches, e='_del_switches', p='vfc'),
-    dict(a=_data_clear, e='_data_clear 1', p='vfs'),
-    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Basic Capture vfs', p='vfs'),
-    dict(k=brcdapi_util.bfsw_uri, a=_restore_switches, e='_restore_switches', p='vfs'),
-    dict(a=_data_clear, e='_data_clear 2', p='vfp'),
-    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Basic Capture 2', p='vfp'),
-    dict(k=brcdapi_util.bifc_uri, a=_restore_ports, e='_restore_ports', p='vfp'),
+    dict(k=brcdapi_util.bcc_uri, a=_vf_enable, e='_vf_enable', p='vfc', rw={'vf-enabled': _conv_lookup_act}, d=4),
+    dict(a=_del_switches, e='_del_switches', p='vfc', d=5),
+    dict(a=_data_clear, e='_data_clear 1', p='vfs', d=6),
+    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Basic Capture vfs', p='vfs', d=7),
+    dict(k=brcdapi_util.bfsw_uri, a=_restore_switches, e='_restore_switches', p='vfs', d=8),
+    dict(a=_data_clear, e='_data_clear 2', p='vfp', d=9),
+    dict(a=_data_capture, rl=_basic_capture_kpi_l, e='Basic Capture 2', p='vfp', d=10),
+    dict(k=brcdapi_util.bifc_uri, a=_restore_ports, e='_restore_ports', p='vfp', d=11),
 
     # Capture a full set of data before continuing.
-    dict(a=_data_clear, e='_data_clear 3', p='m'),
-    dict(a=_data_capture, rl=_full_capture_l, e='Full Capture', p='m'),
+    dict(a=_data_clear, e='_data_clear 3', p='m', d=12),
+    dict(a=_data_capture, rl=_full_capture_l, e='Full Capture', p='m', d=13),
 
     # c: Chassis parameters
-    dict(k=brcdapi_util.bcc_uri, a=_chassis_update_act, m='PATCH', p='c', rw={
+    dict(k=brcdapi_util.bcc_uri, a=_chassis_update_act, m='PATCH', p='c', d=14, rw={
         'chassis-user-friendly-name': _conv_lookup_act,
         'fcr-enabled': _conv_lookup_act,
         'chassis-enabled': _conv_none_act,
@@ -1579,7 +1650,7 @@ _action_l = [  # See block comments above for definitions
         'tcp-timeout-level': _conv_lookup_act,
     }),
     # Minimally tested
-    dict(k=brcdapi_util.bcmic_uri, a=_none_act, m='PATCH', p='c', skip=True, rw={
+    dict(k=brcdapi_util.bcmic_uri, a=_none_act, m='PATCH', p='c', skip=True, d=15, rw={
         'rest-enabled,https-protocol-enabled': _conv_lookup_act,
         'max-rest-sessions': _conv_lookup_act,
         'https-keep-alive-enabled': _conv_none_act,
@@ -1590,11 +1661,11 @@ _action_l = [  # See block comments above for definitions
         'lldp-enabled': _conv_lookup_act,
     }),
     # Minimally tested
-    dict(k='brocade-chassis/management-port-track-configuration', a=_none_act, m='PATCH', p='c', skip=True, rw={
+    dict(k='brocade-chassis/management-port-track-configuration', a=_none_act, m='PATCH', p='c', skip=True, d=16, rw={
         'tracking-enabled,scan-interval': _conv_lookup_act,
     }),
     # Minimally tested
-    dict(k='brocade-chassis/credit-recovery', a=_none_act, m='PATCH', p='c', skip=True, rw={
+    dict(k='brocade-chassis/credit-recovery', a=_none_act, m='PATCH', p='c', skip=True, d=17, rw={
         'mode': _conv_lookup_act,
         'link-reset-threshold': _conv_lookup_act,
         'fault-option': _conv_lookup_act,
@@ -1603,7 +1674,7 @@ _action_l = [  # See block comments above for definitions
     }),
 
     # FCR: Minimally tested - TODO Finish this.
-    dict(k=brcdapi_util.bfr_rc, a=_fcr_update_act, m='PATCH', p='fcr', rw={
+    dict(k=brcdapi_util.bfr_rc, a=_fcr_update_act, m='PATCH', p='fcr', d=18, rw={
         'maximum-lsan-count': _conv_lookup_act,
         'backbone-fabric-id': _conv_lookup_act,
         'shortest-ifl': _conv_lookup_act,
@@ -1612,32 +1683,32 @@ _action_l = [  # See block comments above for definitions
         'migration-mode': _conv_lookup_act,
         'persistent-translate-domain-enabled': _conv_lookup_act,
     }),
-    dict(k=brcdapi_util.bfr_efa, a=_fcr_update_act, m='PATCH', p='fcr', rw={
+    dict(k=brcdapi_util.bfr_efa, a=_fcr_update_act, m='PATCH', p='fcr', d=19, rw={
         'edge-fabric-id': _conv_lookup_act,
         'alias-name': _conv_lookup_act,
     }),
-    dict(k=brcdapi_util.bfr_pc, a=_fcr_update_act, m='PATCH', p='fcr', rw={
+    dict(k=brcdapi_util.bfr_pc, a=_fcr_update_act, m='PATCH', p='fcr', d=20, rw={
         'imported-fabric-id': _conv_lookup_act,
         'device-wwn': _conv_lookup_act,
         'proxy-device-slot': _conv_lookup_act,
     }),
-    dict(k=brcdapi_util.bfr_tdc, a=_fcr_update_act, m='PATCH', p='fcr', rw={
+    dict(k=brcdapi_util.bfr_tdc, a=_fcr_update_act, m='PATCH', p='fcr', d=21, rw={
         'imported-fabric-id': _conv_lookup_act,
         'exported-fabric-id': _conv_lookup_act,
         'preferred-translate-domain-id': _conv_lookup_act,
     }),
-    dict(k=brcdapi_util.bfr_std, a=_fcr_update_act, m='PATCH', p='fcr', rw={
+    dict(k=brcdapi_util.bfr_std, a=_fcr_update_act, m='PATCH', p='fcr', d=22, rw={
         'imported-fabric-id': _conv_lookup_act,
         'stale-translate-domain-id': _conv_lookup_act,
     }),
 
     # Logical Switch: Trunking
-    dict(k='brocade-fibrechannel-trunk/trunk-area', a=_switch_update_act, m='PATCH', p='fcr', rw={
+    dict(k='brocade-fibrechannel-trunk/trunk-area', a=_switch_update_act, m='PATCH', p='fcr', d=23, rw={
         'trunk-index': _conv_lookup_act,
     }),
 
     # u: Users
-    dict(k='brocade-security/user-config', a=_user_act, m='POST', p='u', rw={
+    dict(k='brocade-security/user-config', a=_user_act, m='POST', p='u', d=24, rw={
         'name': _conv_lookup_act,
         'password': _default_user_pw_act,
         # 'role': _conv_lookup_act,  # In the Rest API Guide but not present in FOS
@@ -1651,9 +1722,9 @@ _action_l = [  # See block comments above for definitions
         'chassis-access-role': _conv_lookup_act,
         'virtual-fabric-role-id-list': _conv_lookup_act,
     }),
-    dict(k='brocade-security/user-specific-password-cfg', a=_none_act, m='POST', p='u', skip=True),  # Not tested
-    dict(k='brocade-security/auth-spec', a=_none_act, m='POST', p='sec', skip=True),  # Not tested
-    dict(k='brocade-lldp/lldp-global', a=_switch_update_act, m='PATCH', p='sec', skip=True, rw={  # Not tested
+    dict(k='brocade-security/user-specific-password-cfg', a=_none_act, m='POST', p='u', skip=True, d=25),  # Not tested
+    dict(k='brocade-security/auth-spec', a=_none_act, m='POST', p='sec', skip=True, d=26),  # Not tested
+    dict(k='brocade-lldp/lldp-global', a=_switch_update_act, m='PATCH', p='sec', skip=True, d=27, rw={  # Not tested
         'multiplier': _conv_lookup_act,
         'tx-interval': _conv_lookup_act,
         'system-name': _conv_lookup_act,
@@ -1661,7 +1732,7 @@ _action_l = [  # See block comments above for definitions
         'enabled-state': _conv_lookup_act,
         'optional-tlvs': _conv_lookup_act,
     }),
-    dict(k='brocade-lldp/lldp-profile', a=_none_act, m='PATCH', p='sec', skip=True, rw={  # Not tested
+    dict(k='brocade-lldp/lldp-profile', a=_none_act, m='PATCH', p='sec', skip=True, d=28, rw={  # Not tested
         'name': _conv_lookup_act,
         'multiplier': _conv_lookup_act,
         'tx-interval': _conv_lookup_act,
@@ -1669,38 +1740,38 @@ _action_l = [  # See block comments above for definitions
     }),
 
     # Logging
-    dict(k='brocade-logging/audit', a=_none_act, m='PATCH', p='l', skip=True, rw={  # Not tested
+    dict(k='brocade-logging/audit', a=_none_act, m='PATCH', p='l', skip=True, d=29, rw={  # Not tested
         'audit-enabled': _conv_lookup_act,
         'severity-level': _conv_lookup_act,
         'filter-class-list': _conv_lookup_act,
     }),
-    dict(k='brocade-logging/syslog-server', a=_none_act, m='PATCH', p='sec', skip=True, rw={  # Not tested
+    dict(k='brocade-logging/syslog-server', a=_none_act, m='PATCH', p='sec', skip=True, d=30, rw={  # Not tested
         'server': _conv_lookup_act,
         'port': _conv_lookup_act,
         'secure-mode': _conv_lookup_act,
     }),
-    dict(k='brocade-logging/raslog', a=_none_act, m='PATCH', p='sec', skip=True, rw={  # Not tested
+    dict(k='brocade-logging/raslog', a=_none_act, m='PATCH', p='sec', skip=True, d=31, rw={  # Not tested
         'audit-enabled': _conv_lookup_act,
         'severity-level': _conv_lookup_act,
         'filter-class-list': _conv_lookup_act,
     }),
-    dict(k='brocade-logging/raslog-module', a=_none_act, m='PATCH', p='sec', skip=True, rw={  # Not tested
+    dict(k='brocade-logging/raslog-module', a=_none_act, m='PATCH', p='sec', skip=True, d=32, rw={  # Not tested
         'module-id': _conv_lookup_act,
         'log-enabled': _conv_lookup_act,
     }),
-    dict(k='brocade-logging/log-quiet-control', a=_none_act, m='PATCH', p='sec', skip=True, rw={  # Not tested
+    dict(k='brocade-logging/log-quiet-control', a=_none_act, m='PATCH', p='sec', skip=True, d=33, rw={  # Not tested
         'log-type': _conv_lookup_act,
         'quiet-enabled': _conv_lookup_act,
         'start-time': _conv_lookup_act,
         'end-time': _conv_lookup_act,
         'days-of-week': _conv_lookup_act,
     }),
-    dict(k='brocade-logging/log-setting', a=_none_act, m='PATCH', p='sec', skip=True, rw={  # Not tested
+    dict(k='brocade-logging/log-setting', a=_none_act, m='PATCH', p='sec', skip=True, d=34, rw={  # Not tested
         'syslog-facility-level': _conv_lookup_act,
         'keep-alive-period': _conv_lookup_act,
         'clear-log': _conv_lookup_act,
     }),
-    dict(k='brocade-logging/supportftp', a=_none_act, m='PATCH', p='sec', skip=True, rw={  # Not tested
+    dict(k='brocade-logging/supportftp', a=_none_act, m='PATCH', p='sec', skip=True, d=35, rw={  # Not tested
         'host': _conv_lookup_act,
         'user-name': _conv_lookup_act,
         'password': _conv_lookup_act,
@@ -1712,13 +1783,13 @@ _action_l = [  # See block comments above for definitions
     }),
 
     # Logical Switch Configurations: brocade-fibrechannel-logical-switch/fibrechannel-logical-switch
-    dict(k=brcdapi_util.bfls_uri, a=_switch_update_act, m='PATCH', rl='name', p='s',
+    dict(k=brcdapi_util.bfls_uri, a=_switch_update_act, m='PATCH', rl='name', p='s', d=36,
          rw={  # domain-id and switch-user-friendly-name set in _restore_switches()
              'principal': _conv_lookup_act
          }),
 
     # Logical Switch Configurations: brocade-fibrechannel-switch/fibrechannel-switch
-    dict(k=brcdapi_util.bfs_uri, a=_switch_update_act, m='PATCH', rl='name', p='s',
+    dict(k=brcdapi_util.bfs_uri, a=_switch_update_act, m='PATCH', rl='name', p='s', d=37,
          rw={
              # 'domain-id': _conv_lookup_act,  # Done in _restore_switches()
              # 'user-friendly-name': _conv_lookup_act,  # Done in _restore_switches()
@@ -1739,7 +1810,7 @@ _action_l = [  # See block comments above for definitions
              'lacp-system-priority': _conv_lookup_act,
              'switch-persistent-enabled': _conv_lookup_act,
          }),
-    dict(k=brcdapi_util.bfc_sw_uri, a=_switch_update_act, m='PATCH', rl='name', p='s',
+    dict(k=brcdapi_util.bfc_sw_uri, a=_switch_update_act, m='PATCH', rl='name', p='s', d=38,
          rw={
              'trunk-enabled': _conv_lookup_act,
              'wwn-port-id-mode': _conv_lookup_act,
@@ -1747,7 +1818,7 @@ _action_l = [  # See block comments above for definitions
              'area-mode': _conv_lookup_act,
              'xisl-enabled': _conv_lookup_act,
          }),
-    dict(k=brcdapi_util.bfcfp_uri, a=_switch_update_act, m='PATCH', rl='name', p='s',
+    dict(k=brcdapi_util.bfcfp_uri, a=_switch_update_act, m='PATCH', rl='name', p='s', d=39,
          rw={
              'max-logins': _conv_lookup_act,
              'max-flogi-rate-per-switch': _conv_lookup_act,
@@ -1757,7 +1828,7 @@ _action_l = [  # See block comments above for definitions
              'enforce-login-string': _conv_none_act,
              'max-flogi-rate-per-port': _conv_lookup_act,
          }),
-    dict(k=brcdapi_util.bfc_port_uri, a=_switch_update_act, m='PATCH', rl='name', p='s',
+    dict(k=brcdapi_util.bfc_port_uri, a=_switch_update_act, m='PATCH', rl='name', p='s', d=40,
          rw={
              'portname-mode': _conv_lookup_act,
              'dynamic-portname-format': _conv_lookup_act,
@@ -1765,19 +1836,19 @@ _action_l = [  # See block comments above for definitions
              'on-demand-d-port-enabled': _conv_lookup_act,
          }),
     dict(k='brocade-fibrechannel-configuration/zone-configuration', a=_switch_update_act, m='PATCH', rl='name', p='s',
-         rw={
+         d=41, rw={
              'node-name-zoning-enabled': _conv_lookup_act,
              'fabric-lock-timeout': _conv_lookup_act,
          }),
-    dict(k=brcdapi_util.bfc_uri, a=_switch_update_act, m='PATCH', rl='name', p='s', rw={
-        'insistent-domain-id-enabled': _conv_ficon_lookup_act,
+    dict(k=brcdapi_util.bfc_uri, a=_switch_update_act, m='PATCH', rl='name', p='s', mod=_mod_bfc_fab, d=42, rw={
+        'insistent-domain-id-enabled': _conv_lookup_act,
         'principal-selection-enabled': _conv_lookup_act,
         'principal-priority': _conv_lookup_act,
         'preserved-domain-id-mode-enabled': _conv_lookup_act,
     }),
 
     # MAPS
-    dict(k=brcdapi_util.maps_rule, a=_maps_act, m='PATCH', p='maps', rw={
+    dict(k=brcdapi_util.maps_rule, a=_maps_act, m='PATCH', p='maps', d=43, rw={
         'name': _conv_lookup_act,
         'is-rule-on-rule': _conv_lookup_act,
         'monitoring-system': _conv_lookup_act,
@@ -1793,7 +1864,7 @@ _action_l = [  # See block comments above for definitions
     }),
 
     # Logical Switch: FICON
-    dict(k=brcdapi_util.ficon_cup_uri, a=_switch_update_act, m='PATCH', p='ficon', rw={
+    dict(k=brcdapi_util.ficon_cup_uri, a=_switch_update_act, m='PATCH', p='ficon', d=44, rw={
         'fmsmode-enabled': _conv_lookup_act,
         'programmed-offline-state-control': _conv_lookup_act,
         'active-equal-saved-mode': _conv_lookup_act,
@@ -1802,14 +1873,14 @@ _action_l = [  # See block comments above for definitions
         'unsolicited-alert-mode-hsc-enabled': _conv_lookup_act,
         'unsolicited-alert-mode-invalid-attach-enabled': _conv_lookup_act,
     }),
-    dict(k='brocade-ficon/logical-path', a=_switch_update_act, m='PATCH', p='ficon', rw={
+    dict(k='brocade-ficon/logical-path', a=_switch_update_act, m='PATCH', p='ficon', d=45, rw={
         'link-address': _conv_lookup_act,
         'channel-image-id': _conv_lookup_act,
         'reporting-path-state': _conv_lookup_act,
     }),
 
     # Logical Switch Port Configurations: FCIP
-    dict(k='brocade-interface/extension-ip-interface', a=_switch_update_act, m='PATCH', p='fcip', rw={
+    dict(k='brocade-interface/extension-ip-interface', a=_switch_update_act, m='PATCH', p='fcip', d=46, rw={
         'name': _conv_lookup_act,
         'dp-id': _conv_lookup_act,
         'ip-address': _conv_lookup_act,
@@ -1820,14 +1891,13 @@ _action_l = [  # See block comments above for definitions
 
     # Port Configurations: General port configurations
     # Some port configurations require the port to be reserved so do that first
-    dict(k=brcdapi_util.bifc_uri, a=_port_update_act, rl='ports', m='PATCH', p='p', rw={
+    dict(k=brcdapi_util.bifc_uri, a=_port_update_act, rl='ports', m='PATCH', p='p', d=47, rw={
         'pod-license-state': _conv_lookup_act,
     }),
-    dict(k='fos_cli/portcfgshow', a=_port_cli_update_act, p='p'),
-    dict(a=_port_cli_wait_act, p='p', e='CLI wait'),
-    dict(a=_data_clear, e='_data_clear 3', p='p'),
-    dict(a=_data_capture, rl=_full_capture_l, e='Full Capture', p='p'),
-    dict(k=brcdapi_util.bifc_uri, a=_port_update_act, rl='ports', m='PATCH', p='p', rw={
+    dict(k='fos_cli/portcfgshow', a=_port_cli_update_act, p='p', d=48),
+    dict(a=_data_clear, e='_data_clear 3', p='p', d=49),
+    dict(a=_data_capture, rl=_full_capture_l, e='Full Capture', p='p', d=50),
+    dict(k=brcdapi_util.bifc_uri, a=_port_update_act, rl='ports', m='PATCH', p='p', d=51, rw={
         'application-header-enabled': _conv_lookup_act,
         'clean-address-enabled': _conv_lookup_act,
         'compression-configured': _conv_lookup_act,
@@ -1875,7 +1945,7 @@ _action_l = [  # See block comments above for definitions
         'trunk-port-enabled': _conv_lookup_act,
         'user-friendly-name': _conv_lookup_act,
     }),
-    dict(k='brocade-interface/gigabitethernet', a=_port_update_act, rl='ge_ports', m='PATCH', p='p', rw={
+    dict(k='brocade-interface/gigabitethernet', a=_port_update_act, rl='ge_ports', m='PATCH', p='p', d=52, rw={
         'name': _conv_lookup_act,
         'speed': _conv_lookup_act,
         'protocol-speed': _conv_none_act,
@@ -1886,7 +1956,7 @@ _action_l = [  # See block comments above for definitions
         'lldp-profile': _conv_lookup_act,
         'lldp-enabled-state': _conv_lookup_act,
     }),
-    dict(k='brocade-interface/portchannel', a=_port_update_act, rl='ports', m='PATCH', p='p', rw={
+    dict(k='brocade-interface/portchannel', a=_port_update_act, rl='ports', m='PATCH', p='p', d=53, rw={
         'name': _conv_lookup_act,
         'key': _conv_lookup_act,
         'portchannel-type': _conv_lookup_act,
@@ -1896,21 +1966,21 @@ _action_l = [  # See block comments above for definitions
     }),
 
     # Zone configuration enable
-    dict(a=_zone_enable, e='_zone_enable', p='ze'),
+    dict(a=_zone_enable, e='_zone_enable', p='ze', d=54),
 
     # Zoning
-    dict(a=_zone_restore, e='_zone_restore', p='z'),
+    dict(a=_zone_restore, e='_zone_restore', p='z', d=55),
 
     # Enable
-    dict(a=_enable, e='_enable', p='e'),
+    dict(a=_enable, e='_enable', p='e', d=56),
 
 ]
 for _d in _action_l:
     if 'e' not in _d:
-        _d.update(e=str(_d.get('k')))
+        _d['e'] = str(_d.get('k'))
 
 
-def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm, args_cli, args_scan):
+def pseudo_main(ip, user_id, pw, r_proj_obj, r_chassis_obj, act_d, args_fm, args_cli, args_scan):
     """Basically the main(). Did it this way, so it can easily be used as a standalone module or called from another.
 
     :param ip: IP address of chassis to modify
@@ -1919,8 +1989,6 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
     :type user_id: str
     :param pw: Login password
     :type pw: str
-    :param sec: 'none' for HTTP or 'self' for HTTPS
-    :type sec: str
     :param r_proj_obj: Restore project object from -i
     :type r_proj_obj: brcddb.classes.project.ProjectObj
     :param r_chassis_obj: Chassis object to restore from
@@ -1936,7 +2004,7 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
     :return: Exit code. See exit codes in brcddb.brcddb_common
     :rtype: int
     """
-    global _basic_capture_kpi_l, _full_capture_l, _action_l, _temp_password, _all_fos_cli_l, _scan_action_l
+    global _basic_capture_kpi_l, _full_capture_l, _action_l, _temp_password, _all_fos_cli_l, _scan_action_l, _DEBUG
 
     ec, el, fid_map_d = brcddb_common.EXIT_STATUS_OK, list(), dict()
     action_l = _scan_action_l if args_scan else\
@@ -1979,7 +2047,7 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
     # Login
     session = None
     if user_id is not None and pw is not None and ip is not None:
-        session = api_int.login(user_id, pw, ip, sec, proj_obj=t_proj_obj)
+        session = api_int.login(user_id, pw, ip, proj_obj=t_proj_obj)
         if fos_auth.is_error(session):
             brcdapi_log.log(fos_auth.formatted_error_msg(session), echo=True)
             return brcddb_common.EXIT_STATUS_ERROR
@@ -1987,21 +2055,14 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
 
     d = dict()
     try:
-        step = 0
         for d in action_l:
-            brcdapi_log.log('step: ' + str(step) + ', restore action: ' + d['e'], echo=True)
-
-            # Debug
-            # if step == 1:
-            #     print('TP_100')
-
+            brcdapi_log.log('step: ' + str(d['d']) + ', restore action: ' + d['e'], echo=True)
             temp_el = d['a'](local_control_d, d)
             el.extend(temp_el)
-            step += 1
 
             # Debug
             if _DEBUG and len(temp_el) > 0:
-                brcdapi_log.log(['DEBUG len(el): ' + str(len(temp_el))] + temp_el, echo=True)
+                brcdapi_log.log(['DEBUG: len(el): ' + str(len(temp_el))] + temp_el, echo=True)
 
     except FIDMapError:
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
@@ -2011,20 +2072,20 @@ def pseudo_main(ip, user_id, pw, sec, r_proj_obj, r_chassis_obj, act_d, args_fm,
         el.append('Processing terminated by user.')
     except RuntimeError:
         ec = brcddb_common.EXIT_STATUS_API_ERROR
-        el.append('Programming error encountered while processing ' + str(d.get('e')) + 'See previous message')
+        el.append('ERROR: Programming error encountered while processing ' + str(d.get('e')) + 'See previous message')
     except brcdapi_util.VirtualFabricIdError:
         ec = brcddb_common.EXIT_STATUS_API_ERROR
-        el.append('Software error. Search the log for "Invalid FID" for details.')
+        el.append('ERROR: Software error. Search the log for "Invalid FID" for details.')
     except BaseException as e:
         ec = brcddb_common.EXIT_STATUS_ERROR
-        el.extend(['Software error while processing:'] + _fmt_errors(d.get('e')))
+        el.extend(['ERROR: Software error while processing:'] + _fmt_errors(d.get('e')))
         el.append(str(type(e)) + ': ' + str(e))
 
     # Logout
     if session is not None:
         obj = brcdapi_rest.logout(session)
         if fos_auth.is_error(obj):
-            el.append(fos_auth.formatted_error_msg(obj))
+            el.extend(['ERROR: Logout.', fos_auth.formatted_error_msg(obj)])
 
     # Wrap up messages
     if len(el) > 0:
@@ -2083,7 +2144,6 @@ def _get_input():
     ml = [os.path.basename(__file__) + ', ' + __version__,
           'IP address, -ip:         ' + brcdapi_util.mask_ip_addr(args_d['ip']),
           'ID, -id:                 ' + str(args_d['id']),
-          'HTTPS, -s:               ' + str(args_d['s']),
           'Input file, -i:          ' + str(args_d['i']),
           'WWN, -wwn:               ' + str(args_d['wwn']),
           'FID Map, -fm:            ' + str(args_d['fm']),
@@ -2158,7 +2218,7 @@ def _get_input():
         return ec
 
     signal.signal(signal.SIGINT, brcdapi_rest.control_c)
-    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], args_d['s'], proj_obj, chassis_obj, args_p_d,
+    return pseudo_main(args_d['ip'], args_d['id'], args_d['pw'], proj_obj, chassis_obj, args_p_d,
                        args_d['fm'], args_d['cli'], args_d['scan'])
 
 

@@ -43,15 +43,17 @@ Performs a node find in a project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.8     | 10 Mar 2026   | Removed duplicates in output. Improved help messages.                                 |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.9     | 01 Aug 2026   | Modified to use new brcddb_switch.best_switch_name() format.                          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.8'
+__version__ = '1.0.9'
 
 import os
 import brcdapi.log as brcdapi_log
@@ -132,7 +134,7 @@ def _local_report(search_d):
                           '. This typically occurs when there was an incomplete data capture.')
                 continue
             login_name = brcddb_login.best_login_name(login_obj.r_fabric_obj(), login_obj.r_obj_key(), flag=True)
-            switch_name = brcddb_switch.best_switch_name(port_obj.r_switch_obj(), wwn=True, fid=True, did=True)
+            switch_name = brcddb_switch.best_switch_name(port_obj, wwn=True, fid=True, did=True)
             ml.extend([
                 '  Name:        ' + login_name,
                 '  Switch:      ' + switch_name,

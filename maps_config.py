@@ -41,15 +41,17 @@ Creates MAPS SFP rules from a workbook
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.7     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.8     | 01 Aug 2026   | Removed no longer supported HTTP access. Only HTTPS is supported.                     |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '20 Feb 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.7'
+__version__ = '4.0.8'
 
 import sys
 import os
@@ -105,7 +107,7 @@ class FOSError(Exception):
     pass
 
 
-def pseudo_main(user_id, pw, ip, sec, maps_file, fid_map_l):
+def pseudo_main(user_id, pw, ip, maps_file, fid_map_l):
     """Basically the main().
 
     :param user_id: User ID
@@ -114,8 +116,6 @@ def pseudo_main(user_id, pw, ip, sec, maps_file, fid_map_l):
     :type pw: str
     :param ip: IP address
     :type ip: str
-    :param sec: Security. 'none' for HTTP, 'self' for self-signed certificate
-    :type sec: str
     :param maps_file: Name of file in the format output from maps_report.py
     :type maps_file: str
     :param fid_map_l: FID map
@@ -141,7 +141,7 @@ def pseudo_main(user_id, pw, ip, sec, maps_file, fid_map_l):
             raise FOSError
 
         # Login
-        session = api_int.login(user_id, pw, ip, sec, proj_obj)
+        session = api_int.login(user_id, pw, ip, proj_obj=proj_obj)
         if fos_auth.is_error(session):
             el.append('Login failed.')  # api_int.login() posts the detail so no need to do it here.
             session = None
@@ -230,15 +230,18 @@ def _get_input():
         os.path.basename(__file__) + ', ' + __version__,
         'IP address, -ip:          ' + brcdapi_util.mask_ip_addr(args_d['ip']),
         'ID, -id:                  ' + str(args_d['id']),
-        'HTTPS, -s:                ' + str(args_d['s']),
         'Input file, -i:           ' + str(args_d['i']),
         'FID map, -fm:             ' + str(args_d['fm']) + args_fid_help
         ]
     brcdapi_log.log(ml + el, echo=True)
     
     return ec if ec != brcddb_common.EXIT_STATUS_OK else \
-        pseudo_main(args_d['id'], args_d['pw'], args_d['ip'], args_d['s'],
-                    brcdapi_file.full_file_name(args_d['i'], '.xlsx'), fid_map_l)
+        pseudo_main(
+            args_d['id'],
+            args_d['pw'],
+            args_d['ip'],
+            brcdapi_file.full_file_name(args_d['i'], '.xlsx'), fid_map_l
+        )
 
 
 ##################################################################

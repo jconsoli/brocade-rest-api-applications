@@ -139,15 +139,17 @@ _tracking_d: Used for error reporting as follows:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.1.3     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.4     | 01 Aug 2026   | Removed obsolete HTTP access. Only HTTPS is supported.                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '01 Aug 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.3'
+__version__ = '4.1.4'
 
 import collections
 import sys
@@ -166,6 +168,7 @@ import brcdapi.zone as brcdapi_zone
 import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_fabric as brcddb_fabric
+import brcddb.brcddb_switch as brcddb_switch
 import brcddb.brcddb_port as brcddb_port
 import brcddb.brcddb_login as brcddb_login
 import brcddb.api.interface as api_int
@@ -1575,16 +1578,26 @@ def _get_fabric(args_d):
             return None, proj_obj.r_fabric_obj('test_fabric')
 
     # Login
-    session = api_int.login(args_d['id'], args_d['pw'], args_d['ip'], args_d['s'], proj_obj)
+    session = api_int.login(args_d['id'], args_d['pw'], args_d['ip'], proj_obj=proj_obj)
     if not fos_auth.is_error(session):
         # Get some basic zoning information
         try:
             if not api_int.get_batch(session, proj_obj, _zone_kpis, args_d['fid']):
                 return None, None  # api_int.get_batch() logs a detailed error message
-            fab_obj_l = brcddb_project.fab_obj_for_fid(proj_obj, args_d['fid'])
+            fab_obj_l = proj_obj.r_fabric_objs_for_fid(args_d['fid'])
             if len(fab_obj_l) == 1:
                 return session, fab_obj_l[0]
-            brcdapi_log.log('Fabric ID (FID), ' + str(args_d['fid']) + ', not found.', echo=True)
+            elif len(fab_obj_l) == 0:
+                brcdapi_log.log('Fabric ID (FID), ' + str(args_d['fid']) + ', not found.', echo=True)
+            else:
+                buf_l = [
+                    'Unexpected error. Multiple fabrics found with the same fid, ' + str(args_d['fid']) + ':'
+                ]
+                for fab_obj in fab_obj_l:
+                    buf_l.append('  ' + brcddb_fabric.best_fab_name(fab_obj, wwn=True, fid=True) + '. Switches:')
+                    for switch_obj in fab_obj.r_switch_objects():
+                        buf_l.append('    ' + brcddb_switch.best_switch_name(switch_obj, wwn=True, fid=True, did=True))
+                brcdapi_log.log(buf_l)
         except brcdapi_util.VirtualFabricIdError:
             brcdapi_log.log('Software error. Search the log for "Invalid FID" for details.', echo=True)
         except FOSError:
@@ -1983,7 +1996,6 @@ def _get_input():
         'IP address, -ip:          ' + ip_buf,
         'ID, -id:                  ' + str(args_d['id']) + args_help_d['id'],
         'Password, -pw:            ' + pw_buf + args_help_d['pw'],
-        'HTTPS, -s:                ' + str(args_d['s']),
         'Fabric ID (FID), -fid:    ' + str(args_d['fid']) + args_help_d['fid'],
         'Input file, -i:           ' + str(args_d['i']) + args_help_d['i'],
         'Fabric WWN, -wwn:         ' + str(args_d['wwn']) + args_help_d['wwn'],
