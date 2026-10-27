@@ -31,25 +31,25 @@ Scans a project for chassis, fabric (including zoning and SCC policy), and logic
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.3     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.4     | 26 Oct 2026   | Modified to interpret updated error response from brcddb_project.read_from()          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
-import sys
 import os
-import datetime
 import brcdapi.log as brcdapi_log
+import brcdapi.fos_auth as fos_auth
 import brcdapi.gen_util as gen_util
 import brcdapi.file as brcdapi_file
 import brcdapi.util as brcdapi_util
 import brcddb.brcddb_project as brcddb_project
-import brcddb.util.copy as brcddb_copy
 import brcddb.brcddb_common as brcddb_common
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
@@ -75,7 +75,8 @@ def pseudo_main(in_file):
     """
     # Read the project file, -i
     proj_obj = brcddb_project.read_from(in_file)
-    if proj_obj is None:
+    if fos_auth.is_error(proj_obj):
+        brcdapi_log.log(proj_obj, echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
     brcdapi_log.log(brcddb_project.scan(proj_obj, logical_switch=True), echo=True)
 

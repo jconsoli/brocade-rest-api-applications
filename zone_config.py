@@ -141,15 +141,17 @@ _tracking_d: Used for error reporting as follows:
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.1.4     | 01 Aug 2026   | Removed obsolete HTTP access. Only HTTPS is supported.                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.5     | 26 Oct 2026   | Replaced deprecated zone-type with zone-type-string                                   |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '01 Aug 2026'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.4'
+__version__ = '4.1.5'
 
 import collections
 import sys
@@ -266,37 +268,18 @@ _eh_l = [
     dict(p1='', b1_prefix='', b1_char='add_mem    '),
     dict(b1='Adds a member to an alias, zone, or zone configuration membership list.'),
     dict(p1='', b1_prefix='', b1_char='copy       '),
-    dict(b1='Copies an alias, zone, or zone configuration.'),
+    dict(b1='Copies an alias, zone, or zone configuration. "Member" is the name of the zone object to copy.'),
     dict(p1='', b1_prefix='', b1_char='create     '),
     dict(b1='Creates an alias, zone, or zone configuration.'),
     dict(p1='', b1_prefix='', b1_char='delete     '),
-    dict(b1='Deletes an alias, zone, or zone configuration.'),
-    dict(p1='', b1_prefix='', b1_char='purge      '),
-    dict(b1='Supported for alias and zone actions only. The value in the "Member" cell is used to define the alias or '
-            'zone for the purge action to act on. This is the equivalent to the CLI zoneobjectexpunge command.'),
-    dict(p1='', b2_prefix='            ', b2_char='alias   '),
-    dict(b2='Removes the alias, d,i, or WWN in the "Member" cell from any zone it is used in. Typically, a full_purge '
-            'action is used to remove no longer needed aliases to avoid runt zones.'),
-    dict(p1='', b2_prefix='            ', b2_char='zone    '),
-    dict(b2='Removes the zone in the "Member" cell from any zone configuration it is used in.'),
+    dict(b1='Deletes an alias, zone, or zone configuration. The effective zone configuration cannot be deleted.'),
     dict(p1='', b1_prefix='', b1_char='full_purge '),
-    dict(b1='The value in the "Member" cell is used to define the alias, zone, or zone configuration for the '
-            'full_purge action to act on.'),
-    dict(p1='', b2_prefix='            ', b2_char='alias   '),
-    dict(b2='Executes a purge action on the alias. A full_purge is then executed on any zone affected by the alias '
-            'purge that has no remaining members. See “Ignore” for additional details.'),
-    dict(p1='', b2_prefix='            ', b2_char='zone    '),
-    dict(b2='After executing a purge action on the zone, any affected zone configuration with no remaining members is '
-            'deleted. Any alias not used in any other zone is also deleted.'),
-    dict(p1='', b2_prefix='            ', b2_char='zone_cfg'),
-    dict(b2='Deletes the zone configuration. A full_purge action is executed on any affected zone that is not used in '
-            'any other zone configuration.'),
+    dict(b1='Performs a "purge" action. Any empty zone or zone configuration that is not the effective zone '
+            'configuration as a result of the purge is also deleted.'),
     dict(p1='', b1_prefix='', b1_char='ignore     '),
-    dict(b1='Typically not used. Effects the alias full_purge action only. Unless all aliases used in a zone are '
-            'purged or deleted, the zone will have other members. Often, the desired result is to delete the zone even '
-            'though members remain. Typically, the summary report is used to identify these zones and the members. The '
-            'zone configuration worksheet is then updated manually to explicitly delete the zones. This forces you to '
-            'look at the affected zones rather than automatically delete them.'),
+    dict(b1='If the Zone_Object is alias, replaces all instances of the alias (WWN or d,i) specified in the "Member" '
+            'cell with what is specified in the "Principal Member" cell in every zone where used. Similarly, if the '
+            'Zone_Object is zone, zones are replaced in every zone configuration where used.'),
     dict(p1='', b1_prefix='', b1_char='           '),
     dict(b1='The ignore action allows you to instruct the script to ignore certain zone members when counting zone '
             'membership so that they will be automatically deleted.'),
@@ -307,13 +290,33 @@ _eh_l = [
     dict(p1=''),
     dict(b2='A storage array is being decommissioned. The server member (alias, d,i, or WWN) is being used in other '
             'zones, but the applications using the storage in this zone have been decommissioned.'),
+    dict(p1='', b2_prefix='            ', b2_char='alias   '),
+    dict(b2='Executes a purge action on the alias. A full_purge is then executed on any zone affected by the alias '
+            'purge that has no remaining members. See “Ignore” for additional details.'),
+    dict(p1='', b2_prefix='            ', b2_char='zone    '),
+    dict(b2='After executing a purge action on the zone, any affected zone configuration with no remaining members is '
+            'deleted. Any alias not used in any other zone is also deleted.'),
+    dict(p1='', b2_prefix='            ', b2_char='zone_cfg'),
+    dict(b2='Deletes the zone configuration. A full_purge action is executed on any affected zone that is not used in '
+            'any other zone configuration.'),
+    dict(p1='', b1_prefix='', b1_char='purge      '),
+    dict(b1='Supported for alias and zone Zone_Object only. The value in the "Member" cell is used to define the alias '
+            'or zone for the purge action to act on. This is the equivalent to the CLI zoneobjectexpunge command. The '
+            'advantage is that wild card and regex matching can be used which make it convenient for decommissioning '
+            'servers and storage arrays.'),
+    dict(p1='', b2_prefix='            ', b2_char='alias   '),
+    dict(b2='Removes the alias, d,i, or WWN in the "Member" cell from any zone it is used in. Typically, a full_purge '
+            'action is used to remove no longer needed aliases to avoid runt zones.'),
+    dict(p1='', b2_prefix='            ', b2_char='zone    '),
+    dict(b2='Removes the zone in the "Member" cell from any zone configuration it is used in.'),
     dict(p1='', b1_prefix='', b1_char='remove_mem '),
-    dict(b1='Deletes a member from an alias, zone, or zone configuration membership list.'),
-    dict(p1='', b1_prefix='', b1_char='rename    '),
-    dict(b1='Renames the zone object specified in the "Member" cell with the name specified in the "Principal Member" '
-            'cell.'),
+    dict(b1='Removes members from the zone object. The same rules regarding "Members" and "Principal Members" in '
+            'add_mem apply.'),
+    # ToDo Add rename support
+    # dict(p1='', b1_prefix='', b1_char='rename    '),
+    # dict(b1='Rename the zone object in the "Name" cell with the name in the "Member" cell.'),
     dict(p1='', b1_prefix='', b1_char='replace    '),
-    dict(b1='For alias, replaces all instances of the alias, WWN, or d,i specified in the "Member" cell with what is '
+    dict(b1='For alias, replaces all instances of the alias (WWN or d,i) specified in the "Member" cell with what is '
             'specified in the "Principal Member" cell in every zone where used. Similarly, zones are replaced in every '
             'zone configuration where used.'),
     dict(p1=''),
@@ -361,7 +364,7 @@ _eh_l = [
     dict(p1=''),
     dict(p1='', b1_char='a'),
     dict(b1='The zone an alias was purged from is also deleted and purged from any zone configuration it was used in '
-            'and if the zone has no members after the full purge is completed.'),
+            'and if the zone has no members after the purge is completed.'),
     dict(b1='All aliases not used in other zones are deleted as a result of a zone full purge.'),
     dict(b1='The full_purge action acts on zone configurations. The "zoneobjectexpunge" command does not act on zone '
             'configurations'),
@@ -870,7 +873,7 @@ def _peer_zone_create(input_d):
         if zone_obj is not None:
             el.append('Zone ' + name + ' already exists.')
         elif fab_obj is not None:
-            fab_obj.s_add_zone(name, brcddb_common.ZONE_USER_PEER, member, pmember)
+            fab_obj.s_add_zone(name, 'user-created-peer-zone', member, pmember)
             _pending_flag = True
 
     buf = 'zonecreate --peerzone "' + name + '"'
@@ -906,7 +909,7 @@ def _zone_create(input_d):
         if zone_obj is not None:
             el.append('Zone ' + name + ' already exists.')
         else:
-            fab_obj.s_add_zone(name, brcddb_common.ZONE_STANDARD_ZONE, member, pmember)
+            fab_obj.s_add_zone(name, 'zone', member, pmember)
             _pending_flag = True
 
     _add_to_tracking('zone', input_d, el, wl, cli='zonecreate "' + name + '", "' + input_d['zone_d']['Member'] + '"')
@@ -1888,7 +1891,7 @@ def _get_input():
     global __version__, _input_d, _debug, _eh_l
 
     ec, error_l, zone_wb_l, proj_obj, fab_obj = brcddb_common.EXIT_STATUS_OK, list(), list(), None, None
-    e_buf = ' **ERROR**: Missing required input parameter'
+    e_buf = ' ERROR:: Missing required input parameter'
     w_buf = 'Ignored because -i was specified.'
     args_help_d = dict(ip='', id='', pw='', s='', fid='', i='', wwn='', z='', sheet='')
 
@@ -1924,9 +1927,12 @@ def _get_input():
     # If a file name was specified, read the project object from the file.
     if isinstance(args_d['i'], str):
         proj_obj = brcddb_project.read_from(args_d['i'])
-        if proj_obj is None:
-            args_help_d['i'] += ' **ERROR** See previous messages for details.'
-            ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+        if fos_auth.is_error(proj_obj):
+            brcdapi_log.log(
+                ['ERROR: Could not read ' + str(args_d['i']) + '.', fos_auth.formatted_error_msg(proj_obj)],
+                 echo=True
+            )
+            return brcddb_common.EXIT_STATUS_INPUT_ERROR
         elif not args_d['scan']:
             if args_d['wwn'] is None:
                 args_help_d['wwn'] = e_buf
@@ -1934,7 +1940,7 @@ def _get_input():
             else:
                 fab_obj = proj_obj.r_fabric_obj(args_d['wwn'])
                 if fab_obj is None:
-                    args_help_d['wwn'] = ' **ERROR** Fabric with this WWN not found in ' + args_d['i']
+                    args_help_d['wwn'] = ' ERROR: Fabric with this WWN not found in ' + args_d['i']
                     ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Input validation
@@ -1951,7 +1957,7 @@ def _get_input():
                 if args_d[key] is not None:
                     args_help_d[key] = w_buf
         if 0 < i < 3:
-            login_e_buf = ' **ERROR** Required when -' + ', -'.join(key_l) + ' is specified'
+            login_e_buf = ' ERROR: Required when -' + ', -'.join(key_l) + ' is specified'
             for key in ['ip', 'id', 'pw']:
                 if args_d[key] is None:
                     args_help_d[key] += login_e_buf
@@ -1959,7 +1965,7 @@ def _get_input():
 
         # Is the fid required?
         if args_d['i'] is None and args_d['ip'] is not None and args_d['fid'] is None:
-            args_help_d['fid'] = ' **ERROR** Required when -ip is specified.'
+            args_help_d['fid'] = ' ERROR: Required when -ip is specified.'
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
         # Read in the workbook with the zone definitions
@@ -1975,16 +1981,16 @@ def _get_input():
             el, workbook_l = excel_util.read_workbook(args_z, dm=0, sheets=args_d['sheet'], hidden=False)
             if len(el) > 0:
                 error_l.extend(el)
-                args_help_d['z'] += ' **ERROR** ' + ','.join(el)
+                args_help_d['z'] += ' ERROR: ' + ','.join(el)
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
             elif len(workbook_l) != 1:
-                args_help_d['sheet'] += ' **ERROR** Worksheet not found.'
+                args_help_d['sheet'] += ' ERROR: Worksheet not found.'
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
             else:
                 el, zone_wb_l = _parse_zone_workbook(workbook_l[0]['al'])
                 if len(el) > 0:
                     error_l.extend(el)
-                    args_help_d['sheet'] = ' **ERROR** Invalid. See below for details.'
+                    args_help_d['sheet'] = ' ERROR: Invalid. See below for details.'
                     ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Command line feedback

@@ -49,18 +49,21 @@ Sets the zone configuration DB to that of a previously captured zone DB
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.1.1     | 01 Aug 2026   | Removed obsolete HTTP access. Only HTTPS is supported.                                |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.2     | 26 Oct 2026   | Replaced deprecated zone-type with zone-type-string                                   |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '01 Aug 2026'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.1'
+__version__ = '4.1.2'
 
 import signal
 import os
+import brcdapi.fos_auth as fos_auth
 import brcdapi.gen_util as gen_util
 import brcdapi.log as brcdapi_log
 import brcdapi.fos_auth as fos_auth
@@ -180,9 +183,9 @@ def _cli_commands(fab_obj):
             mem_l = obj.r_members()
             if control_d['zone_flag']:
                 zone_type = obj.r_type()
-                if zone_type == brcddb_common.ZONE_TARGET_PEER:
+                if zone_type == 'target-created-peer-zone':
                     continue
-                if zone_type == brcddb_common.ZONE_USER_PEER:
+                if zone_type == 'zone':
                     # Add a line space if necessary
                     if line >= _MAX_LINES:
                         rl.append('')
@@ -256,7 +259,8 @@ def pseudo_main(ip, user_id, pw, scan_flag, fid, cfile, wwn, zone_cfg, cli_file)
 
     # Read the project file
     proj_obj = brcddb_project.read_from(cfile)
-    if proj_obj is None:
+    if fos_auth.is_error(proj_obj):
+        brcdapi_log.log(['Could not read ' + str(cfile), fos_auth.formatted_error_msg(proj_obj)], echo=True)
         return brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     fab_obj = proj_obj.r_fabric_obj(wwn)

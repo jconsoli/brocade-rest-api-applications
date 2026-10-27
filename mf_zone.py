@@ -39,19 +39,22 @@ Creates a report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.6     | 01 Aug 2026   | Modified to use new brcddb_switch.best_switch_name() format.                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.7     | 26 Oct 2026   | Moved some private functions from here to brcddp.brcddb_fabric.py and made public.    |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '01 Aug 2026'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.6'
+__version__ = '1.0.7'
 
 import os
 import openpyxl.utils.cell as xl
 import brcdapi.log as brcdapi_log
+import brcdapi.fos_auth as fos_auth
 import brcdapi.file as brcdapi_file
 import brcdapi.excel_fonts as excel_fonts
 import brcdapi.excel_util as excel_util
@@ -59,11 +62,9 @@ import brcdapi.gen_util as gen_util
 import brcdapi.util as brcdapi_util
 import brcddb.brcddb_project as brcddb_project
 import brcddb.brcddb_fabric as brcddb_fabric
-import brcddb.brcddb_switch as brcddb_switch
 import brcddb.brcddb_common as brcddb_common
 import brcddb.brcddb_zone as brcddb_zone
 import brcddb.util.iocp as brcddb_iocp
-import brcddb.brcddb_port as brcddb_port
 import brcddb.report.utils as report_utils
 
 _DOC_STRING = False  # Should always be False. Prohibits any code execution. Only useful for building documentation
@@ -82,57 +83,6 @@ class Found (Exception):
     pass
 
 
-def _unique_alias_name(fabric_obj, alias_name):
-    """Ensure that an alias name is unique by appending a number if alias_name is already used
-
-    :param fabric_obj: Fabric object
-    :type fabric_obj: brcddb.classes.fabric.FabricObj
-    :param alias_name: Alias name
-    :type alias_name: str
-    :return: Alias name
-    :rtype: str
-    """
-    i, r_alias_name = 0, alias_name
-    while fabric_obj.r_alias_obj(r_alias_name) is not None:
-        r_alias_name = alias_name + '_' + str(i)
-
-    return r_alias_name
-
-
-def _unique_zone_name(fabric_obj, zone_name):
-    """Ensure that a zone name is unique by appending a number if alias_name is already used
-
-    :param fabric_obj: Fabric object
-    :type fabric_obj: brcddb.classes.fabric.FabricObj
-    :param zone_name: Alias name
-    :type zone_name: str
-    :return: Zone name
-    :rtype: str
-    """
-    i, r_zone_name = 0, zone_name
-    while fabric_obj.r_zone_obj(r_zone_name) is not None:
-        r_zone_name = zone_name + '_' + str(i)
-
-    return r_zone_name
-
-
-def _unique_zonecfg_name(fabric_obj, zonecfg_name):
-    """Ensure that a zone name is unique by appending a number if alias_name is already used
-
-    :param fabric_obj: Fabric object
-    :type fabric_obj: brcddb.classes.fabric.FabricObj
-    :param zonecfg_name: Alias name
-    :type zonecfg_name: str
-    :return: Zone name
-    :rtype: str
-    """
-    i, r_zonecfg_name = 0, zonecfg_name
-    while fabric_obj.r_zonecfg_obj(r_zonecfg_name) is not None:
-        r_zonecfg_name = zonecfg_name + '_' + str(i)
-
-    return r_zonecfg_name
-
-
 def _zone_option_all_func(fabric_obj, zonecfg, rnid_d, notes_l):
     """Returns a list with a single zone dictionary that includes all ports except ICL ports
 
@@ -140,162 +90,33 @@ def _zone_option_all_func(fabric_obj, zonecfg, rnid_d, notes_l):
     :type fabric_obj: brcddb.classes.fabric.FabricObj
     :param zonecfg: Zone configuration name
     :type zonecfg: str
-    :param rnid_d: RNID dictionary. Output of _rnid_groups()
+    :param rnid_d: RNID dictionary. Output of brcddb_fabric.rnid_groups()
     :type rnid_d: dict
     :param notes_l: List of notes to add to the notes page
     :type notes_l: list
     :return: Dictionaries with zone DB definitions for use with brcddb.brcddb_zone.add_zone_worksheet()
     :rtype: list
     """
-    buf = brcddb_fabric.best_fab_name(fabric_obj, fid=True)
-    zdb_l = [dict(Zone_Object='comment', Comments='All ports except ICL ports. Fabric: ' + buf)]
-    member_l, comment_l = list(), list()
-    zone_name = _unique_zone_name(fabric_obj, 'FICON_zone')
 
-    for switch_obj in fabric_obj.r_switch_objects():
-        did = str(switch_obj.r_did())
-        for port_obj in [obj for obj in switch_obj.r_port_objects() if not obj.r_is_icl()]:
-            member_l.append(did + ',' + str(port_obj.r_index()))
-            buf = brcddb_port.port_best_desc(port_obj) + ', Switch: '
-            buf += brcddb_switch.best_switch_name(port_obj, fid=True, did=True, did_hex=True)
-            buf += ', Port: ' + port_obj.r_obj_key()
-            comment_l.append(buf)
-    if len(member_l) > 1:
-        zdb_l.append(dict(Zone_Object='zone', Action='create', Name=zone_name, Member=member_l, Comments=comment_l))
-        zdb_l.append(dict(Zone_Object='zone_cfg', Action='create', Name=zonecfg, Member=[zone_name]))
-    else:
-        notes_l.append('Fabric ' + brcddb_fabric.best_fab_name(fabric_obj, fid=True) + ' contains fewer than 2 ports.')
-
-    return zdb_l
+    return brcddb_fabric.ficon_zone_all(fabric_obj, zonecfg, notes_l)
 
 
 def _zone_option_all_f_func(fabric_obj, zonecfg, rnid_d, notes_l):
     """Returns a zone dictionary with a single zone that includes all F ports. See _zone_option_all_func"""
-    buf = brcddb_fabric.best_fab_name(fabric_obj, fid=True)
-    zdb_l = [dict(Zone_Object='comment', Comments='All F-Ports. Fabric: ' + buf)]
-    member_l, comment_l = list(), list()
-    zone_name = _unique_zone_name(fabric_obj, 'FICON_zone')
 
-    for switch_obj in fabric_obj.r_switch_objects():
-        did = str(switch_obj.r_did())
-        for port_obj in [obj for obj in switch_obj.r_port_objects() if obj.c_login_type().lower() == 'f-port']:
-            member_l.append(did + ',' + str(port_obj.r_index()))
-            buf = brcddb_port.port_best_desc(port_obj) + ', Switch: '
-            buf += brcddb_switch.best_switch_name(port_obj, fid=True, did=True, did_hex=True)
-            buf += ', Port: ' + port_obj.r_obj_key()
-            comment_l.append(buf)
-    if len(member_l) > 1:
-        zdb_l.append(dict(Zone_Object='zone', Action='create', Name=zone_name, Member=member_l, Comments=comment_l))
-        zdb_l.append(dict(Zone_Object='zone_cfg', Action='create', Name=zonecfg, Member=[zone_name]))
-    else:
-        notes_l.append('No RNID data found attached to fabric ' + brcddb_fabric.best_fab_name(fabric_obj, fid=True))
-
-    return zdb_l
+    return brcddb_fabric.ficon_zone_all_f(fabric_obj, zonecfg, notes_l)
 
 
 def _zone_option_dev_func(fabric_obj, zonecfg, rnid_d, notes_l):
     """Returns a list of zones for each CHPID with access to all control units. See _zone_option_all_func"""
-    buf = brcddb_fabric.best_fab_name(fabric_obj, fid=True)
-    zdb_l = [dict(Zone_Object='comment', Comments='Single zone for each CHPID for every control unit. Fabric: ' + buf)]
-    temp_notes_l, zone_l = list(), list()
 
-    # Create an alias for each control unit
-    cu_alias_l = list()
-    for key in ('DASD', 'Tape', 'CUP', 'CTC', 'Switch', 'IDG', 'Test', 'UNKN'):
-        for sub_key, port_obj_l in rnid_d.get(key, dict()).items():
-            member_l, comment_l = list(), list()
-            alias = _unique_alias_name(fabric_obj, key + '_' + sub_key + '_alias')
-            cu_alias_l.append(alias)
-            for port_obj in port_obj_l:
-                member_l.append(str(port_obj.r_did()) + ',' + str(port_obj.r_index()))
-                buf = brcddb_port.port_best_desc(port_obj) + ', Switch: '
-                buf += brcddb_switch.best_switch_name(port_obj, fid=True, did=True, did_hex=True)
-                buf += ', Port: ' + port_obj.r_obj_key()
-                comment_l.append(buf)
-            zdb_l.append(dict(Zone_Object='alias', Action='create', Name=alias, Member=member_l, Comments=comment_l))
-
-    # Create a zone for each CHPID
-    for sub_key, port_obj_l in rnid_d.get('CPU', dict()).items():
-        for port_obj in port_obj_l:
-            tag = port_obj.r_get('rnid/tag')
-            if tag is None:
-                buf = 'Missing tag for switch ' + brcddb_switch.best_switch_name(port_obj) + ', port '
-                buf += port_obj.r_obj_key()
-                temp_notes_l.append(buf)
-            else:
-                for alias in cu_alias_l:
-                    zone_name = 'CHPID_' + sub_key + '_' + tag.replace('0x', '') + '_' + alias.split('_')[1]
-                    zone_name = _unique_zone_name(fabric_obj, zone_name)
-                    zone_l.append(zone_name)
-                    zdb_l.append({
-                        'Zone_Object': 'peer_zone',
-                        'Action': 'create',
-                        'Name': zone_name,
-                        'Member': [str(port_obj.r_did()) + ',' + str(port_obj.r_index())],
-                        'Principal Member': [alias]
-                    })
-
-    # Create the zone configuration
-    if len(zone_l) == 0:
-        temp_notes_l.append('Nothing to zone for "By_Device"')
-    else:
-        if len(temp_notes_l) > 0:
-            zdb_l.insert(1, dict(Zone_Object='comment', Comments=temp_notes_l))
-        zdb_l.append(dict(Zone_Object='zone_cfg', Action='create', Name=zonecfg, Member=zone_l))
-    notes_l.extend(temp_notes_l)
-
-    return zdb_l
+    return brcddb_fabric.ficon_zone_by_device(fabric_obj, zonecfg, rnid_d, notes_l)
 
 
 def _zone_option_channel_func(fabric_obj, zonecfg, rnid_d, notes_l):
-    """Returns a zone dictionaries specific for each channel and associated link addresses. See _zone_option_all_func"""
-    buf = 'Zone by CHPID with access to defined link addresses only. Fabric: ' + \
-          brcddb_fabric.best_fab_name(fabric_obj, fid=True)
-    zdb_l = [dict(Zone_Object='comment', Comments=buf)]
-    temp_notes_l, zone_l = list(), list()
+    """Returns list of dict specific for each channel and associated link addresses. See _zone_option_all_func"""
 
-    # Find all the CHPIDs in this fabric and create a CHPID zone that includes the link addresses
-    for iocp_obj in fabric_obj.r_project_obj().r_iocp_objects():
-        for chpid_obj in iocp_obj.r_path_objects():
-            chpid_port_obj = brcddb_iocp.find_chpid(fabric_obj, iocp_obj.r_obj_key(), chpid_obj.r_obj_key())
-            if chpid_port_obj is not None:
-                comment_l, cu_di_l = list(), list()
-                for addr in [
-                    gen_util.pad_string(brcddb_iocp.link_addr_to_fc_addr(a, did=chpid_port_obj.r_did()), 6, '0')
-                    for a in chpid_obj.r_link_addresses()
-                ]:
-                    cu_port_obj = fabric_obj.r_port_obj_for_pid(addr)
-                    if cu_port_obj is None:
-                        buf = 'Could not find address ' + addr.upper() + ' in fabric '
-                        buf += brcddb_fabric.best_fab_name(fabric_obj, fid=True)
-                        temp_notes_l.append(buf)
-                    else:
-                        cu_di_l.append(str(cu_port_obj.r_did()) + ',' + str(cu_port_obj.r_index()))
-                        buf = brcddb_port.port_best_desc(cu_port_obj) + ', Switch: '
-                        buf += brcddb_switch.best_switch_name(cu_port_obj, fid=True, did=True, did_hex=True)
-                        buf += ', Port: ' + cu_port_obj.r_obj_key()
-                        comment_l.append(buf)
-                zone_name = _unique_zone_name(fabric_obj, 'CHPID_' + iocp_obj.r_obj_key() + '_' + chpid_obj.r_obj_key())
-                zone_l.append(zone_name)
-                zdb_l.append({
-                        'Zone_Object': 'peer_zone',
-                        'Action': 'create',
-                        'Name': zone_name,
-                        'Member': [str(chpid_port_obj.r_did()) + ',' + str(chpid_port_obj.r_index())],
-                        'Principal Member': cu_di_l,
-                        'Comments': comment_l,
-                    })
-
-    # Create the zone configuration
-    if len(zone_l) == 0:
-        notes_l.append('Nothing to zone for "By_Channel"')
-    else:
-        if len(temp_notes_l) > 0:
-            zdb_l.insert(1, dict(Zone_Object='comment', Comments=notes_l))
-        zdb_l.append(dict(Zone_Object='zone_cfg', Action='create', Name=zonecfg, Member=zone_l))
-    notes_l.extend(temp_notes_l)
-
-    return zdb_l
+    return brcddb_fabric.ficon_zone_by_channel(fabric_obj, zonecfg, notes_l)
 
 
 # _zone_options_l: List of dictionaries as follows:
@@ -374,9 +195,9 @@ _eh_l = [
     dict(b1='Use zone_config.py to implement the zone configuration.'),
     dict(p1=''),
     dict(p1='Some of the zoning method options are based on connections to the fabric. Since its often not possible to '
-            'have a fully configured fabric with all intended connections online, this approach allows you to modify '
-            'the zone definitions to account for channels and devices not connected at the time data from switches '
-            'was collected.'),
+            'have a fully configured fabric with all intended connections online, creating a zone configuration '
+            'workbook allows you to modify the zone definitions to account for channels and devices not connected at '
+            'the time data from switches was collected.'),
     dict(p1=''),
     dict(p1='Since the zone_config.py script has an option to output CLI, this also makes it easy for service '
             'organizations to create CLI zone scripts for SAN implementation engineers that do not have access to a '
@@ -489,47 +310,13 @@ _input_d = dict(
         h='Optional. Name of folder with IOCP files. If this option is specified, a worksheet with zone configurations '
           'based on channel paths is created. All files in this folder must be IOCP files in plain text (build I/O '
           'configuration statements from HCD) and must begin with the CPC serial number followed by "_". Leading 0s are'
-          ' not required. The remaining characters in the file name are not used by this script. Example, for a CPC '
+          ' not required. The remaining characters in the file name are not used by this script. Example: for a CPC '
           'with serial number 12345: 12345_M90_iocp.txt.'
     )
 )
 _input_d.update(gen_util.parseargs_scan_d.copy())
 _input_d.update(gen_util.parseargs_eh_d.copy())
 _input_d.update(gen_util.parseargs_log_d.copy())
-
-
-def _rnid_groups(fabric_obj):
-    """Sorts out the mainframe attachments by control unit and channel
-
-    :param fabric_obj: Fabric object
-    :type fabric_obj: brcddb.classes.fabric.FabricObj
-    :return: Dictionary: key - generic device type. Value - dictionary, key - S/N, value - list of port objects
-    :rtype: dict
-    """
-    # Sort out the ports by sequence number (S/N) and generic type.
-    rnid_d = dict()
-    for port_obj in [obj for obj in fabric_obj.r_port_objects() if obj.r_is_online()]:
-        port_rnid_d = port_obj.r_get('rnid')
-        if isinstance(port_rnid_d, dict):
-            generic_type = brcddb_iocp.generic_device_type(port_rnid_d.get('type-number'))
-            port_rnid_seq = gen_util.remove_leading_char(port_rnid_d.get('sequence-number', 'FFFFFFFFFFFF'), '0')
-
-            # Get the generic device type dictionary from rnid_d. If it hasn't been added yet, add it.
-            generic_type_d = rnid_d.get(generic_type)
-            if not isinstance(generic_type_d, dict):
-                generic_type_d = dict()
-                rnid_d.update({generic_type: generic_type_d})
-
-            # Get the port object list for this sequence number
-            port_obj_l = generic_type_d.get(port_rnid_seq)
-            if not isinstance(port_obj_l, list):
-                port_obj_l = list()
-                generic_type_d.update({port_rnid_seq: port_obj_l})
-
-            # Add the port object
-            port_obj_l.append(port_obj)
-
-    return rnid_d
 
 
 def pseudo_main(fabric_obj, output_file, zonecfg, iocp_l):
@@ -557,7 +344,7 @@ def pseudo_main(fabric_obj, output_file, zonecfg, iocp_l):
     brcddb_project.add_custom_search_terms(proj_obj)
     for file in iocp_l:
         brcddb_iocp.parse_iocp(proj_obj, file)
-    rnid_d = _rnid_groups(fabric_obj)
+    rnid_d = brcddb_fabric.rnid_groups(fabric_obj)
 
     # Create a workbook and add a worksheet for each zone method
     brcdapi_log.log('Creating the zone configuration workbook, ' + output_file, echo=True)
@@ -571,8 +358,13 @@ def pseudo_main(fabric_obj, output_file, zonecfg, iocp_l):
         'See the notes page for details regarding the different worksheets and naming conventions.',
     )
     report_utils.about_page(wb, 1, 'About', os.path.basename(__file__), __version__, buf_l)
+    no_zone_fab_obj = brcddb_fabric.copy_fab_obj(fabric_obj, skip_alias=True, skip_zone=True, skip_zonecfg=True)
     for zone_d in _zone_options_l:
-        brcddb_zone.add_zone_worksheet(wb, zone_d['sname'], zone_d['a'](fabric_obj, zonecfg, rnid_d, notes_l), 1)
+        brcddb_zone.add_zone_worksheet(
+            wb,
+            zone_d['sname'],
+            zone_d['a'](no_zone_fab_obj, zonecfg, rnid_d, notes_l),
+            1)
 
     # Add the notes sheet
     sheet = wb.create_sheet(index=1, title='Notes')
@@ -623,6 +415,7 @@ def _get_input():
     global __version__, _input_d, _eh_l
     
     ec = brcddb_common.EXIT_STATUS_OK
+    error_msg = ''
 
     # Get command line input
     buf = 'Creates workbooks for use with zone_config.py for common mainframe zoning operations. Each workbook contains'
@@ -639,12 +432,11 @@ def _get_input():
     )
 
     # Setup feedback messages for options
-    error_msg = '**ERROR**: Missing required input parameter.'
     feedback_d = dict(
-        i=dict(h=str(args_d['i']), rl=('eh',), e=error_msg),
-        o=dict(h=str(args_d['o']), rl=('eh', 'scan'), e=error_msg),
-        wwn=dict(h=str(args_d['wwn']), rl=('eh', 'scan'), e=error_msg),
-        cfg=dict(h=str(args_d['cfg']), rl=('eh', 'scan'), e=error_msg),
+        i=dict(h=str(args_d['i']), rl=('eh',), e='ERROR: Missing required input parameter.'),
+        o=dict(h=str(args_d['o']), rl=('eh', 'scan'), e='ERROR: Missing required input parameter.'),
+        wwn=dict(h=str(args_d['wwn']), rl=('eh', 'scan'), e='ERROR: Missing required input parameter.'),
+        cfg=dict(h=str(args_d['cfg']), rl=('eh', 'scan'), e='ERROR: Missing required input parameter.'),
     )
     for key, d in feedback_d.items():
         try:
@@ -658,19 +450,22 @@ def _get_input():
             continue
 
     # Read and validate the project file, -i
-    proj_obj, fabric_obj = None, None
+    # proj_obj gets over-written. It needs to be initialized with something.
+    proj_obj = fos_auth.create_error(brcdapi_util.HTTP_BAD_REQUEST, 'Unknown', None)
+    fabric_obj = None
     if args_d['i'] is not None and not args_d['eh']:
         in_file = brcdapi_file.full_file_name(args_d['i'], '.json')
         proj_obj = brcddb_project.read_from(in_file)
-        if proj_obj is None:  # Error messages are sent to the log in brcddb_project.read_from() if proj_obj is None
-            feedback_d['i'] += ' **ERROR** reading file. Refer to previous messages for details.'
+        if fos_auth.is_error(proj_obj):
+            error_msg = fos_auth.formatted_error_msg(proj_obj)
+            feedback_d['i']['h'] += ' ERROR: reading file. See below for details.'
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
         # Validate the -wwn parameter
         elif args_d['wwn'] is not None:
             fabric_obj = proj_obj.r_fabric_obj(args_d['wwn'])
             if fabric_obj is None:
-                feedback_d['wwn']['h'] += ' **ERROR** Does not exist in ' + args_d['i']
+                feedback_d['wwn']['h'] += ' ERROR: Does not exist in ' + args_d['i']
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Read the directory of IOCP files, -iocp
@@ -678,41 +473,44 @@ def _get_input():
     if args_d['iocp'] is not None:
         iocp_l = brcdapi_file.read_directory(args_d['iocp'], full=True)
         if len(iocp_l) == 0:
-            feedback_d['iocp']['h'] += ' **ERROR**: Folder not found or folder is empty.'
+            feedback_d['iocp']['h'] += ' ERROR: Folder not found or folder is empty.'
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Make sure the zone configuration name is unique
     if fabric_obj is not None and isinstance(args_d['cfg'], str):
-        zonecfg = _unique_zonecfg_name(fabric_obj, args_d['cfg'])
+        zonecfg = brcddb_fabric.unique_zonecfg_name(fabric_obj, args_d['cfg'])
         if zonecfg != args_d['cfg']:
-            feedback_d['cfg']['h'] = ' **ERROR**:' + args_d['cfg'] + ' already used. Suggestion: ' + zonecfg
+            feedback_d['cfg']['h'] = ' ERROR:' + args_d['cfg'] + ' already used. Suggestion: ' + zonecfg
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Command line feedback
-    ml = ['',
-          os.path.basename(__file__) + ', ' + __version__,
-          'Input file, -i:           ' + feedback_d['i']['h'],
-          'Output file, -o:          ' + feedback_d['o']['h'],
-          'Fabric WWN, -wwn:         ' + feedback_d['wwn']['h'],
-          'Zone configuration, -cfg: ' + feedback_d['cfg']['h'],
-          'IOCP, -iocp:              ' + str(args_d['iocp']),
-          'Extended help, -eh:       ' + str(args_d['eh']),
-          'Scan, -scan:              ' + str(args_d['scan']),
-          'Log, -log:                ' + str(args_d['log']),
-          'No log, -nl:              ' + str(args_d['nl']),
-          'Suppress, -sup:           ' + str(args_d['sup']),
-          '',]
+    ml = [
+        '',
+        os.path.basename(__file__) + ', ' + __version__,
+        'Input file, -i:           ' + feedback_d['i']['h'],
+        'Output file, -o:          ' + feedback_d['o']['h'],
+        'Fabric WWN, -wwn:         ' + feedback_d['wwn']['h'],
+        'Zone configuration, -cfg: ' + feedback_d['cfg']['h'],
+        'IOCP, -iocp:              ' + str(args_d['iocp']),
+        'Extended help, -eh:       ' + str(args_d['eh']),
+        'Scan, -scan:              ' + str(args_d['scan']),
+        'Log, -log:                ' + str(args_d['log']),
+        'No log, -nl:              ' + str(args_d['nl']),
+        'Suppress, -sup:           ' + str(args_d['sup']),
+        '',
+        error_msg,
+        ]
     brcdapi_log.log(ml, echo=True)
 
     # Extended help, Scan, and error bail out.
     if args_d['eh']:
         brcdapi_log.log(gen_util.format_text(_eh_l), echo=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
-    if args_d['scan'] and proj_obj is not None:
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    if args_d['scan'] and not fos_auth.is_error(proj_obj):
         brcdapi_log.log(brcddb_project.scan(proj_obj, fab_only=False, logical_switch=True), echo=True)
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     if not isinstance(args_d['i'], str) or not isinstance(args_d['o'], str):
-        return brcddb_common.EXIT_STATUS_INPUT_ERROR
+        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     return ec if ec != brcddb_common.EXIT_STATUS_OK else \
         pseudo_main(fabric_obj, brcdapi_file.full_file_name(args_d['o'], '.xlsx'), args_d['cfg'], iocp_l)

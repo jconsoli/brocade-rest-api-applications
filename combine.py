@@ -39,20 +39,23 @@ Combines the output of multiple capture or combine files into a single project o
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.7     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.8     | 26 Oct 2026   | Modified to interpret updated error response from brcddb_file.read_dump()             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.7'
+__version__ = '4.0.8'
 
 import sys
 import os
 import datetime
 import brcdapi.log as brcdapi_log
+import brcdapi.fos_auth as fos_auth
 import brcdapi.gen_util as gen_util
 import brcdapi.file as brcdapi_file
 import brcdapi.util as brcdapi_util
@@ -95,28 +98,33 @@ def pseudo_main(inf, outf):
     try:
         file_l = brcdapi_file.read_directory(inf)
     except FileExistsError:
-        el.append('Folder ' + inf + ', specified with -i, does not exist.')
+        el.append('ERROR: Folder ' + inf + ', specified with -i, does not exist.')
     except PermissionError:
-        el.append('You do not have access rights to read the folder ' + inf + ' specified with -i')
+        el.append('ERROR: You do not have access rights to read the folder ' + inf + ' specified with -i')
     if outf in file_l:
-        el.extend('Combined output file, ' + outf + ', already exists in: ' + inf + '. Processing halted')
+        el.append('ERROR: Combined output file, ' + outf + ', already exists in: ' + inf + '. Processing halted')
 
     else:
         x = len('.json')
         for file in [f for f in file_l if len(f) > x and f.lower()[len(f)-x:] == '.json']:
             brcdapi_log.log('Processing file: ' + file, echo=True)
             obj = brcdapi_file.read_dump(inf + '/' + file)
-            brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
+            if fos_auth.is_error(obj):
+                el.append('ERROR: Could not read ' + inf + '/' + file + '. See below for details.')
+                el.append(fos_auth.formatted_error_msg(obj))
+            else:
+                if brcddb_copy.plain_copy_to_brcddb(obj, proj_obj) != brcddb_common.EXIT_STATUS_OK:
+                    el.append('ERROR: Failed to make plain copy. See previous error messages.')
 
-        # Now save the combined file
+    # Wrap up
+    if len(el) == 0:
+        # Save the combined file
         plain_copy = dict()
         brcddb_copy.brcddb_to_plain_copy(proj_obj, plain_copy)
         el.extend(brcdapi_file.write_dump(plain_copy, inf + '/' + outf))
-
-    # Wrap up
-    if len(el) > 0:
-        brcdapi_log.log(el, echo=True)
+    else:
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
+    brcdapi_log.log(el, echo=True)
 
     return ec
 

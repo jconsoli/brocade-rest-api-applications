@@ -41,18 +41,21 @@ Creates a MAPS report in Excel Workbook format from a brcddb project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.7     | 10 Mar 2026   | Consolidated project read and Excel error messaging.                                  |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.8     | 26 Oct 2026   | Modified to interpret updated error response from brcddb_project.read_from()          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025,2026 Jack Consoli'
-__date__ = '10 Mar 2026'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.7'
+__version__ = '1.0.8'
 
 import os
 import brcdapi.log as brcdapi_log
+import brcdapi.fos_auth as fos_auth
 import brcdapi.gen_util as gen_util
 import brcdapi.util as brcdapi_util
 import brcdapi.file as brcdapi_file
@@ -142,6 +145,7 @@ def _get_input():
     global __version__, _input_d
 
     ec = brcddb_common.EXIT_STATUS_OK
+    error_msg = ''
 
     # Get command line input
     args_d = gen_util.get_input('Create a MAPS report in Excel', _input_d)
@@ -159,9 +163,10 @@ def _get_input():
     input_file = brcdapi_file.full_file_name(args_d['i'], '.json')
     output_file = brcdapi_file.full_file_name(args_d['o'], '.xlsx')
     proj_obj = brcddb_project.read_from(input_file)
-    if proj_obj is None:
-        args_i_help += ' **ERROR** See previous message for details.'
+    if fos_auth.is_error(proj_obj):
+        args_i_help += ' ERROR: See below for details.'
         ec = brcddb_common.EXIT_STATUS_ERROR
+        error_msg = fos_auth.formatted_error_msg(proj_obj)
 
     # User feedback
     ml = [os.path.basename(__file__) + ', ' + __version__,
@@ -170,7 +175,9 @@ def _get_input():
           'Log, -log:           ' + str(args_d['log']),
           'No log, -nl:         ' + str(args_d['nl']),
           'Suppress, -sup:      ' + str(args_d['sup']),
-          '',]
+          '',
+          error_msg,
+          ]
     brcdapi_log.log(ml, echo=True)
 
     return pseudo_main(proj_obj, output_file) if ec == brcddb_common.EXIT_STATUS_OK else ec

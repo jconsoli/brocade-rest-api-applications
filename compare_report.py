@@ -45,18 +45,21 @@ Creates a report in Excel Workbook format with all differences between two conte
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.9     | 01 Aug 2026   | Added DID in hex to report.                                                           |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.0     | 26 Oct 2026   | Modified to interpret updated error response from brcddb_project.read_from()          |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '01 Aug 2026'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.9'
+__version__ = '4.1.0'
 
 import os
 import brcdapi.log as brcdapi_log
+import brcdapi.fos_auth as fos_auth
 import brcdapi.gen_util as gen_util
 import brcdapi.file as brcdapi_file
 import brcdapi.excel_util as excel_util
@@ -791,13 +794,13 @@ def pseudo_main(bf, cf, rf):
     input_file_d = dict(b=dict(file=bf, t='-b'), c=dict(file=cf, t='-c'))
     for d in input_file_d.values():
         d['obj'] = brcddb_project.read_from(d['file'])
-        if d['obj'] is None:
-            ml.append('Error reading ' + d['file'] + ', ' + d['t'] + '. Check previous messages for details.')
-        else:
-            if not brcddb_project.build_xref(d['obj']):
-                buf = 'Unknown error interpreting ' + d['file'] + '. '
-                buf += 'This typically occurs when it is not a valid JSON formatted file. Error message is:'
-                ml.append('Error interpreting ' + d['file'] + '. See previous message for details.')
+        if fos_auth.is_error(d['obj']):
+            ml.append('Error reading ' + d['file'] + ', ' + d['t'])
+            ml.append(fos_auth.formatted_error_msg(d['obj']))
+        elif not brcddb_project.build_xref(d['obj']):
+            buf = 'Unknown error interpreting ' + d['file'] + '. '
+            buf += 'This typically occurs when it is not a valid JSON formatted file. Error message is:'
+            ml.append('Error interpreting ' + d['file'] + '. See previous message for details.')
     if len(ml) > 0:
         brcdapi_log.log(ml, echo=True)
         return brcddb_common.EXIT_STATUS_ERROR

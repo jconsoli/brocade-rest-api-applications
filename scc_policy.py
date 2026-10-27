@@ -64,15 +64,17 @@ activated.
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.0.3     | 01 Aug 2026   | Removed obsolete HTTP access. Only HTTPS is supported. Display DID in hex.            |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 1.0.4     | 26 Oct 2026   | Updated comments only.                                                                |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '01 Aug 2026'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 import sys
 import datetime
@@ -240,7 +242,7 @@ def _evaluate_scc(switch_obj, scc_wwn_l):
 
     :param switch_obj: Switch object
     :type switch_obj: brcddb.class.switch.SwitchObj
-    :param scc_wwn_l: SCC_POLICY membership
+    :param scc_wwn_l: Desired SCC_POLICY membership
     :type scc_wwn_l: list
     :return: Dictionary as described above
     :rtype: dict
@@ -677,6 +679,7 @@ def _determine_scc_membership(scc_switch_obj_l, add_l, remove_l, clr_flag):
     :return scc_wwn_l: Absolute list of WWNs for the SCC policy
     :rtype scc_wwn_l: list
     :return process_l: Switch objects in the order they are to be processed. Fabric principal is first.
+    :rtype process_l: list
     """
     global _row_str
 
@@ -710,7 +713,7 @@ def _determine_scc_membership(scc_switch_obj_l, add_l, remove_l, clr_flag):
             scc_wwn_l.remove(wwn)
         except ValueError:
             pass  # Just ignore it if the WWN doesn't exist.
-    scc_wwn_l.sort()
+    scc_wwn_l.sort()  # I don't think the order matters, but just in case...
 
     # Determine the switch objects and order they should be processed in
     process_l = [obj for obj in scc_switch_obj_l if obj.r_is_principal()]

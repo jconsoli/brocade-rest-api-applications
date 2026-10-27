@@ -44,15 +44,17 @@ Merges the zones from multiple fabrics
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.0.8     | 20 Feb 2026   | Updated copyright notice.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.0.9     | 26 Oct 2026   | Modified to interpret updated error response from brcddb_file.read_dump()             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '19 Oct 2025'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.0.8'
+__version__ = '4.0.9'
 
 import sys
 import datetime
@@ -177,14 +179,13 @@ def _patch_zone_db(proj_obj, eff_cfg):
         ip_addr = fab_obj.r_get('zone_merge/ip')
         user_id = fab_obj.r_get('zone_merge/id')
         pw = fab_obj.r_get('zone_merge/pw')
-        sec = fab_obj.r_get('zone_merge/sec')
         fid = fab_obj.r_get('zone_merge/fid')
         update = fab_obj.r_get('zone_merge/update')
-        if ip_addr is None or user_id is None or pw is None or sec is None or fid is None or not update:
+        if ip_addr is None or user_id is None or pw is None or fid is None or not update:
             continue
 
         # Login
-        session = api_int.login(user_id, pw, ip_addr, sec, proj_obj=proj_obj)
+        session = api_int.login(user_id, pw, ip_addr, proj_obj=proj_obj)
         if fos_auth.is_error(session):
             rl.append(fos_auth.formatted_error_msg(session))
             return rl
@@ -273,7 +274,6 @@ def _get_project(sl, pl, addl_parms):
                       '-ip', ip_addr,
                       '-id', sub_d['id'],
                       '-pw', sub_d['pw'],
-                      '-s', 'none' if sub_d['sec'] is None else sub_d['sec'],
                       '-f', file_name,
                       '-c', zone_kpi_file] + addl_parms
             pid_l.append(dict(p=subprocess.Popen(params), file_name=file_name, ip=ip_addr))
@@ -285,15 +285,16 @@ def _get_project(sl, pl, addl_parms):
         brcdapi_log.log('Completed capture for ' + pid_d['file_name'] + '. Ending status: ' + str(pid_d['s']),
                         echo=True)
     for pid_d in pid_l:
-        try:
-            obj = brcdapi_file.read_dump(pid_d['file_name'])
-        except FileNotFoundError:
-            obj = None
-        if obj is None:
-            rl.append('Capture for ' + file_name + '. failed.')
-        else:
-            brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
+        obj = brcdapi_file.read_dump(pid_d['file_name'])
+        if fos_auth.is_error(obj):
+            rl.append('ERROR: Capture for ' + file_name + '. failed. Error message:')
+            rl.append(fos_auth.formatted_error_msg(obj))
+            break
+        elif brcddb_copy.plain_copy_to_brcddb(obj, proj_obj) == brcddb_common.EXIT_STATUS_OK:
             captured_d[pid_d['ip']].update(fab_keys=obj['_fabric_objs'].keys())
+        else:
+            rl.append('Failed to copy ' + file_name + ' to a project object.')
+            break
     if len(rl) > 0:
         return rl, proj_obj
 
@@ -326,25 +327,24 @@ def _get_project(sl, pl, addl_parms):
         brcdapi_log.log('Reading project files', echo=True)
     for sub_d in pl:
         file_name = brcdapi_file.full_file_name(sub_d['project_file'], '.json')
-        try:
-            obj = brcdapi_file.read_dump(file_name)
-        except FileExistsError:
-            rl.append('A folder in the path "' + file_name + '" does not exist.')
-            return rl, None
-        except FileNotFoundError:
-            rl.append(file_name + ' does not exist.')
-            return rl, None
-        brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
-        for fab_obj in [proj_obj.r_fabric_obj(k) for k in obj['_fabric_objs'].keys()]:
-            if fab_obj.r_get('zone_merge') is None:  # It should be None. This is just future proofing.
-                fab_obj.s_new_key('zone_merge', dict(file=file_name))
-        fab_obj = proj_obj.r_fabric_obj(sub_d.get('fab_wwn'))
-        if fab_obj is None:
-            rl.append('Could not find fabric WWN ' + str(sub_d.get('fab_wwn')) + ' in ' + file_name)
-        elif fab_obj.r_zonecfg_obj(sub_d.get('cfg')) is None:
-            rl.append('Couldn\'t find zone configuration ' + sub_d['cfg'] + ' in ' + file_name)
+        obj = brcdapi_file.read_dump(file_name)
+        if fos_auth.is_error(obj):
+            rl.append('Failed to read ' + file_name + '. Error message:')
+            rl.append(fos_auth.formatted_error_msg(obj))
         else:
-            fab_obj.r_get('zone_merge').update(fab_wwn=fab_obj.r_obj_key(), update=False, cfg=sub_d['cfg'])
+            if brcddb_copy.plain_copy_to_brcddb(obj, proj_obj) == brcddb_common.EXIT_STATUS_OK:
+                for fab_obj in [proj_obj.r_fabric_obj(k) for k in obj['_fabric_objs'].keys()]:
+                    if fab_obj.r_get('zone_merge') is None:  # It should be None. This is just future proofing.
+                        fab_obj.s_new_key('zone_merge', dict(file=file_name))
+                fab_obj = proj_obj.r_fabric_obj(sub_d.get('fab_wwn'))
+                if fab_obj is None:
+                    rl.append('Could not find fabric WWN ' + str(sub_d.get('fab_wwn')) + ' in ' + file_name)
+                elif fab_obj.r_zonecfg_obj(sub_d.get('cfg')) is None:
+                    rl.append('Couldn\'t find zone configuration ' + sub_d['cfg'] + ' in ' + file_name)
+                else:
+                    fab_obj.r_get('zone_merge').update(fab_wwn=fab_obj.r_obj_key(), update=False, cfg=sub_d['cfg'])
+            else:
+                rl.append('Failed to copy ' + file_name + ' to a project object')
 
     return rl, proj_obj
 

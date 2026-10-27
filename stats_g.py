@@ -49,21 +49,24 @@ Reads in the output of stats_c (which collects port statistics) and creates an E
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 4.1.0     | 01 Aug 2026   | Modified to use new brcddb_switch.best_switch_name() format.                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
+| 4.1.1     | 26 Oct 2026   | Modified to interpret updated error response from brcddb_file.read_dump()             |
++-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '01 Aug 2026'
+__date__ = '26 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.1.0'
+__version__ = '4.1.1'
 
 import sys
 import os
 import datetime
 import collections
 import brcdapi.log as brcdapi_log
+import brcdapi.fos_auth as fos_auth
 import brcdapi.gen_util as gen_util
 import brcdapi.util as brcdapi_util
 import brcdapi.excel_util as excel_util
@@ -520,6 +523,7 @@ def _get_input():
           '-isl, worksheets with graphs for each group are also created.'
     args_d = gen_util.get_input(buf, _input_d)
     ec = brcddb_common.EXIT_STATUS_OK
+    error_msg = ''
 
     # Set up logging
     brcdapi_log.open_log(
@@ -534,24 +538,13 @@ def _get_input():
     # -i, and get proj_obj
     proj_obj, obj, i_help = None, None, ''
     input_file = brcdapi_file.full_file_name(args_d['i'], '.json')
-    try:
-        obj = brcdapi_file.read_dump(input_file)
-    except FileNotFoundError:
-        i_help = ' **ERROR** File not found.'
+    obj = brcdapi_file.read_dump(input_file)
+    if fos_auth.is_error(obj):
+        error_msg = 'ERROR: Could not read' + str(input_file) + '\n' + fos_auth.formatted_error_msg(obj)
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except FileExistsError:
-        i_help = ' **ERROR** Folder does not exist.'
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except PermissionError:
-        i_help = ' **ERROR** You do not have permission to read this file.'
-        ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
-    except BaseException as e:
-        i_help = ' **ERROR** ' + str(e)
+    elif not isinstance(obj, dict) or len(list(obj.keys())) == 0:
+        i_help = ' ERROR: Unknown error encountered.'
         ec = brcddb_common.EXIT_STATUS_ERROR
-    if ec == brcddb_common.EXIT_STATUS_OK:
-        if not isinstance(obj, dict) or len(list(obj.keys())) == 0:
-            i_help = ' **ERROR** Unknown error encountered.'
-            ec = brcddb_common.EXIT_STATUS_ERROR
 
     if ec == brcddb_common.EXIT_STATUS_OK:
 
@@ -559,37 +552,38 @@ def _get_input():
         proj_obj = brcddb_project.new(obj.get('_obj_key'), obj.get('_date'))
         proj_obj.s_python_version(sys.version)
         proj_obj.s_description(obj.get('_description'))
-        brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
+        ec = brcddb_copy.plain_copy_to_brcddb(obj, proj_obj)
 
         # Figure out which ports have statistical data captured from stats_c.py
-        port_obj_l = [p for p in proj_obj.r_port_objects() if p.r_get('stats_c') is not None]
-        if len(port_obj_l) == 0:
-            i_help = ' **ERROR** No data captured'
-            ec = brcddb_common.EXIT_STATUS_ERROR
-        else:
-            # The ports don't need to be sorted. Humans just like to see them added to the report this way.
-            proj_obj.rs_key('stats_c/stats_g_d/port_obj_l', brcddb_util.sort_ports(port_obj_l))
+        if ec == brcddb_common.EXIT_STATUS_OK:
+            port_obj_l = [p for p in proj_obj.r_port_objects() if p.r_get('stats_c') is not None]
+            if len(port_obj_l) == 0:
+                i_help = ' ERROR: No data captured'
+                ec = brcddb_common.EXIT_STATUS_ERROR
+            else:
+                # The ports don't need to be sorted. Humans just like to see them added to the report this way.
+                proj_obj.rs_key('stats_c/stats_g_d/port_obj_l', brcddb_util.sort_ports(port_obj_l))
 
     # -stat validation check
     stat_help = str(args_d['stat'])
     if args_d['stat'] is None and (args_d['group'] is not None or args_d['isl']):
-        stat_help = ' **ERROR** Required when -group or -isl is specified.'
+        stat_help = ' ERROR: Required when -group or -isl is specified.'
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # -max validation check
     max_help = ''
     temp_l = args_d['max'].split('_')
     if len(temp_l) != 2:
-        max_help = ' **ERROR** Invalid value for -max. Re-run with -h for valid parameters.'
+        max_help = ' ERROR: Invalid value for -max. Re-run with -h for valid parameters.'
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     elif temp_l[0] + '_x' not in _max_ports_d:
-        max_help = ' **ERROR** Invalid value for -max. Re-run with -h for valid parameters.'
+        max_help = ' ERROR: Invalid value for -max. Re-run with -h for valid parameters.'
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     else:
         try:
             int(temp_l[1])
         except ValueError:
-            max_help = ' **ERROR** The value after "_" must be an integer.'
+            max_help = ' ERROR: The value after "_" must be an integer.'
             ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Command line feedback
@@ -606,6 +600,7 @@ def _get_input():
         'No log, -nl:               ' + str(args_d['nl']),
         'Suppress, -sup:            ' + str(args_d['sup']),
         '',
+        error_msg,
         ]
     brcdapi_log.log(ml, echo=True)
 
