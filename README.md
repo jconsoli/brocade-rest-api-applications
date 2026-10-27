@@ -175,6 +175,10 @@ Sets the zone database to that of a previously captured zone database. Typically
 
 **Revision History**
 
+# * 26 Oct 2026 *
+* Added ability to search on SFP serial numbers to nodefind.py
+* Added chassis options and CLI in workbooks for switch_config.py
+
 # * 02 Aug 2026*
 
 * Added z17
