@@ -28,17 +28,17 @@ For a generic but more detailed library validation report, use lib_validate.py
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | Version   | Last Edit     | Description                                                                           |
 +===========+===============+=======================================================================================+
-| 4.2.1     | 26 Oct 2026   | Updated versions references.                                                          |
+| 4.2.2     | 28 Oct 2026   | Updated versions references.                                                          |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2023, 2024, 2025, 2026 Jack Consoli'
-__date__ = '26 Oct 2026'
+__date__ = '28 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
 __status__ = 'Released'
-__version__ = '4.2.1'
+__version__ = '4.2.2'
 
 import sys
 import os
@@ -101,7 +101,7 @@ _imports = (
     dict(l='brcdapi.log', d='Required by all scripts.', r='4.0.7'),
     dict(l='brcdapi.port', d='Required for reading and configuring ports.', r='4.0.9'),
     dict(l='brcdapi.switch', d='Required for reading and configuring switches.', r='4.0.7'),
-    dict(l='brcdapi.util', d='Utilities supporting the FOS RESTConf API driver.', r='4.1.2'),
+    dict(l='brcdapi.util', d='Utilities supporting the FOS RESTConf API driver.', r='4.1.3'),
     dict(l='brcdapi.zone', d='Required by scripts performing zoning operations.', r='4.0.5'),
     dict(d=''),
     dict(d='FOS API database libraries from github/jconsoli - brcddb'),
