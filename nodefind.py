@@ -47,12 +47,12 @@ Performs a node find in a project
 +-----------+---------------+---------------------------------------------------------------------------------------+
 | 1.1.0     | 26 Oct 2026   | Added SFP serial numbers.                                                             |
 +-----------+---------------+---------------------------------------------------------------------------------------+
-| 1.1.1     | 28 Oct 2026   | Added remote (SFP from attached device) SFP serial numbers.                           |
+| 1.1.1     | 29 Oct 2026   | Added remote (SFP from attached device) SFP serial numbers.                           |
 +-----------+---------------+---------------------------------------------------------------------------------------+
 """
 __author__ = 'Jack Consoli'
 __copyright__ = 'Copyright 2024, 2025, 2026 Jack Consoli'
-__date__ = '28 Oct 2026'
+__date__ = '29 Oct 2026'
 __license__ = 'Apache License, Version 2.0'
 __email__ = 'jack_consoli@yahoo.com'
 __maintainer__ = 'Jack Consoli'
@@ -92,13 +92,15 @@ _input_d = dict(
           'automatically appended if not present.'
     ),
     alias=dict(
-        r=False, d=None,
+        r=False,
+        d=None,
         h='Optional. CSV list of nodes by alias to search for. Supports regex and wild card searching. The search type '
           'is defined with the -s parameter. WARNING: Some characters may be interpreted as command line separators. '
           'Enclose the -alias parameters in quotes to avoid this problem.'
     ),
     alias_f=dict(
-        r=False, d=None,
+        r=False,
+        d=None,
         h='Optional. Performs the same function as -alias. The difference is that the input is read from a plain text '
           'file. The argument therefore is a file name. ".txt" is automatically appended. Multiple files can be '
           'specified with a CSV list. Instead of using a CSV list, each search term is on a new line. Since the search '
@@ -112,6 +114,14 @@ _input_d = dict(
     zone_f=dict(r=False, d=None, h='Optional. Same as -alias_f except it is applied to zone names.'),
     sfp=dict(r=False, d=None, h='Optional. Same as -alias except it is applied to SFP serial numbers.'),
     sfp_f=dict(r=False, d=None, h='Optional. Same as -alias_f except it is applied to SFP serial numbers.'),
+    sn=dict(
+        r=False,
+        d=None,
+        h='Optional. Same as -alias except it is applied to the attached device serial numbers. FDMI data is used for '
+          'open systems. The sequence number in RNID data is used for FICON (mainframe). Often, FDMI is a feature that '
+          'must be enabled on the HBA. Not all HBAs support FDMI.'
+    ),
+    sn_f=dict(r=False, d=None, h='Optional. Same as -alias_f except it is applied to attached device serial numbers.'),
     s=dict(
         r=False, d='exact', v=_search_type_l,
         h='Optional. Search type. Options are: ' + ', '.join(_search_type_l) + ' The default is "exact".'
@@ -121,15 +131,17 @@ _input_d = dict(
 _input_d.update(gen_util.parseargs_log_d.copy())
 
 
-def _local_report(search_d, sfp_search_d, remote_sfp_search_d):
+def _local_report(search_d, sfp_search_d, remote_sfp_search_d, sn_search_d):
     """Create a text report for each search term
 
-    :param search_d: Key is the search term and value is the list of login objects associated with that search term
+    :param search_d: Key is the search term. Value is the list of login objects associated with that search term
     :type search_d: dict
-    :param sfp_search_d: Key is the search term and value is the list of port objects associated with that search term
+    :param sfp_search_d: Key is the search term. Value is the list of port objects associated with that search term
     :type sfp_search_d: dict
     :param remote_sfp_search_d: For remote SFPs. Same data structure as sfp_search_d.
     :type remote_sfp_search_d: dict
+    :param sn_search_d: Same as sfp_search_d except the search is performed on attached device serial numbers.
+    :type sn_search_d: dict
     :rtype: None
     """
     report_l = [dict(p1='')]
@@ -148,14 +160,13 @@ def _local_report(search_d, sfp_search_d, remote_sfp_search_d):
                 buf += '. This typically occurs when there was an incomplete data capture.'
                 report_l.extend([dict(b1_char='  '), dict(b1=buf)])
                 continue
-            login_name = brcddb_login.best_login_name(login_obj.r_fabric_obj(), login_obj.r_obj_key(), flag=True)
             report_l.extend([
-                dict(b1_char='  Login:   '),
-                dict(b1=login_name),
                 dict(b1_char='  Switch:  '),
                 dict(b1=brcddb_switch.best_switch_name(port_obj, wwn=True, fid=True, did=True)),
                 dict(b1_char='  Port:    '),
-                dict(b1=brcddb_port.port_best_desc(port_obj, port_num=True, port_name=True)),
+                dict(b1=brcddb_port.port_best_desc(port_obj, port_num=True, port_name=True, sn=True)),
+                dict(b1_char='  Login:   '),
+                dict(b1=brcddb_login.best_login_name(login_obj.r_fabric_obj(), login_obj.r_obj_key(), flag=True)),
                 dict(p1=''),
                 ])
 
@@ -196,17 +207,33 @@ def _local_report(search_d, sfp_search_d, remote_sfp_search_d):
                     dict(b1_char='  Switch:         '),
                     dict(b1=brcddb_switch.best_switch_name(port_obj, wwn=True, fid=True, did=True)),
                     dict(b1_char='  Port:           '),
-                    dict(b1=brcddb_port.port_best_desc(port_obj, port_num=True, port_name=True)),
+                    dict(b1=brcddb_port.port_best_desc(port_obj, port_num=True, port_name=True, sn=True)),
                     dict(b1_char='  ' + d['sfp']),
                     dict(b1=port_obj.r_get(d['sfp_sn'], '')),
                     dict(p1=''),
                     ])
 
+    # Serial Numbers (by port for attached devices)
+    report_l.extend([dict(p1=''), dict(p1='SN Find Results'), dict(p1='________________')])
+    for k, obj_l in sn_search_d.items():
+        report_l.extend([dict(p1=''), dict(p1=str(k))])
+        if len(obj_l) == 0:
+            report_l.append(dict(b1_char='                  ', b1='Not found.'))
+            continue
+        for port_obj in obj_l:
+            report_l.extend([
+                dict(b1_char='  Switch:         '),
+                dict(b1=brcddb_switch.best_switch_name(port_obj, wwn=True, fid=True, did=True)),
+                dict(b1_char='  Port:           '),
+                dict(b1=brcddb_port.port_best_desc(port_obj, port_num=True, port_name=True, sn=True)),
+                dict(p1=''),
+            ])
+
     report_l.append(dict(p1=''))
     brcdapi_log.log(gen_util.format_text(report_l), echo=True)
 
 
-def _excel_report(report, search_d, sfp_search_d, remote_sfp_search_d):
+def _excel_report(report, search_d, sfp_search_d, remote_sfp_search_d, sn_search_d):
     """Create an Excel report for each search term found
 
     :param report: Name of report file. If None, a report will not be created
@@ -217,6 +244,8 @@ def _excel_report(report, search_d, sfp_search_d, remote_sfp_search_d):
     :type sfp_search_d: dict
     :param remote_sfp_search_d: For remote SFPs. Same data structure as sfp_search_d.
     :type remote_sfp_search_d: dict
+    :param sn_search_d: Same as sfp_search_d except the search is performed on attached device serial numbers.
+    :type sn_search_d: dict
     :return: True if there was no report to write or the report was successfully created. Otherwise, False.
     :rtype: None
     """
@@ -227,8 +256,9 @@ def _excel_report(report, search_d, sfp_search_d, remote_sfp_search_d):
     brcdapi_log.log('Creating report: ' + report, echo=True)
     wb = excel_util.new_report()
 
-    # Add the page for SFPs (ports by serial number)
+    # Add the page for serial numbers (by port)
     for d in [
+        dict(sheet_name='Attached_Device', hdr='S/N In Attached Device Find Results', search_d=sn_search_d),
         dict(sheet_name='Remote_SFP', hdr='Remote SFP Find Results', search_d=remote_sfp_search_d),
         dict(sheet_name='SFP', hdr='SFP Find Results', search_d=sfp_search_d),
     ]:
@@ -242,7 +272,7 @@ def _excel_report(report, search_d, sfp_search_d, remote_sfp_search_d):
             0,
             d['hdr'],
             report_obj_l,
-            in_display=brcddb_rt.Port.port_sfp_tbl
+            in_display=brcddb_rt.Port.port_sfp_find_tbl
         )
 
     # Add the page for logins (for traditional nodefind results)
@@ -391,12 +421,43 @@ def _find_by_remote_sfp(proj_obj, search_d, sfp_l, search_type):
         )
 
 
-def psuedo_main(proj_obj, alias_l, wwn_l, zone_l, sfp_l, search_type, report):
+def _find_by_sn(proj_obj, search_d, sn_l, search_type):
+    """Add port objects matching the search criteria for SFPs to search_d.
+
+    :param proj_obj: Project object
+    :type proj_obj: brcdapi.class.project.ProjectObj
+    :param search_d: Tracking dictionary. Defined in the beginning of psuedo_main().
+    :type search_d: dict
+    :param sn_l: Attached device serial numbers to search for
+    :type sn_l: list
+    :param search_type: Type of search. Can be exact, regex_m, regex_s, or wild
+    :type search_type: str
+    :return: Nothing
+    :rtype: None
+    """
+    for sn in sn_l:
+        search_d[sn].extend(
+            brcddb_search.match(
+                proj_obj.r_port_objects(),
+                brcdapi_util.fdmi_node_sn,  # Open systems
+                sn,
+                ignore_case=True,
+                stype=search_type
+            )
+        )
+        search_d[sn].extend(
+            brcddb_search.match(
+                proj_obj.r_port_objects(),
+                'rnid/sequence-number',  # FICON
+                sn,
+                ignore_case=True,
+                stype=search_type
+            )
+        )
+
+
+def psuedo_main(proj_obj, alias_l, wwn_l, zone_l, sfp_l, sn_l, search_type, report):
     """Basically the main().
-
-    Important Dictionaries
-
-    search_d
 
     :param proj_obj: Project object
     :type proj_obj: brcdapi.class.project.ProjectObj
@@ -408,6 +469,8 @@ def psuedo_main(proj_obj, alias_l, wwn_l, zone_l, sfp_l, search_type, report):
     :type zone_l: list
     :param sfp_l: SFPs by serial number to search for.
     :type sfp_l: list
+    :param sn_l: Attached device by serial number to search for.
+    :type sn_l: list
     :param search_type: Type of search. Can be exact, regex_m, regex_s, or wild
     :type search_type: str
     :param report: Name of Excel report.
@@ -419,12 +482,14 @@ def psuedo_main(proj_obj, alias_l, wwn_l, zone_l, sfp_l, search_type, report):
     # search_d: Key is the search term. Used for alias, wwn, and zone. The content is a list of login objects matching
     # the search criteria.
     # sfp_search_d: The content is a list of port objects with SFPs matching the search criteria.
-    search_d, sfp_search_d, remote_sfp_search_d = dict(), dict(), dict()
+    search_d, sfp_search_d, remote_sfp_search_d, sn_search_d = dict(), dict(), dict(), dict()
     for buf in alias_l + wwn_l + zone_l:
         search_d[buf] = list()
     for buf in sfp_l:
         sfp_search_d[buf] = list()
         remote_sfp_search_d[buf] = list()
+    for buf in sn_l:
+        sn_search_d[buf] = list()
 
     # Search for the matching login objects and port objects
     _find_by_alias(proj_obj, search_d, alias_l, search_type)
@@ -432,15 +497,17 @@ def psuedo_main(proj_obj, alias_l, wwn_l, zone_l, sfp_l, search_type, report):
     _find_by_zone(proj_obj, search_d, zone_l, search_type)
     _find_by_sfp(proj_obj, sfp_search_d, sfp_l, search_type)
     _find_by_remote_sfp(proj_obj, remote_sfp_search_d, sfp_l, search_type)
+    _find_by_sn(proj_obj, sn_search_d, sn_l, search_type)
 
     # Create the reports and return
     for key, mem_l in search_d.items():
         search_d[key] = gen_util.remove_duplicates(mem_l)
     for key, mem_l in sfp_search_d.items():
         sfp_search_d[key] = gen_util.remove_duplicates(mem_l)
-    _local_report(search_d, sfp_search_d, remote_sfp_search_d)
+    _local_report(search_d, sfp_search_d, remote_sfp_search_d, sn_search_d)
 
-    return brcddb_common.EXIT_STATUS_OK if _excel_report(report, search_d, sfp_search_d, remote_sfp_search_d) \
+    return brcddb_common.EXIT_STATUS_OK \
+        if _excel_report(report, search_d, sfp_search_d, remote_sfp_search_d, sn_search_d) \
         else brcddb_common.EXIT_STATUS_ERROR
 
 
@@ -491,8 +558,10 @@ def _get_input():
         'WWN file, -wwn_f:     ' + str(args_d['wwn_f']),
         'Zone, -zone:          ' + str(args_d['zone']),
         'Zone file, -zone_f:   ' + str(args_d['zone_f']),
-        'SFP, -sfp:            ' + str(args_d['zone']),
-        'SFP file, -sfp_f:     ' + str(args_d['zone_f']),
+        'SFP, -sfp:            ' + str(args_d['sfp']),
+        'SFP file, -sfp_f:     ' + str(args_d['sfp_f']),
+        'SN, -sn:              ' + str(args_d['sn']),
+        'SN file, -sn_f:       ' + str(args_d['sn_f']),
         'Search type, -s:      ' + str(args_d['s']),
         'Report, -r:           ' + str(args_d['r']),
         'Log, -log:            ' + str(args_d['log']),
@@ -511,7 +580,7 @@ def _get_input():
     brcddb_project.build_xref(proj_obj)
 
     # Get the lists of things to search for.
-    search_d = dict(alias=list(), wwn=list(), zone=list(), sfp=list())
+    search_d = dict(alias=list(), wwn=list(), zone=list(), sfp=list(), sn=list())
     for key in search_d.keys():
         if isinstance(args_d[key], str):
             search_d[key].extend([b.strip() for b in gen_util.convert_to_list(args_d[key].split(','))])
@@ -525,7 +594,7 @@ def _get_input():
                     ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
 
     # Validate the WWNs and aliases
-    if len(search_d['alias']) + len(search_d['wwn']) + len(search_d['zone']) + len(search_d['sfp']) == 0:
+    if max([len(search_d[k]) for k in ('alias', 'wwn', 'zone', 'sfp', 'sn')]) == 0:
         ml.append('Nothing to search for.')
         ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     elif args_d['s'] == 'exact':
@@ -537,7 +606,7 @@ def _get_input():
                 ec = brcddb_common.EXIT_STATUS_INPUT_ERROR
     brcdapi_log.log(ml, echo=True)
 
-    # Command line feedback and process
+    # Command line feedback and process. IDK why I didn't just pass search_d to psuedo_main().
     return ec if ec != brcddb_common.EXIT_STATUS_OK else \
         psuedo_main(
             proj_obj,
@@ -545,6 +614,7 @@ def _get_input():
             gen_util.remove_duplicates(gen_util.remove_none(search_d['wwn'])),
             gen_util.remove_duplicates(gen_util.remove_none(search_d['zone'])),
             gen_util.remove_duplicates(gen_util.remove_none(search_d['sfp'])),
+            gen_util.remove_duplicates(gen_util.remove_none(search_d['sn'])),
             _search_type_d[args_d['s']],
             brcdapi_file.full_file_name(args_d['r'], '.xlsx'),
         )
