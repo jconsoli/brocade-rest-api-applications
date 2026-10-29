@@ -175,8 +175,8 @@ Sets the zone database to that of a previously captured zone database. Typically
 
 **Revision History**
 
-# * 28 Oct 2026
-* Added remote SFPs to nodefind.
+# * 29 Oct 2026
+* Added remote SFPs and attached device serial numbers to nodefind.
   
 # * 26 Oct 2026 *
 * Added ability to search on SFP serial numbers to nodefind.py
